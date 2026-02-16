@@ -1,158 +1,190 @@
 import re
-import zlib
+import subprocess
+import time
 from pathlib import Path
-from typing import TypedDict
+from typing import Iterator
 
 import structlog
 import typer
-from fastnbt_btree import normalize  # pyright: ignore[reportAttributeAccessIssue]
+from podman import PodmanClient
+from podman.domain.containers import Container
 
 SECTOR_SIZE = 4096
 
 log = structlog.get_logger()
 
 
-class Chunk(TypedDict):
-    data: bytes | None
-
-    local_x: int
-    local_z: int
-    region_x: int
-    region_z: int
-    timestamp: int
-    index: int
-    source: Path
-    offset_sectors: int
-    size_sectors: int
-    compression_type: int | None
-
-
 def main():
     log.info("Hello from superflat!")
-    flatten(Path("temp/r.0.0.mca"), Path("temp/output/"))
+    prototype("1.21.4", "3055925211550632933", (-2, -2), (1, 1))
 
 
-def flatten(
-    src: Path, dst: Path, region_x: int | None = None, region_z: int | None = None
+def wait_logs_until(logs: Iterator[bytes], stop_pattern: str):
+    pattern = re.compile(stop_pattern)
+    for line in logs:
+        line = line.decode()
+        log.debug("container log", line=line)
+        if pattern.search(line):
+            break
+
+
+def generate_chunks(
+    version: str, seed: str, corner1: tuple[int, int], corner2: tuple[int, int]
 ):
-    if not src.is_file():
-        raise ValueError("src must be a file path")
-    if dst.exists():
-        if not dst.is_dir():
-            raise ValueError("dst must be a dir path")
-    else:
-        dst.mkdir(parents=True)
+    x1 = min(corner1[0], corner2[0]) * 16
+    z1 = min(corner1[1], corner2[1]) * 16
+    x2 = (max(corner1[0], corner2[0]) + 1) * 16 - 1
+    z2 = (max(corner1[1], corner2[1]) + 1) * 16 - 1
+    log.info(
+        "starting chunks generation",
+        version=version,
+        seed=seed,
+        x1=x1,
+        z1=z1,
+        x2=x2,
+        z2=z2,
+    )
+    PODMAN_API_URL = "tcp://localhost:8888"
+    podman_service = subprocess.Popen(
+        ["podman", "system", "service", "--time=0", PODMAN_API_URL],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    time.sleep(3)
+    log.debug("podman service started", pid=podman_service.pid)
 
-    if not region_x or not region_z:
-        match = re.match(r"r.(-?\d+).(-?\d+).mca", src.name)
-        if not match:
-            raise ValueError("region_x and region_z is unknown")
-        region_x = int(match.group(1))
-        region_z = int(match.group(2))
-        log.debug("parse region position", filename=src, x=region_x, z=region_z)
-
-    with src.open("rb") as mca_in:
-        # parse header
-        chunks: list[Chunk] = []
-        locations_raw = memoryview(mca_in.read(0x1000))
-        timestamps_raw = memoryview(mca_in.read(0x1000))
-        if len(locations_raw) != 0x1000 or len(timestamps_raw) != 0x1000:
-            raise RuntimeError(
-                f"Region file {src} has truncated header: {len(locations_raw)} + {len(timestamps_raw)}"
+    container: Container | None = None
+    try:
+        with PodmanClient(base_url=PODMAN_API_URL) as client:
+            log.info("podman client ping")
+            if client.ping():
+                log.info("podman client pong")
+            else:
+                raise RuntimeError("Ping Podman client failed")
+            log.info("starting container")
+            container = client.containers.run(  # pyright: ignore[reportAssignmentType]
+                image="itzg/minecraft-server",
+                ports={"25565/tcp": 25565},
+                environment={
+                    "EULA": "TRUE",
+                    "TYPE": "FABRIC",
+                    "VERSION": version,
+                    "MEMORY": "4G",
+                    "MODRINTH_PROJECTS": "fabric-api\nchunky",
+                    "ONLINE_MODE": "FALSE",
+                    "GENERATE_STRUCTURES": "TRUE",
+                    "SEED": seed,
+                },
+                detach=True,
+                restart_policy={"Name": "unless-stopped"},
+                stdout=True,
+                stderr=True,
             )
-        for i in range(1024):
-            x = i % 32
-            z = i // 32
-            loc = locations_raw[i * 4 : (i + 1) * 4]
-            offset = int.from_bytes(loc[:3], byteorder="big")
-            size = int.from_bytes(loc[3:], byteorder="big")
-            ts = int.from_bytes(timestamps_raw[i * 4 : (i + 1) * 4], byteorder="big")
-            log.debug("meta info", i=i, x=x, z=z, offset=offset, size=size, ts=ts)
-            if offset == 0 and size == 0:
-                log.info("chunk not exists", i=i, x=x, z=z)
-                continue
-            if offset < 2:
+            if not isinstance(container, Container):
                 raise RuntimeError(
-                    f"Region file {src} has invalid sector at index: {i}; sector {offset} overlaps with header"
+                    f"container has an incorrect type: {type(container)}"
                 )
-            if size == 0:
-                raise RuntimeError(
-                    f"Region file {src} has an invalid sector at index: {i}; size has to be > 0"
-                )
-            if offset < 2:
-                raise RuntimeError(
-                    f"Region file {src} has invalid sector at index: {i}; sector {offset} overlaps with header"
-                )
-            chunks.append(
-                {
-                    "index": i,
-                    "region_x": region_x,
-                    "region_z": region_z,
-                    "local_x": x,
-                    "local_z": z,
-                    "offset_sectors": offset,
-                    "size_sectors": size,
-                    "source": src,
-                    "timestamp": ts,
-                    "compression_type": None,
-                    "data": None,
-                }
-            )
-        chunks.sort(key=lambda c: c["offset_sectors"])
+            log.info("container started", container_id=container.id)
 
-        # exrtact chunks
-        for chunk in chunks:
-            log.debug("extract chunk", i=chunk["index"])
-            seek_offset = mca_in.seek(chunk["offset_sectors"] * SECTOR_SIZE)
-            if seek_offset != chunk["offset_sectors"] * SECTOR_SIZE:
-                raise RuntimeError(
-                    f"Region file {src} has an invalid sector at index: {chunk['index']}; sector {chunk['size_sectors']} is out of bounds"
-                )
-            raw = memoryview(mca_in.read(chunk["size_sectors"] * SECTOR_SIZE))
-            data_length = int.from_bytes(raw[:4], byteorder="big")
-            compression_type = int.from_bytes(raw[4:5], byteorder="big")
-            compressed_data = raw[5 : 5 + data_length]
-            match compression_type:
-                case 2:
-                    data = zlib.decompress(compressed_data)
-                case 129:
-                    raise NotImplementedError("mcc file is not supported")
-                case _:
-                    raise NotImplementedError(
-                        f"not supportd compression_type: {compression_type}"
+            try:
+                log.info("wait until server done")
+                logs: Iterator[bytes] = container.logs(stream=True, follow=True)  # pyright: ignore[reportAssignmentType]
+                wait_logs_until(logs, r'Done \(\d+\.?\d+s\)! For help, type "help"')
+
+                rcon_commands = [
+                    (
+                        [
+                            "rcon-cli",
+                            "chunky",
+                            "corners",
+                            str(x1),
+                            str(z1),
+                            str(x2),
+                            str(z2),
+                        ],
+                        None,
+                    ),
+                    (["rcon-cli", "chunky", "radius", "100"], None),
+                    (["rcon-cli", "chunky", "start"], r"\[Chunky\] Task finished"),
+                    (
+                        ["rcon-cli", "save-all", "flush"],
+                        r"ThreadedAnvilChunkStorage: All dimensions are saved",
+                    ),
+                ]
+                for cmd, stop_pattern in rcon_commands:
+                    log.info(
+                        "running rcon command", command=cmd, stop_pattern=stop_pattern
                     )
-            data = normalize(data)
-            chunk["compression_type"] = compression_type
-            chunk["data"] = data
+                    (exit_code, output) = container.exec_run(
+                        cmd, stdout=True, stderr=True, demux=True
+                    )
+                    if not isinstance(output, tuple):
+                        raise RuntimeError(
+                            f"container.exec_run has an incorrect return type: {output}"
+                        )
+                    if not isinstance(output[0], bytes | None) or not isinstance(
+                        output[1], bytes | None
+                    ):
+                        raise RuntimeError(
+                            f"container.exec_run has an incorrect return type: {output}"
+                        )
+                    log.debug(
+                        "RCON command exited",
+                        command=cmd,
+                        exit_code=exit_code,
+                        stdout=output[0],
+                        stderr=output[1],
+                    )
+                    if exit_code != 0:
+                        raise RuntimeError("RCON command failed")
+                    if stop_pattern:
+                        wait_logs_until(logs, stop_pattern)
 
-        # write mcc files
-        for chunk in chunks:
-            chunk_x = region_x * 32 + chunk["local_x"]
-            chunk_z = region_z * 32 + chunk["local_z"]
-            mcc_filepath = dst / f"c.{chunk_x}.{chunk_z}.mcc"
-            with mcc_filepath.open("wb") as mcc_out:
-                mcc_out.write(bytes([0x00, 0x00, 0x00, 0x00, 0x00]))
-                if not chunk["data"]:
-                    raise RuntimeError(f"Chunk {chunk['index']} has no data")
-                mcc_out.write(chunk["data"])
+                log.info("copying region file")
+                dst = Path() / "temp" / (container.id or "unknown") / "region"
+                dst.mkdir(parents=True, exist_ok=True)
+                copy_result = subprocess.run(
+                    [
+                        "podman",
+                        "cp",
+                        f"{container.id}:/data/world/region/",
+                        str(dst),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
 
-        # write mca file
-        mca_filepath = dst / f"r.{region_x}.{region_z}.mca"
-        with mca_filepath.open("wb") as mca_out:
-            for i, chunk in enumerate(chunks):
-                mca_out.seek(chunk["index"] * 4)
-                mca_out.write((i + 1).to_bytes(length=3, byteorder="big"))
-                mca_out.write((1).to_bytes(length=1, byteorder="big"))
+                if copy_result.returncode != 0:
+                    log.debug(
+                        "failed to copy region file",
+                        container_id=container.id,
+                        stderr=copy_result.stderr,
+                    )
+                    raise RuntimeError("Failed to copy region file")
 
-                mca_out.seek(0x1000 + chunk["index"] * 4)
-                mca_out.write(chunk["timestamp"].to_bytes(length=4, byteorder="big"))
+            except Exception:
+                log.exception("error in chunks generation")
+                raise
+            finally:
+                log.info("stopping container", container_id=container.id)
+                container.stop()
+                container.remove()
+                container = None
 
-                mca_out.seek(0x2000 + i * SECTOR_SIZE)
-                if not chunk["data"]:
-                    raise RuntimeError(f"Chunk {chunk['index']} has no data")
-                mca_out.write(len(chunk["data"]).to_bytes(length=4, byteorder="big"))
-                NO_COMPRESS = 3
-                mca_out.write(NO_COMPRESS.to_bytes(length=1, byteorder="big"))
+    except Exception:
+        log.exception("error in chunks generation")
+        raise
+    finally:
+        log.debug("terminating podman service")
+        podman_service.terminate()
+        podman_service.wait(timeout=30)
+        log.info("chunks generation complete")
+
+
+def prototype(
+    version: str, seed: str, corner1: tuple[int, int], corner2: tuple[int, int]
+):
+    generate_chunks(version, seed, corner1, corner2)
 
 
 def cli():

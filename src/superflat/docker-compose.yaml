@@ -1,0 +1,18 @@
+services:
+  mc-generator:
+    image: itzg/minecraft-server
+    container_name: mc-chunky-gen
+    ports:
+      - "25565:25565"
+    environment:
+      EULA: "TRUE"
+      TYPE: "FABRIC"
+      VERSION: "1.21.4"
+      MEMORY: "4G"
+      MODRINTH_PROJECTS: |
+        fabric-api
+        chunky
+      ONLINE_MODE: "FALSE"
+      GENERATE_STRUCTURES: "TRUE"
+      SEED: "3055925211550632933"
+    restart: unless-stopped
