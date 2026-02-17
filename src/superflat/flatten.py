@@ -26,7 +26,7 @@ class Chunk(TypedDict):
     compression_type: int | None
 
 
-def flatten(
+def flatten_mca(
     src: Path, dst: Path, region_x: int | None = None, region_z: int | None = None
 ):
     if not src.is_file():
