@@ -1,0 +1,97 @@
+use pumpkin_config::lighting::LightingEngineConfig;
+use pumpkin_nbt::normalize_nbt_bytes;
+use pyo3::exceptions::PyValueError;
+use pyo3::types::PyBytes;
+use pyo3::{prelude::*, wrap_pyfunction};
+
+use std::sync::Arc;
+
+use pumpkin_data::dimension::Dimension;
+use pumpkin_util::world_seed::Seed;
+use pumpkin_world::biome::hash_seed;
+use pumpkin_world::chunk::format::anvil::SingleChunkDataSerializer;
+use pumpkin_world::chunk_system::{Chunk, StagedChunkEnum, generate_single_chunk};
+use pumpkin_world::generation::get_world_gen;
+use pumpkin_world::world::BlockRegistryExt;
+
+struct BlockRegistry;
+impl BlockRegistryExt for BlockRegistry {
+    fn can_place_at(
+        &self,
+        _block: &pumpkin_data::Block,
+        _state: &pumpkin_data::BlockState,
+        _block_accessor: &dyn pumpkin_world::world::BlockAccessor,
+        _block_pos: &pumpkin_util::math::position::BlockPos,
+    ) -> bool {
+        true
+    }
+}
+
+async fn internal_generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> PyResult<Vec<u8>> {
+    let dimension = Dimension::OVERWORLD;
+    let seed_val = Seed(seed);
+    let block_registry = Arc::new(BlockRegistry);
+    let world_gen = get_world_gen(seed_val, dimension);
+    let biome_mixer_seed = hash_seed(world_gen.random_config.seed);
+
+    let mut chunk = generate_single_chunk(
+        &dimension,
+        biome_mixer_seed,
+        &world_gen,
+        block_registry.as_ref(),
+        chunk_x,
+        chunk_z,
+        StagedChunkEnum::Surface,
+    );
+
+    chunk.upgrade_to_level_chunk(&dimension, &LightingEngineConfig::Default);
+
+    if let Chunk::Level(chunk) = chunk {
+        let nbt: Vec<u8> = chunk
+            .to_bytes()
+            .await
+            .map(|v| v.into())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(nbt)
+    } else {
+        unreachable!()
+    }
+}
+
+#[pyfunction]
+fn generate_chunk_nbt(
+    py: Python<'_>,
+    seed: u64,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> PyResult<Bound<'_, PyAny>> {
+    pyo3_async_runtimes::tokio::future_into_py(
+        py,
+        internal_generate_chunk_nbt(seed, chunk_x, chunk_z),
+    )
+}
+
+#[pyfunction]
+fn normalize_nbt<'py>(py: Python<'py>, nbt: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
+    let bytes: Vec<u8> = normalize_nbt_bytes(&nbt)
+        .map(|v| v.into())
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(PyBytes::new(py, &bytes))
+}
+
+#[pymodule]
+fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
+    m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::internal_generate_chunk_nbt;
+
+    #[tokio::test]
+    async fn test_works() {
+        let _ = internal_generate_chunk_nbt(0, 0, 0).await;
+    }
+}

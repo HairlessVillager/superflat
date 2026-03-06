@@ -1,18 +1,9 @@
 import asyncio
-import re
-import subprocess
-import time
 from collections import Counter
 from hashlib import sha256
-from pathlib import Path
 from random import randint, seed
-from sys import stdout
-from tempfile import TemporaryDirectory
-from typing import Iterator
 
 import structlog
-import typer
-from platformdirs import user_cache_path
 from pumpkin_py import generate_chunk_nbt
 
 SECTOR_SIZE = 4096
@@ -99,12 +90,7 @@ def main(log_level: str = "info"):
     structlog.configure(
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
     )
-    log.info("Hello from superflat!")
     asyncio.run(random_test())
-
-
-def cli():
-    typer.run(main)
 
 
 if __name__ == "__main__":

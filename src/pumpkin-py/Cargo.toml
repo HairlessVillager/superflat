@@ -1,0 +1,19 @@
+[package]
+name = "pumpkin-py"
+version = "0.1.0"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "pumpkin_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+pumpkin-config = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-config" }
+pumpkin-data = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-data" }
+pumpkin-nbt = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-nbt" }
+pumpkin-util = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-util" }
+pumpkin-world = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-world" }
+pyo3 = { version = "0.28.2", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
+tokio = "1.49.0"
