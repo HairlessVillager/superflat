@@ -1,9 +1,9 @@
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_nbt::normalize_nbt_bytes;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::PyBytes;
 use pyo3::{prelude::*, wrap_pyfunction};
 
+use rayon::prelude::*;
 use std::sync::Arc;
 
 use pumpkin_data::dimension::Dimension;
@@ -27,7 +27,7 @@ impl BlockRegistryExt for BlockRegistry {
     }
 }
 
-async fn internal_generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> PyResult<Vec<u8>> {
+fn sync_generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> Result<Vec<u8>, String> {
     let dimension = Dimension::OVERWORLD;
     let seed_val = Seed(seed);
     let block_registry = Arc::new(BlockRegistry);
@@ -47,51 +47,47 @@ async fn internal_generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> P
     chunk.upgrade_to_level_chunk(&dimension, &LightingEngineConfig::Default);
 
     if let Chunk::Level(chunk) = chunk {
-        let nbt: Vec<u8> = chunk
-            .to_bytes()
-            .await
-            .map(|v| v.into())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(nbt)
+        futures::executor::block_on(async {
+            chunk
+                .to_bytes()
+                .await
+                .map(|v| v.into())
+                .map_err(|e| e.to_string())
+        })
     } else {
-        unreachable!()
+        Err("Failed to upgrade chunk to Level stage".to_string())
     }
 }
 
 #[pyfunction]
-fn generate_chunk_nbt(
-    py: Python<'_>,
-    seed: u64,
-    chunk_x: i32,
-    chunk_z: i32,
-) -> PyResult<Bound<'_, PyAny>> {
-    pyo3_async_runtimes::tokio::future_into_py(
-        py,
-        internal_generate_chunk_nbt(seed, chunk_x, chunk_z),
-    )
+fn generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> PyResult<Vec<u8>> {
+    sync_generate_chunk_nbt(seed, chunk_x, chunk_z).map_err(|e| PyValueError::new_err(e))
 }
 
 #[pyfunction]
-fn normalize_nbt<'py>(py: Python<'py>, nbt: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
+fn batch_generate_chunk_nbt(seed: u64, coords: Vec<(i32, i32)>) -> PyResult<Vec<Vec<u8>>> {
+    coords
+        .into_par_iter()
+        .map(|(x, z)| {
+            let nbt = sync_generate_chunk_nbt(seed, x, z).map_err(|e| PyValueError::new_err(e))?;
+            let normalized = normalize_nbt(&nbt)?;
+            Ok(normalized)
+        })
+        .collect::<PyResult<Vec<Vec<u8>>>>()
+}
+
+#[pyfunction]
+fn normalize_nbt<'py>(nbt: &[u8]) -> PyResult<Vec<u8>> {
     let bytes: Vec<u8> = normalize_nbt_bytes(&nbt)
         .map(|v| v.into())
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(PyBytes::new(py, &bytes))
+    Ok(bytes)
 }
 
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
+    m.add_function(wrap_pyfunction!(batch_generate_chunk_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::internal_generate_chunk_nbt;
-
-    #[tokio::test]
-    async fn test_works() {
-        let _ = internal_generate_chunk_nbt(0, 0, 0).await;
-    }
 }

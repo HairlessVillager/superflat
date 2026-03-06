@@ -9,6 +9,7 @@ name = "pumpkin_py"
 crate-type = ["cdylib"]
 
 [dependencies]
+futures = "0.3.32"
 pumpkin-config = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-config" }
 pumpkin-data = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-data" }
 pumpkin-nbt = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-nbt" }
@@ -16,4 +17,5 @@ pumpkin-util = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pump
 pumpkin-world = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-world" }
 pyo3 = { version = "0.28.2", features = ["extension-module"] }
 pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
+rayon = "1.11.0"
 tokio = "1.49.0"
