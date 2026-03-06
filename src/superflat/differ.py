@@ -4,7 +4,10 @@ from pathlib import Path
 
 from platformdirs import user_cache_path
 from pumpkin_py import batch_generate_chunk_nbt
+from structlog import get_logger
 from xdelta3_py import encode
+
+log = get_logger()
 
 
 class ChunkManager:
@@ -81,10 +84,12 @@ class Differ:
                     path = self._diff_dir / rel_path
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(diff)
+                    log.info(f"write {path}")
                 elif "timestamp-header" in fname:
                     path = self._diff_dir / rel_path
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.symlink_to(self._flatten_dir / rel_path)
+                    log.info(f"symlink {path} to {self._flatten_dir / rel_path}")
                 else:
                     raise ValueError(f"Unknown file {str(rel_path)}")
 
@@ -95,3 +100,4 @@ class Differ:
             source_path: Path = self._diff_dir / item["input_path"]
             source_path.parent.mkdir(parents=True, exist_ok=True)
             source_path.symlink_to(target_path)
+            log.info(f"symlink {source_path} to {target_path}")
