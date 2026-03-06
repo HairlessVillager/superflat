@@ -1,9 +1,11 @@
 use pumpkin_config::lighting::LightingEngineConfig;
-use pumpkin_nbt::normalize_nbt_bytes;
+use pumpkin_nbt::deserializer::NbtReadHelper;
+use pumpkin_nbt::{Nbt, normalize_nbt_bytes};
 use pyo3::exceptions::PyValueError;
 use pyo3::{prelude::*, wrap_pyfunction};
 
 use rayon::prelude::*;
+use std::io::Cursor;
 use std::sync::Arc;
 
 use pumpkin_data::dimension::Dimension;
@@ -84,10 +86,22 @@ fn normalize_nbt<'py>(nbt: &[u8]) -> PyResult<Vec<u8>> {
     Ok(bytes)
 }
 
+#[pyfunction]
+fn is_chunk_status_full(input: &[u8]) -> PyResult<bool> {
+    let cursor = Cursor::new(input);
+    let nbt = Nbt::read(&mut NbtReadHelper::new(cursor))
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let status = nbt.get_string("Status").ok_or(PyValueError::new_err(
+        "Chunk NBT does not have Status field".to_string(),
+    ))?;
+    Ok(status == "minecraft:full")
+}
+
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(batch_generate_chunk_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
+    m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;
     Ok(())
 }

@@ -8,7 +8,7 @@ import zlib
 from pathlib import Path
 from typing import TypedDict
 
-from pumpkin_py import normalize_nbt
+from pumpkin_py import is_chunk_status_full, normalize_nbt
 from structlog import get_logger
 
 log = get_logger()
@@ -249,7 +249,7 @@ class Flattener:
         )
         ri = lambda input_path: str(input_path.relative_to(self._unflatten_dir))  # noqa: E731
         ro = lambda output_path: str(output_path.relative_to(self._flatten_dir))  # noqa: E731
-        dimensions_dirs = [
+        dimensions_dirs: list[str | Path] = [
             "",
             "DIM1",
             "DIM-1",
@@ -268,15 +268,15 @@ class Flattener:
             if not input_path.exists():
                 log.warn("file not exists, skipped", file=input_path)
                 continue
-            region_id = get_id(input_path)
-            output_path = self._flatten_dir / "raw" / region_id
+            id = get_id(input_path)
+            output_path = self._flatten_dir / "raw" / id
             output_path.parent.mkdir(parents=True, exist_ok=True)
             if output_path.exists():
                 log.warning("overwrite to an existing file", file=output_path)
             output_path.write_bytes(input_path.read_bytes())
             index_json["raw"].append(
                 {
-                    "id": region_id,
+                    "id": id,
                     "input_path": ri(input_path),
                     "output_path": ro(output_path),
                 }
@@ -311,15 +311,15 @@ class Flattener:
             if not input_path.exists():
                 log.warn("file not exists, skipped", file=input_path)
                 continue
-            region_id = get_id(input_path)
-            output_path = self._flatten_dir / "gzip-nbt" / region_id
+            id = get_id(input_path)
+            output_path = self._flatten_dir / "gzip-nbt" / id
             output_path.parent.mkdir(parents=True, exist_ok=True)
             if output_path.exists():
                 log.warning("overwrite to an existing file", file=output_path)
             output_path.write_bytes(self.gzip_nbt_flatten(input_path.read_bytes()))
             index_json["gzip-nbt"].append(
                 {
-                    "id": region_id,
+                    "id": id,
                     "input_path": ri(input_path),
                     "output_path": ro(output_path),
                 }
@@ -328,14 +328,14 @@ class Flattener:
         index_json["region"] = []
         index_json["chunks"] = []
         region_files = [
-            file
+            (file, dimensions_region_file_parent)
             for dimensions_dir in dimensions_dirs
             for dimensions_region_file_parent in ["entities", "poi", "region"]
             for file in (
                 self._unflatten_dir / dimensions_dir / dimensions_region_file_parent
             ).glob("r.*.*.mca")
         ]
-        for input_path in region_files:
+        for input_path, file_type in region_files:
             log.debug("flattening", file=input_path)
             if not input_path.exists():
                 log.warn("file not exists, skipped", file=input_path)
@@ -359,8 +359,15 @@ class Flattener:
                     for chunk in result["chunks"]
                 ),
             ]
-            output_base = self._flatten_dir / "region" / get_id(input_path)
+            output_base = self._flatten_dir / "region" / file_type / get_id(input_path)
             for output_file_id, output_content, coord in output_files:
+                if (
+                    file_type == "region"
+                    and "chunk" in output_file_id
+                    and not is_chunk_status_full(output_content)
+                ):
+                    log.debug("chunk status is not full, skipped", file=output_file_id)
+                    continue
                 output_path = output_base / output_file_id
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 if output_path.exists():

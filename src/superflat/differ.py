@@ -68,24 +68,30 @@ class Differ:
                 patched_filepath = self._flatten_dir / rel_path
                 fname = patched_filepath.name
                 if "chunk" in fname:
-                    cm = re.search(r"chunk-x(-?\d+)-z(-?\d+)", fname)
-                    if not cm:
-                        raise ValueError(f"Cannot parse {patched_filepath}")
-                    chunk_x = int(cm.group(1))
-                    chunk_z = int(cm.group(2))
+                    if "region" in item["input_path"]:
+                        cm = re.search(r"chunk-x(-?\d+)-z(-?\d+)", fname)
+                        if not cm:
+                            raise ValueError(f"Cannot parse {patched_filepath}")
+                        chunk_x = int(cm.group(1))
+                        chunk_z = int(cm.group(2))
 
-                    base = self._chunk_manager.get(chunk_x, chunk_z)
-                    if not base:
-                        raise RuntimeError(
-                            f"ChunkManager cannot get chunk data at ({chunk_x}, {chunk_z}), but it should be generated before"
-                        )
-                    patched = patched_filepath.read_bytes()
+                        base = self._chunk_manager.get(chunk_x, chunk_z)
+                        if not base:
+                            raise RuntimeError(
+                                f"ChunkManager cannot get chunk data at ({chunk_x}, {chunk_z}), but it should be generated before"
+                            )
+                        patched = patched_filepath.read_bytes()
 
-                    diff = encode(base, patched)
-                    path = self._diff_dir / rel_path
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(diff)
-                    log.info(f"write {path}")
+                        diff = encode(base, patched)
+                        path = self._diff_dir / rel_path
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(diff)
+                        log.info(f"write {path}")
+                    else:
+                        path = self._diff_dir / rel_path
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.symlink_to(self._flatten_dir / rel_path)
+                        log.info(f"symlink {path} to {self._flatten_dir / rel_path}")
                 elif "timestamp-header" in fname:
                     path = self._diff_dir / rel_path
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,14 +100,15 @@ class Differ:
                 else:
                     raise ValueError(f"Unknown file {str(rel_path)}")
 
-        for item in index_json.get("raw", []) + index_json.get("gzip-nbt", []):
-            assert isinstance(item["input_path"], str)
-            assert isinstance(item["output_path"], str)
-            target_path: Path = self._flatten_dir / item["output_path"]
-            source_path: Path = self._diff_dir / item["input_path"]
-            source_path.parent.mkdir(parents=True, exist_ok=True)
-            source_path.symlink_to(target_path)
-            log.info(f"symlink {source_path} to {target_path}")
+        for t in ["raw", "gzip-nbt"]:
+            for item in index_json.get(t, []):
+                assert isinstance(item["input_path"], str)
+                assert isinstance(item["output_path"], str)
+                target_path: Path = self._flatten_dir / item["output_path"]
+                source_path: Path = self._diff_dir / t / item["id"]
+                source_path.parent.mkdir(parents=True, exist_ok=True)
+                source_path.symlink_to(target_path)
+                log.info(f"symlink {source_path} to {target_path}")
 
 
 if __name__ == "__main__":
