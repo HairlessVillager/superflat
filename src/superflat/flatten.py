@@ -33,7 +33,7 @@ class RegionFileFlattenResult(TypedDict):
     chunks: list[RegionFileFlattenEntry]
 
 
-class RegionFileDeflattenEntry(TypedDict):
+class RegionFileUnflattenEntry(TypedDict):
     filename: str
     content: bytes
 
@@ -57,14 +57,14 @@ class Chunk(TypedDict):
 
 class Flattener:
     def __init__(self, input_dir: Path, output_dir: Path):
-        self._input_dir = input_dir
-        self._output_dir = output_dir
+        self._unflatten_dir = input_dir
+        self._flatten_dir = output_dir
 
     def gzip_nbt_flatten(self, input: bytes) -> bytes:
         original_nbt = gzip.decompress(input)
         return normalize_nbt(original_nbt)
 
-    def gzip_nbt_deflatten(self, input: bytes) -> bytes:
+    def gzip_nbt_unflatten(self, input: bytes) -> bytes:
         return gzip.compress(input)
 
     def extract_region_xz(self, filename: str) -> tuple[int, int]:
@@ -176,9 +176,9 @@ class Flattener:
                 ],
             }
 
-    def region_file_deflatten(
+    def region_file_unflatten(
         self, flatten: RegionFileFlattenResult
-    ) -> list[RegionFileDeflattenEntry]:
+    ) -> list[RegionFileUnflattenEntry]:
         region_x = flatten["region_x"]
         region_z = flatten["region_z"]
 
@@ -242,26 +242,26 @@ class Flattener:
 
     def flatten(self):
         get_id = lambda input_path: (  # noqa: E731
-            str(input_path.relative_to(self._input_dir))
+            str(input_path.relative_to(self._unflatten_dir))
             .replace("/", "-")
             .replace(".", "-")
             .replace("_", "-")
         )
-        ri = lambda input_path: str(input_path.relative_to(self._input_dir))  # noqa: E731
-        ro = lambda output_path: str(output_path.relative_to(self._output_dir))  # noqa: E731
+        ri = lambda input_path: str(input_path.relative_to(self._unflatten_dir))  # noqa: E731
+        ro = lambda output_path: str(output_path.relative_to(self._flatten_dir))  # noqa: E731
         dimensions_dirs = [
             "",
             "DIM1",
             "DIM-1",
-            *self._input_dir.glob("dimensions/*/*"),
+            *self._unflatten_dir.glob("dimensions/*/*"),
         ]
         index_json = {}
 
         index_json["raw"] = []
         raw_files = [
-            self._input_dir / "icon.png",
-            *self._input_dir.glob("advancements/*.json"),
-            *self._input_dir.glob("stats/*.json"),
+            self._unflatten_dir / "icon.png",
+            *self._unflatten_dir.glob("advancements/*.json"),
+            *self._unflatten_dir.glob("stats/*.json"),
         ]
         for input_path in raw_files:
             log.debug("flattening", file=input_path)
@@ -269,8 +269,10 @@ class Flattener:
                 log.warn("file not exists, skipped", file=input_path)
                 continue
             region_id = get_id(input_path)
-            output_path = self._output_dir / "raw" / region_id
+            output_path = self._flatten_dir / "raw" / region_id
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            if output_path.exists():
+                log.warning("overwrite to an existing file", file=output_path)
             output_path.write_bytes(input_path.read_bytes())
             index_json["raw"].append(
                 {
@@ -283,17 +285,17 @@ class Flattener:
         index_json["gzip-nbt"] = []
         gzip_nbt_files = [
             # root
-            self._input_dir / "level.dat",
-            self._input_dir / "data/idcounts.dat",
-            *self._input_dir.glob("data/command_storage_*.dat"),
-            *self._input_dir.glob("data/map_*.dat"),
-            self._input_dir / "data/scoreboard.dat",
-            self._input_dir / "data/stopwatches.dat",
-            *self._input_dir.glob("generated/*/structures/*.nbt"),
-            *self._input_dir.glob("playerdata/*.dat"),
+            self._unflatten_dir / "level.dat",
+            self._unflatten_dir / "data/idcounts.dat",
+            *self._unflatten_dir.glob("data/command_storage_*.dat"),
+            *self._unflatten_dir.glob("data/map_*.dat"),
+            self._unflatten_dir / "data/scoreboard.dat",
+            self._unflatten_dir / "data/stopwatches.dat",
+            *self._unflatten_dir.glob("generated/*/structures/*.nbt"),
+            *self._unflatten_dir.glob("playerdata/*.dat"),
             # dimensions
             *(
-                self._input_dir / dimensions_dir / "data" / dimensions_gzip_nbt_file
+                self._unflatten_dir / dimensions_dir / "data" / dimensions_gzip_nbt_file
                 for dimensions_dir in dimensions_dirs
                 for dimensions_gzip_nbt_file in [
                     "chunks.dat",
@@ -310,8 +312,10 @@ class Flattener:
                 log.warn("file not exists, skipped", file=input_path)
                 continue
             region_id = get_id(input_path)
-            output_path = self._output_dir / "gzip-nbt" / region_id
+            output_path = self._flatten_dir / "gzip-nbt" / region_id
             output_path.parent.mkdir(parents=True, exist_ok=True)
+            if output_path.exists():
+                log.warning("overwrite to an existing file", file=output_path)
             output_path.write_bytes(self.gzip_nbt_flatten(input_path.read_bytes()))
             index_json["gzip-nbt"].append(
                 {
@@ -327,7 +331,7 @@ class Flattener:
             for dimensions_dir in dimensions_dirs
             for dimensions_region_file_parent in ["entities", "poi", "region"]
             for file in (
-                self._input_dir / dimensions_dir / dimensions_region_file_parent
+                self._unflatten_dir / dimensions_dir / dimensions_region_file_parent
             ).glob("r.*.*.mca")
         ]
         for input_path in region_files:
@@ -353,10 +357,12 @@ class Flattener:
                     for chunk in result["chunks"]
                 ),
             ]
-            output_base = self._output_dir / "region"
+            output_base = self._flatten_dir / "region" / get_id(input_path)
             for output_file_id, output_content in output_files:
                 output_path = output_base / output_file_id
                 output_path.parent.mkdir(parents=True, exist_ok=True)
+                if output_path.exists():
+                    log.warning("overwrite to an existing file", file=output_path)
                 output_path.write_bytes(output_content)
                 output_paths.append(ro(output_path))
 
@@ -368,15 +374,93 @@ class Flattener:
                 }
             )
 
-        with (self._output_dir / "index.json").open("w") as f:
+        with (self._flatten_dir / "index.json").open("w") as f:
             log.info("write index json")
             json.dump(index_json, f, indent=4)
 
-    def deflatten(self): ...
+        log.info("flatten process finished")
+
+    def unflatten(self):
+        index_path = self._flatten_dir / "index.json"
+        if not index_path.exists():
+            log.error("index.json not found, cannot unflatten", path=index_path)
+            return
+
+        with index_path.open("r") as f:
+            index_json = json.load(f)
+
+        for item in index_json.get("raw", []):
+            source_path = self._flatten_dir / item["output_path"]
+            target_path = self._unflatten_dir / item["input_path"]
+
+            log.debug("restoring raw file", target=item["input_path"])
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(source_path.read_bytes())
+
+        for item in index_json.get("gzip-nbt", []):
+            source_path = self._flatten_dir / item["output_path"]
+            target_path = self._unflatten_dir / item["input_path"]
+
+            log.debug("restoring gzip-nbt file", target=item["input_path"])
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            nbt_data = source_path.read_bytes()
+            target_path.write_bytes(self.gzip_nbt_unflatten(nbt_data))
+
+        for item in index_json.get("region", []):
+            m = re.match(r"x(-?\d+)-z(-?\d+)", item["id"])
+            if not m:
+                raise ValueError(f"Unknown id: {item['id']}")
+
+            region_x, region_z = int(m.group(1)), int(m.group(2))
+            log.debug("restoring region file", region_x=region_x, region_z=region_z)
+
+            chunks_to_pack: list[RegionFileFlattenEntry] = []
+
+            timestamp_header = None
+            for rel_path in item["output_paths"]:
+                p = self._flatten_dir / rel_path
+                fname = p.name
+
+                if "timestamp-header" in fname:
+                    timestamp_header = p.read_bytes()
+                elif "chunk" in fname:
+                    cm = re.search(r"chunk-x(-?\d+)-z(-?\d+)", fname)
+                    if cm:
+                        chunks_to_pack.append(
+                            {
+                                "chunk_x": int(cm.group(1)),
+                                "chunk_z": int(cm.group(2)),
+                                "nbt": p.read_bytes(),
+                            }
+                        )
+                else:
+                    raise ValueError(f"Unknown file {str(rel_path)}")
+            if not timestamp_header:
+                raise RuntimeError(
+                    f"Timestamp header file not found under region ({region_x}, {region_z})"
+                )
+
+            unflatten_entries = self.region_file_unflatten(
+                {
+                    "region_x": region_x,
+                    "region_z": region_z,
+                    "timestamp_header": timestamp_header,
+                    "chunks": chunks_to_pack,
+                }
+            )
+            for res in unflatten_entries:
+                target_path = self._unflatten_dir / item["input_path"]
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_bytes(res["content"])
+
+        log.info("unflatten process finished")
 
 
 if __name__ == "__main__":
     input_path = "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/test42"
-    output_path = "/home/hlsvillager/Desktop/superflat/temp"
-    flattener = Flattener(Path(input_path), Path(output_path))
+    flatten_path = "/home/hlsvillager/Desktop/superflat/temp/flatten"
+    unflatten_path = "/home/hlsvillager/Desktop/superflat/temp/unflatten"
+    flattener = Flattener(Path(input_path), Path(flatten_path))
     flattener.flatten()
+    flattener = Flattener(Path(unflatten_path), Path(flatten_path))
+    flattener.unflatten()
