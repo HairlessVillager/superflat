@@ -1,6 +1,7 @@
 # see https://minecraft.wiki/w/Java_Edition_level_format
 
 import gzip
+import json
 import math
 import re
 import zlib
@@ -13,6 +14,10 @@ from structlog import get_logger
 log = get_logger()
 
 SECTOR_SIZE = 4096
+
+
+class EmptyFile(Exception):
+    pass
 
 
 class RegionFileFlattenEntry(TypedDict):
@@ -74,11 +79,13 @@ class Flattener:
         region_x, region_z = self.extract_region_xz(file.name)
         log.debug("parse region position", filename=file, x=region_x, z=region_z)
         with file.open("rb") as region:
-            # parse header
+            log.debug("parse header")
             chunks: list[Chunk] = []
             locations_raw = memoryview(region.read(0x1000))
             timestamps_raw = memoryview(region.read(0x1000))
-            if len(locations_raw) != 0x1000 or len(timestamps_raw) != 0x1000:
+            if len(locations_raw) == 0 and len(timestamps_raw) == 0:
+                raise EmptyFile()
+            elif len(locations_raw) != 0x1000 or len(timestamps_raw) != 0x1000:
                 raise RuntimeError(
                     f"Region file {file} has truncated header: {len(locations_raw)} + {len(timestamps_raw)}"
                 )
@@ -94,9 +101,8 @@ class Flattener:
                 ts = int.from_bytes(
                     timestamps_raw[i * 4 : (i + 1) * 4], byteorder="big"
                 )
-                log.debug("meta info", i=i, x=x, z=z, offset=offset, size=size, ts=ts)
                 if offset == 0 and size == 0:
-                    log.debug("chunk not exists", i=i, x=x, z=z)
+                    # log.debug("chunk not exists", i=i, x=x, z=z)
                     continue
                 if offset < 2:
                     raise RuntimeError(
@@ -129,9 +135,8 @@ class Flattener:
                 )
             chunks.sort(key=lambda c: c["offset_sectors"])
 
-            # exrtact chunks
+            log.debug("extract chunk")
             for chunk in chunks:
-                log.debug("extract chunk", i=chunk["index"])
                 seek_offset = region.seek(chunk["offset_sectors"] * SECTOR_SIZE)
                 if seek_offset != chunk["offset_sectors"] * SECTOR_SIZE:
                     raise RuntimeError(
@@ -242,33 +247,40 @@ class Flattener:
             .replace(".", "-")
             .replace("_", "-")
         )
+        ri = lambda input_path: str(input_path.relative_to(self._input_dir))  # noqa: E731
+        ro = lambda output_path: str(output_path.relative_to(self._output_dir))  # noqa: E731
         dimensions_dirs = [
             "",
             "DIM1",
             "DIM-1",
             *self._input_dir.glob("dimensions/*/*"),
         ]
-        check_list = {}
+        index_json = {}
 
-        check_list["raw"] = []
+        index_json["raw"] = []
         raw_files = [
             self._input_dir / "icon.png",
             *self._input_dir.glob("advancements/*.json"),
             *self._input_dir.glob("stats/*.json"),
         ]
         for input_path in raw_files:
+            log.debug("flattening", file=input_path)
             if not input_path.exists():
-                log.warn("file not exists, skipped", input_path=input_path)
+                log.warn("file not exists, skipped", file=input_path)
                 continue
-            id = get_id(input_path)
-            output_path = self._output_dir / "raw" / id
+            region_id = get_id(input_path)
+            output_path = self._output_dir / "raw" / region_id
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(input_path.read_bytes())
-            check_list["raw"].append(
-                {"id": id, "input_path": input_path, "output_path": output_path}
+            index_json["raw"].append(
+                {
+                    "id": region_id,
+                    "input_path": ri(input_path),
+                    "output_path": ro(output_path),
+                }
             )
 
-        check_list["gzip-nbt"] = []
+        index_json["gzip-nbt"] = []
         gzip_nbt_files = [
             # root
             self._input_dir / "level.dat",
@@ -293,51 +305,78 @@ class Flattener:
             ),
         ]
         for input_path in gzip_nbt_files:
+            log.debug("flattening", file=input_path)
             if not input_path.exists():
-                log.warn("file not exists, skipped", input_path=input_path)
+                log.warn("file not exists, skipped", file=input_path)
                 continue
-            id = get_id(input_path)
-            output_path = self._output_dir / "gzip-nbt" / id
+            region_id = get_id(input_path)
+            output_path = self._output_dir / "gzip-nbt" / region_id
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(self.gzip_nbt_flatten(input_path.read_bytes()))
-            check_list["gzip-nbt"].append(
-                {"id": id, "input_path": input_path, "output_path": output_path}
+            index_json["gzip-nbt"].append(
+                {
+                    "id": region_id,
+                    "input_path": ri(input_path),
+                    "output_path": ro(output_path),
+                }
             )
 
-        check_list["region"] = []
+        index_json["region"] = []
         region_files = [
             file
             for dimensions_dir in dimensions_dirs
             for dimensions_region_file_parent in ["entities", "poi", "region"]
             for file in (
-                self._input_dir
-                / dimensions_dir
-                / "data"
-                / dimensions_region_file_parent
+                self._input_dir / dimensions_dir / dimensions_region_file_parent
             ).glob("r.*.*.mca")
         ]
         for input_path in region_files:
+            log.debug("flattening", file=input_path)
             if not input_path.exists():
-                log.warn("file not exists, skipped", input_path=input_path)
+                log.warn("file not exists, skipped", file=input_path)
                 continue
-            result = self.region_file_flatten(input_path)
+            try:
+                result = self.region_file_flatten(input_path)
+            except EmptyFile:
+                log.info("empty file, skipped", file=input_path)
+                continue
             output_paths = []
 
-            id = f"x{result['region_x']}-z{result['region_z']}"
+            region_id = f"x{result['region_x']}-z{result['region_z']}"
             output_files = [
-                ("timestamp-header", result["timestamp_header"]),
+                (
+                    f"timestamp-header-{region_id}",
+                    result["timestamp_header"],
+                ),
                 *(
-                    (f"x{chunk['chunk_x']}-z{chunk['chunk_z']}", chunk["nbt"])
+                    (f"chunk-x{chunk['chunk_x']}-z{chunk['chunk_z']}", chunk["nbt"])
                     for chunk in result["chunks"]
                 ),
             ]
-            output_base = self._output_dir / "region" / id
+            output_base = self._output_dir / "region"
             for output_file_id, output_content in output_files:
                 output_path = output_base / output_file_id
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_bytes(output_content)
-                output_paths.append(output_path)
+                output_paths.append(ro(output_path))
 
-            check_list["gzip-nbt"].append(
-                {"id": id, "input_path": input_path, "output_paths": output_paths}
+            index_json["region"].append(
+                {
+                    "id": region_id,
+                    "input_path": ri(input_path),
+                    "output_paths": output_paths,
+                }
             )
+
+        with (self._output_dir / "index.json").open("w") as f:
+            log.info("write index json")
+            json.dump(index_json, f, indent=4)
+
+    def deflatten(self): ...
+
+
+if __name__ == "__main__":
+    input_path = "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/test42"
+    output_path = "/home/hlsvillager/Desktop/superflat/temp"
+    flattener = Flattener(Path(input_path), Path(output_path))
+    flattener.flatten()
