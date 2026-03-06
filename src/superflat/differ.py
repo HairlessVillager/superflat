@@ -28,6 +28,7 @@ class ChunkManager:
             path = self.cache_filepath(chunk_x, chunk_z)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(nbt)
+            log.debug(f"write nbt data to {path}")
 
     def get(self, chunk_x: int, chunk_z: int) -> bytes | None:
         path = self.cache_filepath(chunk_x, chunk_z)
@@ -55,7 +56,7 @@ class Differ:
         with index_path.open("r") as f:
             index_json = json.load(f)
 
-        self._chunk_manager.batch_generate(index_json["chunks"])
+        self._chunk_manager.batch_generate([tuple(c) for c in index_json["chunks"]])
 
         for i, item in enumerate(index_json.get("region", [])):
             for j, rel_path in enumerate(item["output_paths"]):
@@ -101,3 +102,11 @@ class Differ:
             source_path.parent.mkdir(parents=True, exist_ok=True)
             source_path.symlink_to(target_path)
             log.info(f"symlink {source_path} to {target_path}")
+
+
+if __name__ == "__main__":
+    flatten_path = "/home/hlsvillager/Desktop/superflat/temp/flatten"
+    diff_path = "/home/hlsvillager/Desktop/superflat/temp/diff"
+
+    differ = Differ(42, Path(flatten_path), Path(diff_path))
+    differ.diff()
