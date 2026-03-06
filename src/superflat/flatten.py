@@ -326,6 +326,7 @@ class Flattener:
             )
 
         index_json["region"] = []
+        index_json["chunks"] = []
         region_files = [
             file
             for dimensions_dir in dimensions_dirs
@@ -347,24 +348,28 @@ class Flattener:
             output_paths = []
 
             region_id = f"x{result['region_x']}-z{result['region_z']}"
-            output_files = [
-                (
-                    f"timestamp-header-{region_id}",
-                    result["timestamp_header"],
-                ),
+            output_files: list[tuple[str, bytes, tuple[int, int] | None]] = [
+                (f"timestamp-header-{region_id}", result["timestamp_header"], None),
                 *(
-                    (f"chunk-x{chunk['chunk_x']}-z{chunk['chunk_z']}", chunk["nbt"])
+                    (
+                        f"chunk-x{chunk['chunk_x']}-z{chunk['chunk_z']}",
+                        chunk["nbt"],
+                        (chunk["chunk_x"], chunk["chunk_z"]),
+                    )
                     for chunk in result["chunks"]
                 ),
             ]
             output_base = self._flatten_dir / "region" / get_id(input_path)
-            for output_file_id, output_content in output_files:
+            for output_file_id, output_content, coord in output_files:
                 output_path = output_base / output_file_id
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 if output_path.exists():
                     log.warning("overwrite to an existing file", file=output_path)
                 output_path.write_bytes(output_content)
                 output_paths.append(ro(output_path))
+
+                if coord:
+                    index_json["chunks"].append(coord)
 
             index_json["region"].append(
                 {
@@ -376,20 +381,21 @@ class Flattener:
 
         with (self._flatten_dir / "index.json").open("w") as f:
             log.info("write index json")
-            json.dump(index_json, f, indent=4)
+            json.dump(index_json, f)
 
         log.info("flatten process finished")
 
     def unflatten(self):
         index_path = self._flatten_dir / "index.json"
         if not index_path.exists():
-            log.error("index.json not found, cannot unflatten", path=index_path)
-            return
+            raise RuntimeError("index.json not found, cannot unflatten")
 
         with index_path.open("r") as f:
             index_json = json.load(f)
 
         for item in index_json.get("raw", []):
+            assert isinstance(item["input_path"], str)
+            assert isinstance(item["output_path"], str)
             source_path = self._flatten_dir / item["output_path"]
             target_path = self._unflatten_dir / item["input_path"]
 
@@ -398,6 +404,8 @@ class Flattener:
             target_path.write_bytes(source_path.read_bytes())
 
         for item in index_json.get("gzip-nbt", []):
+            assert isinstance(item["input_path"], str)
+            assert isinstance(item["output_path"], str)
             source_path = self._flatten_dir / item["output_path"]
             target_path = self._unflatten_dir / item["input_path"]
 
@@ -418,6 +426,7 @@ class Flattener:
 
             timestamp_header = None
             for rel_path in item["output_paths"]:
+                assert isinstance(rel_path, str)
                 p = self._flatten_dir / rel_path
                 fname = p.name
 

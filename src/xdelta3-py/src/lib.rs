@@ -5,8 +5,8 @@ mod xdelta3_py {
     use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyBytes};
 
     #[pyfunction]
-    fn encode<'py>(py: Python<'py>, base: &[u8], expected: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
-        let bytes = xdelta3::encode(base, expected)
+    fn encode<'py>(py: Python<'py>, base: &[u8], patched: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
+        let bytes = xdelta3::encode(base, patched)
             .map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))?;
         Ok(PyBytes::new(py, &bytes))
     }
