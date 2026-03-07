@@ -157,6 +157,20 @@ fn sf_to_chunk(superflat: &[u8]) -> PyResult<Vec<u8>> {
         .map_err(|e| PyRuntimeError::new_err(e))?)
 }
 
+#[pyfunction]
+fn sf_from_seed_batch(seed: u64, coords: Vec<(i32, i32)>) -> PyResult<Vec<Vec<u8>>> {
+    coords
+        .into_par_iter()
+        .map(|(chunk_x, chunk_z)| {
+            let nbt = generate_chunk_data(seed, chunk_x, chunk_z)
+                .map_err(|e| PyRuntimeError::new_err(e))?;
+            let sf = Superflatten::from_chunk_data(&nbt);
+            sf.dump_to_nbt()
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        })
+        .collect::<PyResult<Vec<Vec<u8>>>>()
+}
+
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
@@ -166,5 +180,6 @@ fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sf_from_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(sf_from_seed, m)?)?;
     m.add_function(wrap_pyfunction!(sf_to_chunk, m)?)?;
+    m.add_function(wrap_pyfunction!(sf_from_seed_batch, m)?)?;
     Ok(())
 }
