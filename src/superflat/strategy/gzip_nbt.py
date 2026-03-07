@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import override
 
 from pumpkin_py import normalize_nbt
+from superflat.paths import gzip_nbt_paths
 
 from .base import Strategy
 
@@ -11,30 +12,13 @@ from .base import Strategy
 class GzipNbtFileStrategy(Strategy):
     @cached_property
     @override
-    def paths(self) -> set[Path]:
-        return {
-            # root
-            self.save_dir / "level.dat",
-            self.save_dir / "data/idcounts.dat",
-            *self.save_dir.glob("data/command_storage_*.dat"),
-            *self.save_dir.glob("data/map_*.dat"),
-            self.save_dir / "data/scoreboard.dat",
-            self.save_dir / "data/stopwatches.dat",
-            *self.save_dir.glob("generated/*/structures/*.nbt"),
-            *self.save_dir.glob("playerdata/*.dat"),
-            # dimensions
-            *(
-                self.save_dir / dimensions_dir / "data" / dimensions_gzip_nbt_file
-                for dimensions_dir in self.dimensions_dirs
-                for dimensions_gzip_nbt_file in [
-                    "chunks.dat",
-                    "raids.dat",
-                    "raids_end.dat",
-                    "random_sequences.dat",
-                    "world_border.dat",
-                ]
-            ),
-        }
+    def flatten_paths(self) -> set[Path]:
+        return gzip_nbt_paths(self.save_dir)
+
+    @cached_property
+    @override
+    def unflatten_paths(self) -> set[Path]:
+        return gzip_nbt_paths(self.git_dir)
 
     @override
     def flatten(self, rel_path: Path):

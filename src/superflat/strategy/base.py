@@ -2,28 +2,25 @@ from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
 
+from superflat.config import Config
+
 
 class Strategy(ABC):
-    def __init__(self, save_dir: Path, git_dir: Path, cache_dir: Path):
-        self.save_dir = save_dir
-        self.git_dir = git_dir
-        self.cache_dir = cache_dir
-
-    @cached_property
-    def dimensions_dirs(self) -> set[Path]:
-        return {
-            self.save_dir,
-            self.save_dir / "DIM1",
-            self.save_dir / "DIM-1",
-            *self.save_dir.glob("dimensions/*/*"),
-        }
+    def __init__(self, config: Config):
+        self.save_dir = config["save_dir"]
+        self.git_dir = config["git_dir"]
+        self.sfnbt_manager = config["sfnbt_manager"]
 
     @cached_property
     @abstractmethod
-    def paths(self) -> set[Path]: ...
+    def flatten_paths(self) -> set[Path]: ...
 
     @abstractmethod
     def flatten(self, rel_path: Path): ...
+
+    @cached_property
+    @abstractmethod
+    def unflatten_paths(self) -> set[Path]: ...
 
     @abstractmethod
     def unflatten(self, rel_path: Path): ...

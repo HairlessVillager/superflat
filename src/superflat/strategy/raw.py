@@ -3,18 +3,21 @@ from functools import cached_property
 from pathlib import Path
 from typing import override
 
+from superflat.paths import raw_paths
+
 from .base import Strategy
 
 
 class RawFileStrategy(Strategy):
     @cached_property
     @override
-    def paths(self) -> set[Path]:
-        return {
-            self.save_dir / "icon.png",
-            *self.save_dir.glob("advancements/*.json"),
-            *self.save_dir.glob("stats/*.json"),
-        }
+    def flatten_paths(self) -> set[Path]:
+        return raw_paths(self.save_dir)
+
+    @cached_property
+    @override
+    def unflatten_paths(self) -> set[Path]:
+        return raw_paths(self.git_dir)
 
     @override
     def flatten(self, rel_path: Path):
