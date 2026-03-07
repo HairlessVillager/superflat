@@ -1,7 +1,8 @@
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_nbt::deserializer::NbtReadHelper;
 use pumpkin_nbt::{Nbt, normalize_nbt_bytes};
-use pyo3::exceptions::PyValueError;
+use pumpkin_world::chunk::ChunkData;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::{prelude::*, wrap_pyfunction};
 
 use rayon::prelude::*;
@@ -15,6 +16,10 @@ use pumpkin_world::chunk::format::anvil::SingleChunkDataSerializer;
 use pumpkin_world::chunk_system::{Chunk, StagedChunkEnum, generate_single_chunk};
 use pumpkin_world::generation::get_world_gen;
 use pumpkin_world::world::BlockRegistryExt;
+
+mod superflat;
+
+use superflat::Superflatten;
 
 struct BlockRegistry;
 impl BlockRegistryExt for BlockRegistry {
@@ -43,10 +48,12 @@ fn sync_generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> Result<Vec<
         block_registry.as_ref(),
         chunk_x,
         chunk_z,
-        StagedChunkEnum::Surface,
+        StagedChunkEnum::Full,
     );
 
-    chunk.upgrade_to_level_chunk(&dimension, &LightingEngineConfig::Default);
+    if let Chunk::Proto(_) = chunk {
+        chunk.upgrade_to_level_chunk(&dimension, &LightingEngineConfig::Default);
+    }
 
     if let Chunk::Level(chunk) = chunk {
         futures::executor::block_on(async {
@@ -56,6 +63,34 @@ fn sync_generate_chunk_nbt(seed: u64, chunk_x: i32, chunk_z: i32) -> Result<Vec<
                 .map(|v| v.into())
                 .map_err(|e| e.to_string())
         })
+    } else {
+        Err("Failed to upgrade chunk to Level stage".to_string())
+    }
+}
+
+fn generate_chunk_data(seed: u64, chunk_x: i32, chunk_z: i32) -> Result<Arc<ChunkData>, String> {
+    let dimension = Dimension::OVERWORLD;
+    let seed_val = Seed(seed);
+    let block_registry = Arc::new(BlockRegistry);
+    let world_gen = get_world_gen(seed_val, dimension);
+    let biome_mixer_seed = hash_seed(world_gen.random_config.seed);
+
+    let mut chunk = generate_single_chunk(
+        &dimension,
+        biome_mixer_seed,
+        &world_gen,
+        block_registry.as_ref(),
+        chunk_x,
+        chunk_z,
+        StagedChunkEnum::Full,
+    );
+
+    if let Chunk::Proto(_) = chunk {
+        chunk.upgrade_to_level_chunk(&dimension, &LightingEngineConfig::Default);
+    }
+
+    if let Chunk::Level(chunk) = chunk {
+        Ok(chunk)
     } else {
         Err("Failed to upgrade chunk to Level stage".to_string())
     }
@@ -97,11 +132,39 @@ fn is_chunk_status_full(input: &[u8]) -> PyResult<bool> {
     Ok(status == "minecraft:full")
 }
 
+#[pyfunction]
+fn sf_from_nbt(nbt: &[u8]) -> PyResult<Vec<u8>> {
+    Ok(Superflatten::from_chunk_nbt(nbt)
+        .map_err(|e| PyRuntimeError::new_err(e))?
+        .dump_to_nbt()
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?)
+}
+
+#[pyfunction]
+fn sf_from_seed(seed: u64, chunk_x: i32, chunk_z: i32) -> PyResult<Vec<u8>> {
+    let nbt =
+        generate_chunk_data(seed, chunk_x, chunk_z).map_err(|e| PyRuntimeError::new_err(e))?;
+    let sf = Superflatten::from_chunk_data(&nbt);
+    sf.dump_to_nbt()
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+}
+
+#[pyfunction]
+fn sf_to_chunk(superflat: &[u8]) -> PyResult<Vec<u8>> {
+    Ok(Superflatten::load_from_nbt(superflat)
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+        .to_chunk()
+        .map_err(|e| PyRuntimeError::new_err(e))?)
+}
+
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(batch_generate_chunk_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;
+    m.add_function(wrap_pyfunction!(sf_from_nbt, m)?)?;
+    m.add_function(wrap_pyfunction!(sf_from_seed, m)?)?;
+    m.add_function(wrap_pyfunction!(sf_to_chunk, m)?)?;
     Ok(())
 }
