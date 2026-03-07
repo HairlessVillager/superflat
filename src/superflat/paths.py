@@ -70,3 +70,27 @@ def region_paths_unflatten(base_dir) -> set[Path]:
             "r.*.*.mca/"
         )
     }
+
+
+@cache
+def basic_region_paths_flatten(base_dir) -> set[Path]:
+    return {
+        file
+        for dimensions_dir in dimensions_dirs(base_dir)
+        for dimensions_region_file_parent in ["region"]
+        for file in (base_dir / dimensions_dir / dimensions_region_file_parent).glob(
+            "r.*.*.mca"
+        )
+    }
+
+
+@cache
+def basic_region_paths_unflatten(base_dir) -> set[Path]:
+    return {
+        file
+        for dimensions_dir in dimensions_dirs(base_dir)
+        for dimensions_region_file_parent in ["region"]
+        for file in (base_dir / dimensions_dir / dimensions_region_file_parent).glob(
+            "r.*.*.mca/"
+        )
+    }

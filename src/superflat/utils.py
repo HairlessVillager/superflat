@@ -13,6 +13,8 @@ log = structlog.get_logger()
 
 SECTOR_SIZE = 4096
 
+type Coords = set[tuple[int, int]]
+
 
 class RegionFile(TypedDict):
     region_x: int
@@ -23,7 +25,7 @@ class RegionFile(TypedDict):
 
 
 def exrtact_xz(filename: str) -> tuple[int, int] | None:
-    mc = re.match(r".(-?\d+)\.(-?\d+)\.", filename)
+    mc = re.search(r"\.(-?\d+)\.(-?\d+)\.", filename)
     if not mc:
         return None
     x = int(mc.group(1))
@@ -31,15 +33,13 @@ def exrtact_xz(filename: str) -> tuple[int, int] | None:
     return (x, z)
 
 
-def get_full_chunks(
-    region_filepath: Path, region_x: int, region_z: int
-) -> list[tuple[int, int]]:
+def get_full_chunks(region_filepath: Path, region_x: int, region_z: int) -> Coords:
     region = read_region_file(region_filepath, region_x, region_z)
-    return [
+    return {
         (chunk_x, chunk_z)
         for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items()
         if is_chunk_status_full(nbt)
-    ]
+    }
 
 
 def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> RegionFile:
@@ -59,7 +59,7 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
         size_sectors: int
         compression_type: int | None
 
-    with bound_contextvars(filename=region_filepath, x=region_x, z=region_z):
+    with bound_contextvars(region_filepath=region_filepath, x=region_x, z=region_z):
         with region_filepath.open("rb") as region_reader:
             log.debug("Parsing header")
             chunks: list[Chunk] = []
@@ -162,7 +162,7 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
 
 def write_region_file(region: RegionFile, region_filepath: Path):
     if region["is_empty"]:
-        region_filepath.write_bytes(b"")
+        write_bin(region_filepath, b"")
         return
 
     region_x = region["region_x"]
@@ -217,4 +217,9 @@ def write_region_file(region: RegionFile, region_filepath: Path):
         current_sector += sectors_needed
 
     content = locations + timestamps + chunk_data_buffer
-    region_filepath.write_bytes(content)
+    write_bin(region_filepath, content)
+
+
+def write_bin(filepath: Path, data: bytes | bytearray):
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    filepath.write_bytes(data)

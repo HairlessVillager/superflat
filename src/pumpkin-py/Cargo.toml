@@ -21,3 +21,4 @@ pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 rayon = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = "1.49.0"
+zstd = "0.13.3"

@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import override
 
 from superflat.paths import raw_paths
-
-from .base import Strategy
+from superflat.strategy.base import Strategy
 
 
 class RawFileStrategy(Strategy):
@@ -21,8 +20,12 @@ class RawFileStrategy(Strategy):
 
     @override
     def flatten(self, rel_path: Path):
-        shutil.copy2(self.save_dir / rel_path, self.git_dir / rel_path)
+        dst = self.git_dir / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.save_dir / rel_path, dst)
 
     @override
     def unflatten(self, rel_path: Path):
+        dst = self.save_dir / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.git_dir / rel_path, self.save_dir / rel_path)

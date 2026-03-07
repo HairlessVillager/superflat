@@ -3,7 +3,7 @@ use std::io::Cursor;
 use pumpkin_nbt::Error as NbtError;
 use pumpkin_nbt::deserializer::NbtReadHelper;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_nbt::{Nbt, from_bytes, to_bytes};
+use pumpkin_nbt::{Nbt, from_bytes, normalize_nbt_bytes, to_bytes};
 use pumpkin_world::chunk::ChunkSections;
 use pumpkin_world::chunk::format::ChunkSectionNBT;
 use pumpkin_world::chunk::{ChunkData, format::ChunkNbt};
@@ -119,11 +119,18 @@ impl Superflatten {
         Ok(chunk.write().into())
     }
     pub fn load_from_nbt(nbt: &[u8]) -> Result<Self, NbtError> {
+        // let nbt = zstd::decode_all(Cursor::new(&nbt)).expect("Error on zstd decode");
         from_bytes(Cursor::new(nbt))
     }
     pub fn dump_to_nbt(&self) -> Result<Vec<u8>, NbtError> {
         let mut bytes = Vec::new(); // TODO: use .with_capacity here
         to_bytes(self, &mut bytes)?;
+        let bytes: Vec<u8> = normalize_nbt_bytes(&bytes).map(|v| v.into())?;
+        // let bytes = if compress {
+        //     zstd::encode_all(Cursor::new(&bytes), 0).expect("Error on zstd encode")
+        // } else {
+        //     bytes
+        // };
         Ok(bytes)
     }
 }

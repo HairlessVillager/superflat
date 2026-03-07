@@ -3,12 +3,12 @@ from pathlib import Path
 from typing import override
 
 import structlog
+from pumpkin_py import generate_chunk_nbt, sf_from_nbt
 from xdelta3_py import decode, encode
 
 from superflat.paths import region_paths_flatten, region_paths_unflatten
-from superflat.utils import exrtact_xz, read_region_file, write_region_file
-
-from .base import Strategy
+from superflat.strategy.base import Strategy
+from superflat.utils import exrtact_xz, read_region_file, write_bin, write_region_file
 
 log = structlog.get_logger()
 
@@ -35,17 +35,57 @@ class RegionFileStrategy(Strategy):
         # (self.git_dir / rel_path).mkdir(parents=True, exist_ok=True)
         if region["is_empty"]:
             return
-        (self.git_dir / rel_path / "timestamp-header").write_bytes(
-            region["timestamp_header"]
+        write_bin(
+            self.git_dir / rel_path / "timestamp-header", region["timestamp_header"]
         )
-        for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
-            target = nbt
-            base = self.sfnbt_manager.get(chunk_x, chunk_z)
-            if not base:
-                raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
-            delta = encode(base, target)
-            delta_filepath = self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.sf.delta"
-            delta_filepath.write_bytes(delta)
+        if "region" in str(rel_path):
+            log.debug("Writing deltas")
+            for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
+                if (chunk_x, chunk_z) not in self.full_chunks:
+                    continue
+
+                try:
+                    target = sf_from_nbt(nbt)
+                except RuntimeError:
+                    log.error(
+                        f"Failed to sf_from_nbt, {chunk_x, chunk_z}",
+                        chunk_x=chunk_x,
+                        chunk_z=chunk_z,
+                    )
+                    write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/nbt"), nbt)
+                    raise
+
+                base = self.sfnbt_manager.get(chunk_x, chunk_z)
+                if not base:
+                    raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
+
+                # TODO: debug, remove this
+                if (chunk_x, chunk_z) == (0, 0) and "region" in str(rel_path):
+                    write_bin(
+                        Path("/home/hlsvillager/Desktop/superflat/temp/base"), base
+                    )
+                    write_bin(
+                        Path("/home/hlsvillager/Desktop/superflat/temp/target"), target
+                    )
+                    write_bin(
+                        Path("/home/hlsvillager/Desktop/superflat/temp/target-nbt"), nbt
+                    )
+                    write_bin(
+                        Path("/home/hlsvillager/Desktop/superflat/temp/base-nbt"),
+                        generate_chunk_nbt(42, 0, 0),
+                    )
+                    exit(1)
+
+                delta = encode(base, target)
+                delta_filepath = (
+                    self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.sf.delta"
+                )
+                write_bin(delta_filepath, delta)
+            log.debug("Deltas written")
+        else:
+            for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
+                nbt_filepath = self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.nbt"
+                write_bin(nbt_filepath, nbt)
 
     @override
     def unflatten(self, rel_path: Path):
