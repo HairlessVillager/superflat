@@ -1,34 +1,37 @@
-import asyncio
 from collections import Counter
 from hashlib import sha256
+from pathlib import Path
 from random import randint, seed
 
 import structlog
-from pumpkin_py import generate_chunk_nbt
+from pumpkin_py import generate_chunk_nbt, normalize_nbt
 
 SECTOR_SIZE = 4096
 
 log = structlog.get_logger()
 
 
-async def random_test():
+def random_test():
     log.info("running random test")
     seed(42)
+    Path("temp").mkdir(exist_ok=True)
     for i in range(1000):
         world_seed = randint(0, 1_000_000_000)
         chunk_x = randint(-1000, 1000)
         chunk_z = randint(-1000, 1000)
         log.info(
-            "test case running", world_seed=world_seed, chunk_x=chunk_x, chunk_z=chunk_z
+            "test case running",
+            world_seed=world_seed,
+            chunk_x=chunk_x,
+            chunk_z=chunk_z,
+            iter=i,
         )
-        result1 = await generate_chunk_nbt(world_seed, chunk_x, chunk_z)
-        assert isinstance(result1, bytes)
-        result2 = await generate_chunk_nbt(world_seed, chunk_x, chunk_z)
-        assert isinstance(result2, bytes)
+        result1 = normalize_nbt(generate_chunk_nbt(world_seed, chunk_x, chunk_z))
+        result2 = normalize_nbt(generate_chunk_nbt(world_seed, chunk_x, chunk_z))
         if not result1 == result2:
-            with open(f"{i}-a.nbt", "wb") as f:
+            with open(f"temp/{i}-a.nbt", "wb") as f:
                 f.write(result1)
-            with open(f"{i}-b.nbt", "wb") as f:
+            with open(f"temp/{i}-b.nbt", "wb") as f:
                 f.write(result2)
             log.error(
                 "assert eq failed",
@@ -38,7 +41,7 @@ async def random_test():
             )
 
 
-async def brute_force_test():
+def brute_force_test():
     log.info("running brute force test")
     hash_set: set[bytes] = set()
     hash_list = []
@@ -47,7 +50,7 @@ async def brute_force_test():
         chunk_x = 669
         chunk_z = 473
         world_seed = 657830420
-        result = await generate_chunk_nbt(world_seed, chunk_x, chunk_z)
+        result = generate_chunk_nbt(world_seed, chunk_x, chunk_z)
         assert isinstance(result, bytes)
         hash = sha256(result).digest()
         hash_list.append(hash)
@@ -70,16 +73,16 @@ async def brute_force_test():
     log.info(f"hash counter: {Counter(hash_list)}")
 
 
-async def single_case_test():
+def single_case_test():
     log.info("running single case test")
     chunk_x = 669
     chunk_z = 473
     world_seed = 657830420
-    result1 = await generate_chunk_nbt(world_seed, chunk_x, chunk_z)
+    result1 = generate_chunk_nbt(world_seed, chunk_x, chunk_z)
     assert isinstance(result1, bytes)
     # with open("out1.nbt", "wb") as f:
     #     f.write(result1)
-    result2 = await generate_chunk_nbt(world_seed, chunk_x, chunk_z)
+    result2 = generate_chunk_nbt(world_seed, chunk_x, chunk_z)
     assert isinstance(result2, bytes)
     # with open("out2.nbt", "wb") as f:
     #     f.write(result2)
@@ -90,7 +93,7 @@ def main(log_level: str = "info"):
     structlog.configure(
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
     )
-    asyncio.run(random_test())
+    random_test()
 
 
 if __name__ == "__main__":
