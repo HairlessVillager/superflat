@@ -77,7 +77,22 @@ impl Superflatten {
             other: {
                 let mut nbt = Nbt::read(&mut NbtReadHelper::new(Cursor::new(chunk_nbt)))
                     .map_err(|_| "Failed to parse chunk data when building other")?;
-                let _ = nbt.root_tag.child_tags.pop_if(|(key, _)| key == "sections");
+
+                nbt.root_tag.child_tags = nbt
+                    .root_tag
+                    .child_tags
+                    .into_iter()
+                    .filter_map(|(k, v)| match k.as_str() {
+                        // remove sections field
+                        "sections" => None,
+
+                        // turn off light, Minecraft server will re-compute them
+                        "isLightOn" => Some((k, NbtTag::Byte(0b0))), // 0b0 => false
+
+                        _ => Some((k, v)),
+                    })
+                    .collect();
+
                 Some(nbt)
             },
         };
@@ -135,6 +150,16 @@ impl Superflatten {
         // };
         Ok(bytes)
     }
+    pub fn load_from_sections_other(sections: &[u8], other: &[u8]) -> Self {
+        let sections =
+            from_bytes::<SectionsDump>(Cursor::new(sections)).expect("Failed to load sections");
+        let other =
+            Nbt::read(&mut NbtReadHelper::new(Cursor::new(other))).expect("Failed to load other");
+        Self {
+            sections,
+            other: Some(other),
+        }
+    }
     pub fn dump_to_sections_other(self) -> (Vec<u8>, Vec<u8>) {
         let mut sections = Vec::new(); // TODO: use .with_capacity here
         to_bytes(&self.sections, &mut sections).expect("Failed to dump thin data");
@@ -143,5 +168,20 @@ impl Superflatten {
             .expect("Failed to normalize thin data");
         let other: Vec<u8> = self.other.map(|v| v.write().into()).unwrap_or(Vec::new());
         (sections, other)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::superflat::Superflatten;
+
+    #[test]
+    fn something_works() {
+        let nbt =
+            std::fs::read(Path::new("/home/hlsvillager/Desktop/superflat/temp/nbt2")).unwrap();
+        let sf = Superflatten::from_chunk_nbt(&nbt).unwrap();
+        sf.dump_to_sections_other();
     }
 }

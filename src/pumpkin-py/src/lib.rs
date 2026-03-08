@@ -185,6 +185,13 @@ fn seed_to_sections(seed: u64, chunk_x: i32, chunk_z: i32) -> Vec<u8> {
     sf.dump_to_sections_other().0
 }
 
+#[pyfunction]
+fn sections_other_to_chunk(sections: &[u8], other: &[u8]) -> Vec<u8> {
+    Superflatten::load_from_sections_other(sections, other)
+        .to_chunk()
+        .expect("Failed to chunk")
+}
+
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
@@ -197,5 +204,6 @@ fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sf_from_seed_batch, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_to_sections_other, m)?)?;
     m.add_function(wrap_pyfunction!(seed_to_sections, m)?)?;
+    m.add_function(wrap_pyfunction!(sections_other_to_chunk, m)?)?;
     Ok(())
 }

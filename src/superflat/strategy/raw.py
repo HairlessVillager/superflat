@@ -28,4 +28,4 @@ class RawFileStrategy(Strategy):
     def unflatten(self, rel_path: Path):
         dst = self.save_dir / rel_path
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(self.git_dir / rel_path, self.save_dir / rel_path)
+        shutil.copy2(self.git_dir / rel_path, dst)

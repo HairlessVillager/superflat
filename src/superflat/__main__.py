@@ -14,18 +14,24 @@ from superflat.strategy.region import ChunkRegionFileStrategy, OtherRegionFileSt
 from superflat.utils import exrtact_xz, get_full_chunks
 
 APP_NAME = "superflat"
+app = typer.Typer(name=APP_NAME)
 log = structlog.get_logger()
 
 
-def main(log_level: str = "info"):
-    structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(log_level),
-    )
-    log.info("Hello from superflat!")
+@app.command()
+def commit(): ...  # TODO
 
 
-def cli():
-    typer.run(main)
+@app.command()
+def restore(): ...  # TODO
+
+
+@app.command()
+def push(): ...  # TODO
+
+
+@app.command()
+def pull(): ...  # TODO
 
 
 class Superflat:
@@ -36,12 +42,6 @@ class Superflat:
         self.cache_dir = config["cache_dir"]
         self.strategy_classes = config["strategy_classes"]
         self.dumper = config["dumper"]
-
-        # simple validation
-        if not (self.save_dir / "level.dat").exists():
-            raise ValueError(
-                f"{self.save_dir / 'level.dat'} not exists, check save_dir"
-            )
 
     @classmethod
     def from_name(cls, save_dir: Path, name: str, version: str, seed: int) -> Self:
@@ -62,6 +62,12 @@ class Superflat:
         )
 
     def flatten(self):
+        log.info("Validating")
+        if not (self.save_dir / "level.dat").exists():
+            raise ValueError(
+                f"{self.save_dir / 'level.dat'} not exists, check save_dir"
+            )
+
         base_dir = self.save_dir
 
         log.info("Collecting full chunks")
@@ -133,7 +139,7 @@ class Superflat:
 
         log.info("Unflattening files")
         strategies = [t(self.config, coords) for t in self.strategy_classes]
-        for dirpath, _dirnames, filenames in base_dir.walk():
+        for dirpath, dirnames, filenames in base_dir.walk():
             for filename in filenames:
                 filepath = dirpath / filename
                 rel_path = filepath.relative_to(base_dir)
@@ -141,15 +147,17 @@ class Superflat:
                 with bound_contextvars(filepath=filepath, rel_path=rel_path):
                     log.info(f"Unflattening file {rel_path}")
                     for s in strategies:
-                        if filepath in s.flatten_paths:
+                        if filepath in s.unflatten_paths:
                             strategy_name = type(s).__name__
                             with bound_contextvars(strategy_name=strategy_name):
                                 log.debug(f"Using {strategy_name} strategy")
-                                s.flatten(rel_path)
+                                s.unflatten(rel_path)
+                            break
                     else:
-                        log.warn(
-                            f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
-                        )
+                        pass
+                        # log.warn(
+                        #     f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
+                        # )
 
     def clear(self): ...
 
@@ -157,10 +165,9 @@ class Superflat:
 
 
 if __name__ == "__main__":
-    # main()
-
     save_path = "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/test42"
-    git_path = "/home/hlsvillager/Desktop/superflat/temp/git"
-    restore_path = "/home/hlsvillager/Desktop/superflat/temp/restore"
+    restore_path = save_path + "_restored"
     sf = Superflat.from_name(Path(save_path), "test42", "1.21.11", 42)
     sf.flatten()
+    sf = Superflat.from_name(Path(restore_path), "test42", "1.21.11", 42)
+    sf.unflatten()

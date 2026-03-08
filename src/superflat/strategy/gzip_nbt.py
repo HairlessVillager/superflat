@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import override
 
 from pumpkin_py import normalize_nbt
+
 from superflat.paths import gzip_nbt_paths
 from superflat.strategy.base import Strategy
 from superflat.utils import write_bin
@@ -30,5 +31,5 @@ class GzipNbtFileStrategy(Strategy):
     @override
     def unflatten(self, rel_path: Path):
         content = (self.git_dir / rel_path).read_bytes()
-        content = gzip.decompress(content)
+        content = gzip.compress(content)
         write_bin(self.save_dir / rel_path, content)

@@ -67,7 +67,7 @@ def other_region_paths_unflatten(base_dir) -> set[Path]:
         for dimensions_dir in dimensions_dirs(base_dir)
         for dimensions_region_file_parent in ["entities", "poi"]
         for file in (base_dir / dimensions_dir / dimensions_region_file_parent).glob(
-            "r.*.*.mca/"
+            "r.*.*.mca/timestamp-header"
         )
     }
 
@@ -91,6 +91,6 @@ def chunk_region_paths_unflatten(base_dir) -> set[Path]:
         for dimensions_dir in dimensions_dirs(base_dir)
         for dimensions_region_file_parent in ["region"]
         for file in (base_dir / dimensions_dir / dimensions_region_file_parent).glob(
-            "r.*.*.mca/"
+            "r.*.*.mca/timestamp-header"
         )
     }

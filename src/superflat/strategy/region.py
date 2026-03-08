@@ -3,8 +3,11 @@ from pathlib import Path
 from typing import override
 
 import structlog
-from pumpkin_py import chunk_to_sections_other, generate_chunk_nbt, sf_from_nbt
-from xdelta3_py import decode, encode
+from pumpkin_py import (
+    chunk_to_sections_other,
+    generate_chunk_nbt,
+    sections_other_to_chunk,
+)
 
 from superflat.paths import (
     chunk_region_paths_flatten,
@@ -37,7 +40,6 @@ class ChunkRegionFileStrategy(Strategy):
         else:
             raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
         region = read_region_file(self.save_dir / rel_path, region_x, region_z)
-        # (self.git_dir / rel_path).mkdir(parents=True, exist_ok=True)
         if region["is_empty"]:
             return
         write_bin(
@@ -48,23 +50,21 @@ class ChunkRegionFileStrategy(Strategy):
             if (chunk_x, chunk_z) not in self.full_chunks:
                 continue
 
-            target, other = chunk_to_sections_other(nbt)
+            sections, other = chunk_to_sections_other(nbt)
+            target = sections
             base = self.dumper.get(chunk_x, chunk_z)
             if not base:
                 raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
             delta = bytes([a ^ b for a, b in zip(base, target)])
 
             # TODO: debug, remove this
-            if (chunk_x, chunk_z) == (4, 2) and "region" in str(rel_path):
+            if (chunk_x, chunk_z) == (4, 2):
                 write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/base"), base)
                 write_bin(
                     Path("/home/hlsvillager/Desktop/superflat/temp/target"), target
                 )
                 write_bin(
-                    Path("/home/hlsvillager/Desktop/superflat/temp/target-nbt"), nbt
-                )
-                write_bin(
-                    Path("/home/hlsvillager/Desktop/superflat/temp/base-nbt"),
+                    Path("/home/hlsvillager/Desktop/superflat/temp/original-nbt"),
                     generate_chunk_nbt(42, 4, 2),
                 )
                 write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/delta"), delta)
@@ -83,32 +83,47 @@ class ChunkRegionFileStrategy(Strategy):
 
     @override
     def unflatten(self, rel_path: Path):
-        # TODO
+        # simple check
+        if rel_path.name != "timestamp-header":
+            raise ValueError(f"Invalid rel_path: {rel_path}")
+
+        rel_path = rel_path.parent
+
         region_xz = exrtact_xz(rel_path.name)
         if region_xz := exrtact_xz(rel_path.name):
             region_x, region_z = region_xz
         else:
             raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
+
         timestamp_header = None
-        chunkxz2nbt = {}
+        chunkxz2sections: dict[tuple[int, int], bytes] = {}
+        chunkxz2other: dict[tuple[int, int], bytes] = {}
         for dirpath, _dirnames, filenames in (self.git_dir / rel_path).walk():
-            if dirpath != self.git_dir / rel_path:
-                log.warn(f"Skipped unrecognized dir: {dirpath}", skip_dir=dirpath)
-                continue
             for filename in filenames:
                 filepath = dirpath / filename
                 if filename == "timestamp-header":
                     timestamp_header = filepath.read_bytes()
-                elif (
-                    chunk_xz := exrtact_xz(rel_path.name)
-                ) and rel_path.suffix == "delta":
+                elif chunk_xz := exrtact_xz(filepath.name):
                     chunk_x, chunk_z = chunk_xz
-                    base = self.dumper.get(chunk_x, chunk_z)
-                    if not base:
-                        raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
-                    delta = filepath.read_bytes()
-                    target = decode(base, delta)
-                    chunkxz2nbt[(chunk_x, chunk_z)] = target
+                    if (
+                        filepath.parent.name == "sections"
+                        and filepath.suffix == ".delta"
+                    ):
+                        base = self.dumper.get(chunk_x, chunk_z)
+                        if not base:
+                            raise ValueError(
+                                f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}"
+                            )
+                        delta = filepath.read_bytes()
+                        target = bytes([a ^ b for a, b in zip(base, delta)])
+                        chunkxz2sections[(chunk_x, chunk_z)] = target
+                    elif filepath.parent.name == "other" and filepath.suffix == ".nbt":
+                        other = filepath.read_bytes()
+                        chunkxz2other[(chunk_x, chunk_z)] = other
+                    else:
+                        log.warn(
+                            f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
+                        )
                 else:
                     log.warn(
                         f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
@@ -116,6 +131,18 @@ class ChunkRegionFileStrategy(Strategy):
 
         if not timestamp_header:
             raise RuntimeError(f"Timestamp header file not found for {rel_path}")
+
+        chunkxz2nbt = {}
+        for key in set((*chunkxz2sections, *chunkxz2other)):
+            sections = chunkxz2sections[key]
+            other = chunkxz2other[key]
+            nbt = sections_other_to_chunk(sections, other)
+            chunkxz2nbt[key] = nbt
+
+            # TODO: debug, remove this
+            if key == (4, 2):
+                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/nbt2"), nbt)
+                # exit(1)
 
         write_region_file(
             {
@@ -159,5 +186,46 @@ class OtherRegionFileStrategy(Strategy):
 
     @override
     def unflatten(self, rel_path: Path):
-        # TODO
-        raise NotImplementedError()
+        # simple check
+        if rel_path.name != "timestamp-header":
+            raise ValueError(f"Invalid rel_path: {rel_path}")
+
+        rel_path = rel_path.parent
+
+        region_xz = exrtact_xz(rel_path.name)
+        if region_xz := exrtact_xz(rel_path.name):
+            region_x, region_z = region_xz
+        else:
+            raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
+
+        timestamp_header = None
+        chunkxz2nbt = {}
+        for dirpath, _dirnames, filenames in (self.git_dir / rel_path).walk():
+            for filename in filenames:
+                filepath = dirpath / filename
+                if filename == "timestamp-header":
+                    timestamp_header = filepath.read_bytes()
+                elif (
+                    chunk_xz := exrtact_xz(filepath.name)
+                ) and rel_path.suffix == ".nbt":
+                    chunk_x, chunk_z = chunk_xz
+                    nbt = filepath.read_bytes()
+                    chunkxz2nbt[(chunk_x, chunk_z)] = nbt
+                else:
+                    log.warn(
+                        f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
+                    )
+
+        if not timestamp_header:
+            raise RuntimeError(f"Timestamp header file not found for {rel_path}")
+
+        write_region_file(
+            {
+                "region_x": region_x,
+                "region_z": region_z,
+                "is_empty": False,
+                "timestamp_header": timestamp_header,
+                "chunkxz2nbt": chunkxz2nbt,
+            },
+            self.save_dir / rel_path,
+        )

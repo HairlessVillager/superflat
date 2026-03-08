@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import TypedDict
 
 import structlog
-from structlog.contextvars import bound_contextvars
-
 from pumpkin_py import is_chunk_status_full, normalize_nbt
+from structlog.contextvars import bound_contextvars
 
 log = structlog.get_logger()
 
@@ -44,14 +43,13 @@ def get_full_chunks(region_filepath: Path, region_x: int, region_z: int) -> Coor
 
 def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> RegionFile:
     class Chunk(TypedDict):
-        data: bytes | None
-
         local_x: int
         local_z: int
         region_x: int
         region_z: int
         chunk_x: int
         chunk_z: int
+        nbt: bytes | None
         timestamp: int
         index: int
         source: Path
@@ -115,7 +113,7 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
                         "source": region_filepath,
                         "timestamp": ts,
                         "compression_type": None,
-                        "data": None,
+                        "nbt": None,
                         "chunk_x": chunk_x,
                         "chunk_z": chunk_z,
                     }
@@ -143,9 +141,9 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
                     raise NotImplementedError(
                         f"Unsupportd compression_type: {compression_type}"
                     )
-                data = normalize_nbt(data)
+                nbt = normalize_nbt(data)
                 chunk["compression_type"] = compression_type
-                chunk["data"] = data
+                chunk["nbt"] = nbt
 
             return {
                 "region_x": region_x,
@@ -153,9 +151,9 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
                 "is_empty": False,
                 "timestamp_header": timestamps_raw.tobytes(),
                 "chunkxz2nbt": {
-                    (chunk["chunk_x"], chunk["chunk_z"]): chunk["data"]
+                    (chunk["chunk_x"], chunk["chunk_z"]): chunk["nbt"]
                     for chunk in chunks
-                    if chunk["data"] is not None
+                    if chunk["nbt"] is not None
                 },
             }
 
