@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import override
 
 import structlog
-from pumpkin_py import generate_chunk_nbt, sf_from_nbt
+from pumpkin_py import chunk_to_sections_other, generate_chunk_nbt, sf_from_nbt
 from xdelta3_py import decode, encode
 
 from superflat.paths import (
@@ -48,22 +48,12 @@ class ChunkRegionFileStrategy(Strategy):
             if (chunk_x, chunk_z) not in self.full_chunks:
                 continue
 
-            try:
-                target = sf_from_nbt(nbt)
-            except RuntimeError:
-                log.error(
-                    f"Failed to sf_from_nbt, {chunk_x, chunk_z}",
-                    chunk_x=chunk_x,
-                    chunk_z=chunk_z,
-                )
-                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/nbt"), nbt)
-                raise
-
-            base = self.sfnbt_manager.get(chunk_x, chunk_z)
+            target, other = chunk_to_sections_other(nbt)
+            base = self.dumper.get(chunk_x, chunk_z)
             if not base:
                 raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
+            delta = bytes([a ^ b for a, b in zip(base, target)])
 
-            delta = encode(base, target)
             # TODO: debug, remove this
             if (chunk_x, chunk_z) == (4, 2) and "region" in str(rel_path):
                 write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/base"), base)
@@ -78,9 +68,16 @@ class ChunkRegionFileStrategy(Strategy):
                     generate_chunk_nbt(42, 4, 2),
                 )
                 write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/delta"), delta)
+                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/other"), other)
                 # exit(1)
 
-            delta_filepath = self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.sf.delta"
+            other_filepath = (
+                self.git_dir / rel_path / "other" / f"c.{chunk_x}.{chunk_z}.nbt"
+            )
+            write_bin(other_filepath, other)
+            delta_filepath = (
+                self.git_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
+            )
             write_bin(delta_filepath, delta)
         log.debug("Deltas written")
 
@@ -106,7 +103,7 @@ class ChunkRegionFileStrategy(Strategy):
                     chunk_xz := exrtact_xz(rel_path.name)
                 ) and rel_path.suffix == "delta":
                     chunk_x, chunk_z = chunk_xz
-                    base = self.sfnbt_manager.get(chunk_x, chunk_z)
+                    base = self.dumper.get(chunk_x, chunk_z)
                     if not base:
                         raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
                     delta = filepath.read_bytes()

@@ -11,7 +11,7 @@ use pumpkin_world::chunk::{ChunkData, format::ChunkNbt};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Serialize, Deserialize)]
-struct ThinChunk {
+struct SectionsDump {
     biomes_dump: Vec<u8>,
     blocks_dump: Vec<u16>,
     // drop block & sky lighting because Minecraft will re-compute them
@@ -19,7 +19,7 @@ struct ThinChunk {
 
 #[derive(Serialize, Deserialize)]
 pub struct Superflatten {
-    thin: ThinChunk,
+    sections: SectionsDump,
     #[serde(with = "nbt_opt_codec")]
     other: Option<Nbt>,
 }
@@ -53,8 +53,8 @@ mod nbt_opt_codec {
 impl Superflatten {
     pub fn from_chunk_data(chunk_data: &ChunkData) -> Self {
         Self {
-            thin: {
-                ThinChunk {
+            sections: {
+                SectionsDump {
                     biomes_dump: chunk_data.section.dump_biomes(),
                     blocks_dump: chunk_data.section.dump_blocks(),
                 }
@@ -64,11 +64,11 @@ impl Superflatten {
     }
     pub fn from_chunk_nbt(chunk_nbt: &[u8]) -> Result<Self, &'static str> {
         let flatten = Self {
-            thin: {
+            sections: {
                 let nbt = from_bytes::<ChunkNbt>(Cursor::new(chunk_nbt))
                     .map_err(|_| "Failed to parse chunk data when build thin")?;
                 let chunk = ChunkData::from_nbt(nbt);
-                ThinChunk {
+                SectionsDump {
                     biomes_dump: chunk.section.dump_biomes(),
                     blocks_dump: chunk.section.dump_blocks(),
                 }
@@ -88,8 +88,10 @@ impl Superflatten {
 
         // rebuild sections from thin
         let sections = {
-            let section =
-                ChunkSections::from_blocks_biomes(&self.thin.blocks_dump, &self.thin.biomes_dump);
+            let section = ChunkSections::from_blocks_biomes(
+                &self.sections.blocks_dump,
+                &self.sections.biomes_dump,
+            );
             let block_lock = section.block_sections.read().unwrap();
             let biome_lock = section.biome_sections.read().unwrap();
             let min_section_y = (section.min_y >> 4) as i8;
@@ -132,5 +134,14 @@ impl Superflatten {
         //     bytes
         // };
         Ok(bytes)
+    }
+    pub fn dump_to_sections_other(self) -> (Vec<u8>, Vec<u8>) {
+        let mut sections = Vec::new(); // TODO: use .with_capacity here
+        to_bytes(&self.sections, &mut sections).expect("Failed to dump thin data");
+        let sections: Vec<u8> = normalize_nbt_bytes(&sections)
+            .map(|v| v.into())
+            .expect("Failed to normalize thin data");
+        let other: Vec<u8> = self.other.map(|v| v.write().into()).unwrap_or(Vec::new());
+        (sections, other)
     }
 }

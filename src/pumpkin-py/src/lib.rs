@@ -171,6 +171,20 @@ fn sf_from_seed_batch(seed: u64, coords: Vec<(i32, i32)>) -> PyResult<Vec<Vec<u8
         .collect::<PyResult<Vec<Vec<u8>>>>()
 }
 
+#[pyfunction]
+fn chunk_to_sections_other(nbt: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    Superflatten::from_chunk_nbt(nbt)
+        .expect("Failed to parse nbt")
+        .dump_to_sections_other()
+}
+
+#[pyfunction]
+fn seed_to_sections(seed: u64, chunk_x: i32, chunk_z: i32) -> Vec<u8> {
+    let nbt = generate_chunk_data(seed, chunk_x, chunk_z).expect("Failed to generate chunk data");
+    let sf = Superflatten::from_chunk_data(&nbt);
+    sf.dump_to_sections_other().0
+}
+
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_chunk_nbt, m)?)?;
@@ -181,5 +195,7 @@ fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sf_from_seed, m)?)?;
     m.add_function(wrap_pyfunction!(sf_to_chunk, m)?)?;
     m.add_function(wrap_pyfunction!(sf_from_seed_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(chunk_to_sections_other, m)?)?;
+    m.add_function(wrap_pyfunction!(seed_to_sections, m)?)?;
     Ok(())
 }

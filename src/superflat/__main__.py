@@ -7,8 +7,8 @@ from platformdirs import user_cache_path, user_config_path
 from structlog.contextvars import bound_contextvars
 
 from superflat.config import Config
+from superflat.dumper import SectionsDumper
 from superflat.paths import chunk_region_paths_flatten, chunk_region_paths_unflatten
-from superflat.sfnbt import SFNBTManager
 from superflat.strategy import GzipNbtFileStrategy, RawFileStrategy
 from superflat.strategy.region import ChunkRegionFileStrategy, OtherRegionFileStrategy
 from superflat.utils import exrtact_xz, get_full_chunks
@@ -35,7 +35,7 @@ class Superflat:
         self.git_dir = config["git_dir"]
         self.cache_dir = config["cache_dir"]
         self.strategy_classes = config["strategy_classes"]
-        self.sfnbt_manager = config["sfnbt_manager"]
+        self.dumper = config["dumper"]
 
         # simple validation
         if not (self.save_dir / "level.dat").exists():
@@ -57,7 +57,7 @@ class Superflat:
                 "save_dir": save_dir,
                 "git_dir": user_config_path(APP_NAME) / name,
                 "cache_dir": cache_dir,
-                "sfnbt_manager": SFNBTManager(seed, cache_dir),
+                "dumper": SectionsDumper(seed, cache_dir),
             }
         )
 
@@ -82,7 +82,7 @@ class Superflat:
         log.info(f"Collected {len(coords)} full chunks", count=len(coords))
 
         log.info("Generating SFNBTs")
-        sfnbt_count = self.sfnbt_manager.batch_generate(coords)
+        sfnbt_count = self.dumper.batch_generate(coords)
         log.info(f"Generated {sfnbt_count} SFNBTs", count=sfnbt_count)
 
         log.info("Flattening files")
@@ -128,7 +128,7 @@ class Superflat:
         log.info(f"Collected {len(coords)} full chunks", count=len(coords))
 
         log.info("Generating SFNBTs")
-        sfnbt_count = self.sfnbt_manager.batch_generate(coords)
+        sfnbt_count = self.dumper.batch_generate(coords)
         log.info(f"Generated {sfnbt_count} SFNBTs", count=sfnbt_count)
 
         log.info("Unflattening files")

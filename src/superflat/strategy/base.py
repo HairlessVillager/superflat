@@ -10,7 +10,7 @@ class Strategy(ABC):
     def __init__(self, config: Config, full_chunks: Coords):
         self.save_dir = config["save_dir"]
         self.git_dir = config["git_dir"]
-        self.sfnbt_manager = config["sfnbt_manager"]
+        self.dumper = config["dumper"]
         self.full_chunks = full_chunks
 
     @cached_property
