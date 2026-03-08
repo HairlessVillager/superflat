@@ -59,8 +59,9 @@ class RegionFileStrategy(Strategy):
                 if not base:
                     raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
 
+                delta = encode(base, target)
                 # TODO: debug, remove this
-                if (chunk_x, chunk_z) == (0, 0) and "region" in str(rel_path):
+                if (chunk_x, chunk_z) == (4, 2) and "region" in str(rel_path):
                     write_bin(
                         Path("/home/hlsvillager/Desktop/superflat/temp/base"), base
                     )
@@ -72,11 +73,13 @@ class RegionFileStrategy(Strategy):
                     )
                     write_bin(
                         Path("/home/hlsvillager/Desktop/superflat/temp/base-nbt"),
-                        generate_chunk_nbt(42, 0, 0),
+                        generate_chunk_nbt(42, 4, 2),
                     )
-                    exit(1)
+                    write_bin(
+                        Path("/home/hlsvillager/Desktop/superflat/temp/delta"), delta
+                    )
+                    # exit(1)
 
-                delta = encode(base, target)
                 delta_filepath = (
                     self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.sf.delta"
                 )

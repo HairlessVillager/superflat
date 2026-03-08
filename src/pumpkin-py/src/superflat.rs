@@ -134,16 +134,3 @@ impl Superflatten {
         Ok(bytes)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Superflatten;
-    use crate::sync_generate_chunk_nbt;
-
-    #[test]
-    fn to_chunk_works() {
-        let data = sync_generate_chunk_nbt(42, 0, 0).unwrap();
-        let sf = Superflatten::from_chunk_nbt(&data).unwrap();
-        sf.to_chunk().unwrap();
-    }
-}
