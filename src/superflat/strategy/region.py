@@ -5,7 +5,6 @@ from typing import override
 import structlog
 from pumpkin_py import (
     chunk_to_sections_other,
-    generate_chunk_nbt,
     sections_other_to_chunk,
 )
 
@@ -45,6 +44,7 @@ class ChunkRegionFileStrategy(Strategy):
         write_bin(
             self.git_dir / rel_path / "timestamp-header", region["timestamp_header"]
         )
+
         log.debug("Writing deltas")
         for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
             if (chunk_x, chunk_z) not in self.full_chunks:
@@ -57,20 +57,6 @@ class ChunkRegionFileStrategy(Strategy):
                 raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
             delta = bytes([a ^ b for a, b in zip(base, target)])
 
-            # TODO: debug, remove this
-            if (chunk_x, chunk_z) == (4, 2):
-                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/base"), base)
-                write_bin(
-                    Path("/home/hlsvillager/Desktop/superflat/temp/target"), target
-                )
-                write_bin(
-                    Path("/home/hlsvillager/Desktop/superflat/temp/original-nbt"),
-                    generate_chunk_nbt(42, 4, 2),
-                )
-                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/delta"), delta)
-                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/other"), other)
-                # exit(1)
-
             other_filepath = (
                 self.git_dir / rel_path / "other" / f"c.{chunk_x}.{chunk_z}.nbt"
             )
@@ -79,6 +65,7 @@ class ChunkRegionFileStrategy(Strategy):
                 self.git_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
             )
             write_bin(delta_filepath, delta)
+
         log.debug("Deltas written")
 
     @override
@@ -138,11 +125,6 @@ class ChunkRegionFileStrategy(Strategy):
             other = chunkxz2other[key]
             nbt = sections_other_to_chunk(sections, other)
             chunkxz2nbt[key] = nbt
-
-            # TODO: debug, remove this
-            if key == (4, 2):
-                write_bin(Path("/home/hlsvillager/Desktop/superflat/temp/nbt2"), nbt)
-                # exit(1)
 
         write_region_file(
             {

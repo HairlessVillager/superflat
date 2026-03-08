@@ -27,12 +27,6 @@ class SectionsDumper:
         filtered_coords = [
             coord for coord in coords if not self.is_cached(coord[0], coord[1])
         ]
-        # sfnbt = sf_from_seed_batch(self.seed, filtered_coords)
-        # for (chunk_x, chunk_z), nbt in zip(filtered_coords, sfnbt, strict=True):
-        #     path = self.stroage_filepath(chunk_x, chunk_z)
-        #     data = cctx.compress(nbt)
-        #     write_bin(path, data)
-        # return len(filtered_coords)
         for chunk_x, chunk_z in filtered_coords:
             nbt = seed_to_sections(self.seed, chunk_x, chunk_z)
             path = self.stroage_filepath(chunk_x, chunk_z)
@@ -44,7 +38,6 @@ class SectionsDumper:
         path = self.stroage_filepath(chunk_x, chunk_z)
         if path.exists():
             data = path.read_bytes()
-            # bytes = dctx.stream_reader(bytes).read()
             data = dctx.decompress(data)
             return data
         else:

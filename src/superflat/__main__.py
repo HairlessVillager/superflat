@@ -154,10 +154,9 @@ class Superflat:
                                 s.unflatten(rel_path)
                             break
                     else:
-                        pass
-                        # log.warn(
-                        #     f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
-                        # )
+                        log.warn(
+                            f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
+                        )
 
     def clear(self): ...
 
