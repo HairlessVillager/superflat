@@ -7,10 +7,10 @@ from platformdirs import user_cache_path, user_config_path
 from structlog.contextvars import bound_contextvars
 
 from superflat.config import Config
-from superflat.paths import basic_region_paths_flatten, basic_region_paths_unflatten
+from superflat.paths import chunk_region_paths_flatten, chunk_region_paths_unflatten
 from superflat.sfnbt import SFNBTManager
 from superflat.strategy import GzipNbtFileStrategy, RawFileStrategy
-from superflat.strategy.region import RegionFileStrategy
+from superflat.strategy.region import ChunkRegionFileStrategy, OtherRegionFileStrategy
 from superflat.utils import exrtact_xz, get_full_chunks
 
 APP_NAME = "superflat"
@@ -51,8 +51,8 @@ class Superflat:
                 "strategy_classes": [
                     RawFileStrategy,
                     GzipNbtFileStrategy,
-                    RegionFileStrategy,
-                    # TODO: BasicRegion and OtherRegion
+                    ChunkRegionFileStrategy,
+                    OtherRegionFileStrategy,
                 ],
                 "save_dir": save_dir,
                 "git_dir": user_config_path(APP_NAME) / name,
@@ -70,7 +70,7 @@ class Superflat:
             for filename in filenames:
                 filepath = dirpath / filename
                 rel_path = filepath.relative_to(base_dir)
-                if filepath in basic_region_paths_flatten(base_dir):
+                if filepath in chunk_region_paths_flatten(base_dir):
                     if region_xz := exrtact_xz(rel_path.name):
                         region_x, region_z = region_xz
                         coords |= get_full_chunks(filepath, region_x, region_z)
@@ -115,7 +115,7 @@ class Superflat:
             for filename in filenames:
                 filepath = dirpath / filename
                 rel_path = filepath.relative_to(base_dir)
-                if filepath in basic_region_paths_unflatten(base_dir):
+                if filepath in chunk_region_paths_unflatten(base_dir):
                     region_xz = exrtact_xz(rel_path.name)
                     if region_xz := exrtact_xz(rel_path.name):
                         region_x, region_z = region_xz

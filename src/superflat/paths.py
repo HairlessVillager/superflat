@@ -49,11 +49,11 @@ def raw_paths(base_dir) -> set[Path]:
 
 
 @cache
-def region_paths_flatten(base_dir) -> set[Path]:
+def other_region_paths_flatten(base_dir) -> set[Path]:
     return {
         file
         for dimensions_dir in dimensions_dirs(base_dir)
-        for dimensions_region_file_parent in ["entities", "poi", "region"]
+        for dimensions_region_file_parent in ["entities", "poi"]
         for file in (base_dir / dimensions_dir / dimensions_region_file_parent).glob(
             "r.*.*.mca"
         )
@@ -61,11 +61,11 @@ def region_paths_flatten(base_dir) -> set[Path]:
 
 
 @cache
-def region_paths_unflatten(base_dir) -> set[Path]:
+def other_region_paths_unflatten(base_dir) -> set[Path]:
     return {
         file
         for dimensions_dir in dimensions_dirs(base_dir)
-        for dimensions_region_file_parent in ["entities", "poi", "region"]
+        for dimensions_region_file_parent in ["entities", "poi"]
         for file in (base_dir / dimensions_dir / dimensions_region_file_parent).glob(
             "r.*.*.mca/"
         )
@@ -73,7 +73,7 @@ def region_paths_unflatten(base_dir) -> set[Path]:
 
 
 @cache
-def basic_region_paths_flatten(base_dir) -> set[Path]:
+def chunk_region_paths_flatten(base_dir) -> set[Path]:
     return {
         file
         for dimensions_dir in dimensions_dirs(base_dir)
@@ -85,7 +85,7 @@ def basic_region_paths_flatten(base_dir) -> set[Path]:
 
 
 @cache
-def basic_region_paths_unflatten(base_dir) -> set[Path]:
+def chunk_region_paths_unflatten(base_dir) -> set[Path]:
     return {
         file
         for dimensions_dir in dimensions_dirs(base_dir)
