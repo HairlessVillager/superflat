@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import zstandard as zstd
-from pumpkin_py import seed_to_sections
 from structlog import get_logger
+
+from pumpkin_py import seed_to_sections
 
 from .utils import Coords, write_bin
 
@@ -23,7 +24,8 @@ class SectionsDumper:
         return self.stroage_filepath(chunk_x, chunk_z).exists()
 
     # TODO: dim
-    def batch_generate(self, coords: Coords) -> int:
+    def batch_generate(self, coords: Coords):
+        log.info("Generating sections dumps")
         filtered_coords = [
             coord for coord in coords if not self.is_cached(coord[0], coord[1])
         ]
@@ -32,7 +34,8 @@ class SectionsDumper:
             path = self.stroage_filepath(chunk_x, chunk_z)
             data = cctx.compress(nbt)
             write_bin(path, data)
-        return len(filtered_coords)
+        count = len(filtered_coords)
+        log.info(f"Generated {count} sections dumps", count=count)
 
     def get(self, chunk_x: int, chunk_z: int) -> bytes | None:
         path = self.stroage_filepath(chunk_x, chunk_z)

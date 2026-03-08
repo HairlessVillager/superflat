@@ -1,15 +1,11 @@
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
-
-from superflat.dumper import SectionsDumper
-
-if TYPE_CHECKING:
-    from superflat.strategy import Strategy
+from typing import TypedDict
 
 
 class Config(TypedDict):
-    strategy_classes: list[type["Strategy"]]
     save_dir: Path
-    git_dir: Path
-    cache_dir: Path
-    dumper: SectionsDumper
+    git_dir: Path | None
+    cache_dir: Path | None
+    name: str
+    version: str
+    seed: int

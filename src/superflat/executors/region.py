@@ -1,37 +1,44 @@
-from functools import cached_property
 from pathlib import Path
-from typing import override
 
 import structlog
+
 from pumpkin_py import (
     chunk_to_sections_other,
     sections_other_to_chunk,
 )
-
+from superflat.dumper import SectionsDumper
+from superflat.executors.base import Executor, collect_valid_paths
 from superflat.paths import (
     chunk_region_paths_flatten,
     chunk_region_paths_unflatten,
     other_region_paths_flatten,
     other_region_paths_unflatten,
 )
-from superflat.strategy.base import Strategy
-from superflat.utils import exrtact_xz, read_region_file, write_bin, write_region_file
+from superflat.utils import (
+    Coords,
+    exrtact_xz,
+    read_region_file,
+    write_bin,
+    write_region_file,
+)
 
 log = structlog.get_logger()
 
 
-class ChunkRegionFileStrategy(Strategy):
-    @cached_property
-    @override
-    def flatten_paths(self) -> set[Path]:
-        return chunk_region_paths_flatten(self.save_dir)
+class ChunkRegionFileFlattenExecutor(Executor):
+    def __init__(self, dumper: SectionsDumper, full_chunks: Coords):
+        self.dumper = dumper
+        self.full_chunks = full_chunks
 
-    @cached_property
-    @override
-    def unflatten_paths(self) -> set[Path]:
-        return chunk_region_paths_unflatten(self.git_dir)
+    def collect_task(self, save_dir: Path, git_dir: Path):
+        self.save_dir = save_dir
+        self.git_dir = git_dir
+        self.rel_paths = collect_valid_paths(save_dir, chunk_region_paths_flatten)
 
-    @override
+    def batch_execute(self):
+        for rel_path in self.rel_paths:
+            self.flatten(rel_path)
+
     def flatten(self, rel_path: Path):
         region_xz = exrtact_xz(rel_path.name)
         if region_xz := exrtact_xz(rel_path.name):
@@ -68,7 +75,21 @@ class ChunkRegionFileStrategy(Strategy):
 
         log.debug("Deltas written")
 
-    @override
+
+class ChunkRegionFileUnflattenExecutor(Executor):
+    def __init__(self, dumper: SectionsDumper, full_chunks: Coords):
+        self.dumper = dumper
+        self.full_chunks = full_chunks
+
+    def collect_task(self, save_dir: Path, git_dir: Path):
+        self.save_dir = save_dir
+        self.git_dir = git_dir
+        self.rel_paths = collect_valid_paths(git_dir, chunk_region_paths_unflatten)
+
+    def batch_execute(self):
+        for rel_path in self.rel_paths:
+            self.unflatten(rel_path)
+
     def unflatten(self, rel_path: Path):
         # simple check
         if rel_path.name != "timestamp-header":
@@ -138,18 +159,16 @@ class ChunkRegionFileStrategy(Strategy):
         )
 
 
-class OtherRegionFileStrategy(Strategy):
-    @cached_property
-    @override
-    def flatten_paths(self) -> set[Path]:
-        return other_region_paths_flatten(self.save_dir)
+class OtherRegionFileFlattenExecutor(Executor):
+    def collect_task(self, save_dir: Path, git_dir: Path):
+        self.save_dir = save_dir
+        self.git_dir = git_dir
+        self.rel_paths = collect_valid_paths(save_dir, other_region_paths_flatten)
 
-    @cached_property
-    @override
-    def unflatten_paths(self) -> set[Path]:
-        return other_region_paths_unflatten(self.git_dir)
+    def batch_execute(self):
+        for rel_path in self.rel_paths:
+            self.flatten(rel_path)
 
-    @override
     def flatten(self, rel_path: Path):
         region_xz = exrtact_xz(rel_path.name)
         if region_xz := exrtact_xz(rel_path.name):
@@ -166,7 +185,17 @@ class OtherRegionFileStrategy(Strategy):
             nbt_filepath = self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.nbt"
             write_bin(nbt_filepath, nbt)
 
-    @override
+
+class OtherRegionFileUnlattenExecutor(Executor):
+    def collect_task(self, save_dir: Path, git_dir: Path):
+        self.save_dir = save_dir
+        self.git_dir = git_dir
+        self.rel_paths = collect_valid_paths(git_dir, other_region_paths_unflatten)
+
+    def batch_execute(self):
+        for rel_path in self.rel_paths:
+            self.unflatten(rel_path)
+
     def unflatten(self, rel_path: Path):
         # simple check
         if rel_path.name != "timestamp-header":
@@ -189,7 +218,7 @@ class OtherRegionFileStrategy(Strategy):
                     timestamp_header = filepath.read_bytes()
                 elif (
                     chunk_xz := exrtact_xz(filepath.name)
-                ) and rel_path.suffix == ".nbt":
+                ) and filepath.suffix == ".nbt":
                     chunk_x, chunk_z = chunk_xz
                     nbt = filepath.read_bytes()
                     chunkxz2nbt[(chunk_x, chunk_z)] = nbt
