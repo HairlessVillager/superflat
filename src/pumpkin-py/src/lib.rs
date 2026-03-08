@@ -1,16 +1,18 @@
-use pumpkin_config::lighting::LightingEngineConfig;
-use pumpkin_nbt::deserializer::NbtReadHelper;
-use pumpkin_nbt::{Nbt, normalize_nbt_bytes};
-use pumpkin_world::chunk::ChunkData;
-use pyo3::exceptions::PyValueError;
-use pyo3::{prelude::*, wrap_pyfunction};
-
 use std::io::Cursor;
 use std::sync::Arc;
 
+use pyo3::exceptions::PyValueError;
+use pyo3::{prelude::*, wrap_pyfunction};
+
+use rayon::prelude::*;
+
+use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::dimension::Dimension;
+use pumpkin_nbt::deserializer::NbtReadHelper;
+use pumpkin_nbt::{Nbt, normalize_nbt_bytes};
 use pumpkin_util::world_seed::Seed;
 use pumpkin_world::biome::hash_seed;
+use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::chunk_system::{Chunk, StagedChunkEnum, generate_single_chunk};
 use pumpkin_world::generation::get_world_gen;
 use pumpkin_world::world::BlockRegistryExt;
@@ -94,10 +96,73 @@ fn seed_to_sections(seed: u64, chunk_x: i32, chunk_z: i32) -> Vec<u8> {
 }
 
 #[pyfunction]
+fn seed_to_sections_batch(seed: u64, coords: Vec<(i32, i32)>) -> Vec<Vec<u8>> {
+    coords
+        .into_par_iter()
+        .map(|(chunk_x, chunk_z)| {
+            let nbt =
+                generate_chunk_data(seed, chunk_x, chunk_z).expect("Failed to generate chunk data");
+            let sf = Superflatten::from_chunk_data(&nbt);
+            let data = sf.dump_to_sections_other().0;
+            zstd::encode_all(Cursor::new(&data), 19).expect("Failed to compress sections")
+        })
+        .collect()
+}
+
+#[pyfunction]
 fn sections_other_to_chunk(sections: &[u8], other: &[u8]) -> Vec<u8> {
     Superflatten::load_from_sections_other(sections, other)
         .to_chunk()
         .expect("Failed to chunk")
+}
+
+#[pyfunction]
+fn chunk_region_encode_batch(
+    chunk_nbts: Vec<Vec<u8>>,
+    sections_dumps: Vec<Vec<u8>>,
+) -> Vec<(Vec<u8>, Vec<u8>)> {
+    chunk_nbts
+        .into_par_iter()
+        .zip(sections_dumps.into_par_iter())
+        .map(|(chunk_nbt, compressed_base_sections)| {
+            let base_sections = zstd::decode_all(Cursor::new(compressed_base_sections))
+                .expect("Failed to decompress sections");
+            let (target_sections, other) = Superflatten::from_chunk_nbt(&chunk_nbt)
+                .expect("Failed to parse nbt")
+                .dump_to_sections_other();
+            let delta_sections: Vec<u8> = base_sections
+                .iter()
+                .zip(target_sections.iter())
+                .map(|(x, y)| x ^ y)
+                .collect();
+            (delta_sections, other)
+        })
+        .collect()
+}
+
+#[pyfunction]
+fn chunk_region_decode_batch(
+    others: Vec<Vec<u8>>,
+    sections_deltas: Vec<Vec<u8>>,
+    sections_dumps: Vec<Vec<u8>>,
+) -> Vec<Vec<u8>> {
+    others
+        .into_par_iter()
+        .zip(sections_deltas.into_par_iter())
+        .zip(sections_dumps.into_par_iter())
+        .map(|((other, delta_sections), compressed_base_sections)| {
+            let base_sections = zstd::decode_all(Cursor::new(compressed_base_sections))
+                .expect("Failed to decompress sections");
+            let target_sections: Vec<u8> = base_sections
+                .iter()
+                .zip(delta_sections.iter())
+                .map(|(x, y)| x ^ y)
+                .collect();
+            Superflatten::load_from_sections_other(&target_sections, &other)
+                .to_chunk()
+                .expect("Failed to chunk")
+        })
+        .collect()
 }
 
 #[pymodule]
@@ -106,6 +171,9 @@ fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(chunk_to_sections_other, m)?)?;
     m.add_function(wrap_pyfunction!(sections_other_to_chunk, m)?)?;
     m.add_function(wrap_pyfunction!(seed_to_sections, m)?)?;
+    m.add_function(wrap_pyfunction!(seed_to_sections_batch, m)?)?;
     m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;
+    m.add_function(wrap_pyfunction!(chunk_region_encode_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(chunk_region_decode_batch, m)?)?;
     Ok(())
 }

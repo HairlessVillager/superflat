@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import TypedDict
 
 import structlog
 
 from pumpkin_py import (
-    chunk_to_sections_other,
-    sections_other_to_chunk,
+    chunk_region_decode_batch,
+    chunk_region_encode_batch,
 )
 from superflat.dumper import SectionsDumper
 from superflat.executors.base import Executor, collect_valid_paths
@@ -36,44 +37,71 @@ class ChunkRegionFileFlattenExecutor(Executor):
         self.rel_paths = collect_valid_paths(save_dir, chunk_region_paths_flatten)
 
     def batch_execute(self):
+        class Task(TypedDict):
+            chunk_nbt: bytes
+            sections_dump: bytes
+            rel_path: Path
+            chunk_xz: tuple[int, int]
+
+        class TaskResult(TypedDict):
+            delta_sections: bytes
+            other: bytes
+
+        tasks: list[Task] = []
+
         for rel_path in self.rel_paths:
-            self.flatten(rel_path)
+            region_xz = exrtact_xz(rel_path.name)
+            if region_xz := exrtact_xz(rel_path.name):
+                region_x, region_z = region_xz
+            else:
+                raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
+            region = read_region_file(self.save_dir / rel_path, region_x, region_z)
+            if region["is_empty"]:
+                return
+            write_bin(
+                self.git_dir / rel_path / "timestamp-header", region["timestamp_header"]
+            )
 
-    def flatten(self, rel_path: Path):
-        region_xz = exrtact_xz(rel_path.name)
-        if region_xz := exrtact_xz(rel_path.name):
-            region_x, region_z = region_xz
-        else:
-            raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
-        region = read_region_file(self.save_dir / rel_path, region_x, region_z)
-        if region["is_empty"]:
-            return
-        write_bin(
-            self.git_dir / rel_path / "timestamp-header", region["timestamp_header"]
-        )
+            for chunk_xz, nbt in region["chunkxz2nbt"].items():
+                if chunk_xz not in self.full_chunks:
+                    continue
 
-        log.debug("Writing deltas")
-        for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
-            if (chunk_x, chunk_z) not in self.full_chunks:
-                continue
+                chunk_x, chunk_z = chunk_xz
+                self.dumper.get(chunk_x, chunk_z)
+                sections_dump = self.dumper.get(chunk_x, chunk_z)
+                if not sections_dump:
+                    raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
+                tasks.append(
+                    {
+                        "chunk_nbt": nbt,
+                        "chunk_xz": chunk_xz,
+                        "rel_path": rel_path,
+                        "sections_dump": sections_dump,
+                    }
+                )
 
-            sections, other = chunk_to_sections_other(nbt)
-            target = sections
-            base = self.dumper.get(chunk_x, chunk_z)
-            if not base:
-                raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
-            delta = bytes([a ^ b for a, b in zip(base, target)])
+        log.debug(f"Collected {len(tasks)} tasks, running", count=len(tasks))
+        results: list[TaskResult] = [
+            {"delta_sections": e[0], "other": e[1]}
+            for e in chunk_region_encode_batch(
+                [t["chunk_nbt"] for t in tasks],
+                [t["sections_dump"] for t in tasks],
+            )
+        ]
 
+        log.debug("Write files")
+        for task, result in zip(tasks, results, strict=True):
+            rel_path = task["rel_path"]
+            chunk_x, chunk_z = task["chunk_xz"]
             other_filepath = (
                 self.git_dir / rel_path / "other" / f"c.{chunk_x}.{chunk_z}.nbt"
             )
-            write_bin(other_filepath, other)
+            write_bin(other_filepath, result["other"])
             delta_filepath = (
                 self.git_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
             )
-            write_bin(delta_filepath, delta)
-
-        log.debug("Deltas written")
+            write_bin(delta_filepath, result["delta_sections"])
+        log.debug("Done")
 
 
 class ChunkRegionFileUnflattenExecutor(Executor):
@@ -87,76 +115,114 @@ class ChunkRegionFileUnflattenExecutor(Executor):
         self.rel_paths = collect_valid_paths(git_dir, chunk_region_paths_unflatten)
 
     def batch_execute(self):
+        class Task(TypedDict):
+            other: bytes
+            sections_delta: bytes
+            sections_dump: bytes
+            region_xz: tuple[int, int]
+            chunk_xz: tuple[int, int]
+
+        class TaskResult(TypedDict):
+            chunk_nbt: bytes
+
+        tasks: list[Task] = []
+        regionxz2header: dict[tuple[int, int], bytes] = {}
+        regionxz2relpath: dict[tuple[int, int], Path] = {}
+        regionxz2taskresults: dict[tuple[int, int], list[tuple[Task, TaskResult]]] = {}
+
         for rel_path in self.rel_paths:
-            self.unflatten(rel_path)
+            # simple check
+            if rel_path.name != "timestamp-header":
+                raise ValueError(f"Invalid rel_path: {rel_path}")
 
-    def unflatten(self, rel_path: Path):
-        # simple check
-        if rel_path.name != "timestamp-header":
-            raise ValueError(f"Invalid rel_path: {rel_path}")
+            rel_path = rel_path.parent
 
-        rel_path = rel_path.parent
+            region_xz = exrtact_xz(rel_path.name)
+            if region_xz := exrtact_xz(rel_path.name):
+                region_x, region_z = region_xz
+            else:
+                raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
 
-        region_xz = exrtact_xz(rel_path.name)
-        if region_xz := exrtact_xz(rel_path.name):
-            region_x, region_z = region_xz
-        else:
-            raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
-
-        timestamp_header = None
-        chunkxz2sections: dict[tuple[int, int], bytes] = {}
-        chunkxz2other: dict[tuple[int, int], bytes] = {}
-        for dirpath, _dirnames, filenames in (self.git_dir / rel_path).walk():
-            for filename in filenames:
-                filepath = dirpath / filename
-                if filename == "timestamp-header":
-                    timestamp_header = filepath.read_bytes()
-                elif chunk_xz := exrtact_xz(filepath.name):
-                    chunk_x, chunk_z = chunk_xz
-                    if (
-                        filepath.parent.name == "sections"
-                        and filepath.suffix == ".delta"
-                    ):
-                        base = self.dumper.get(chunk_x, chunk_z)
-                        if not base:
-                            raise ValueError(
-                                f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}"
+            chunkxz2delta: dict[tuple[int, int], bytes] = {}
+            chunkxz2other: dict[tuple[int, int], bytes] = {}
+            for dirpath, _dirnames, filenames in (self.git_dir / rel_path).walk():
+                for filename in filenames:
+                    filepath = dirpath / filename
+                    if filename == "timestamp-header":
+                        timestamp_header = filepath.read_bytes()
+                        regionxz2header[region_xz] = timestamp_header
+                    elif chunk_xz := exrtact_xz(filepath.name):
+                        chunk_x, chunk_z = chunk_xz
+                        if (
+                            filepath.parent.name == "sections"
+                            and filepath.suffix == ".delta"
+                        ):
+                            delta = filepath.read_bytes()
+                            chunkxz2delta[(chunk_x, chunk_z)] = delta
+                        elif (
+                            filepath.parent.name == "other"
+                            and filepath.suffix == ".nbt"
+                        ):
+                            other = filepath.read_bytes()
+                            chunkxz2other[(chunk_x, chunk_z)] = other
+                        else:
+                            log.warn(
+                                f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
                             )
-                        delta = filepath.read_bytes()
-                        target = bytes([a ^ b for a, b in zip(base, delta)])
-                        chunkxz2sections[(chunk_x, chunk_z)] = target
-                    elif filepath.parent.name == "other" and filepath.suffix == ".nbt":
-                        other = filepath.read_bytes()
-                        chunkxz2other[(chunk_x, chunk_z)] = other
                     else:
                         log.warn(
                             f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
                         )
-                else:
-                    log.warn(
-                        f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
-                    )
 
-        if not timestamp_header:
-            raise RuntimeError(f"Timestamp header file not found for {rel_path}")
+            regionxz2relpath[region_xz] = rel_path
+            for chunk_xz in set((*chunkxz2delta, *chunkxz2other)):
+                chunk_x, chunk_z = chunk_xz
+                sections_dump = self.dumper.get(chunk_x, chunk_z)
+                if not sections_dump:
+                    raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
+                tasks.append(
+                    {
+                        "region_xz": region_xz,
+                        "chunk_xz": chunk_xz,
+                        "other": chunkxz2other[chunk_xz],
+                        "sections_delta": chunkxz2delta[chunk_xz],
+                        "sections_dump": sections_dump,
+                    }
+                )
 
-        chunkxz2nbt = {}
-        for key in set((*chunkxz2sections, *chunkxz2other)):
-            sections = chunkxz2sections[key]
-            other = chunkxz2other[key]
-            nbt = sections_other_to_chunk(sections, other)
-            chunkxz2nbt[key] = nbt
+        log.debug(f"Collected {len(tasks)} tasks, running", count=len(tasks))
+        results: list[TaskResult] = [
+            {"chunk_nbt": e}
+            for e in chunk_region_decode_batch(
+                [t["other"] for t in tasks],
+                [t["sections_delta"] for t in tasks],
+                [t["sections_dump"] for t in tasks],
+            )
+        ]
 
-        write_region_file(
-            {
-                "region_x": region_x,
-                "region_z": region_z,
-                "is_empty": False,
-                "timestamp_header": timestamp_header,
-                "chunkxz2nbt": chunkxz2nbt,
-            },
-            self.save_dir / rel_path,
-        )
+        log.debug("Write files")
+        for task, result in zip(tasks, results, strict=True):
+            region_xz = task["region_xz"]
+            lst = regionxz2taskresults.get(region_xz, list())
+            lst.append((task, result))
+            regionxz2taskresults[region_xz] = lst
+        for region_xz, rel_path in regionxz2relpath.items():
+            region_x, region_z = region_xz
+            task_results = regionxz2taskresults[region_xz]
+            timestamp_header = regionxz2header[region_xz]
+            write_region_file(
+                {
+                    "region_x": region_x,
+                    "region_z": region_z,
+                    "is_empty": False,
+                    "timestamp_header": timestamp_header,
+                    "chunkxz2nbt": {
+                        task["chunk_xz"]: result["chunk_nbt"]
+                        for task, result in task_results
+                    },
+                },
+                self.save_dir / rel_path,
+            )
 
 
 class OtherRegionFileFlattenExecutor(Executor):

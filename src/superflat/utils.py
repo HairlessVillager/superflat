@@ -5,14 +5,15 @@ from pathlib import Path
 from typing import TypedDict
 
 import structlog
-from pumpkin_py import is_chunk_status_full, normalize_nbt
 from structlog.contextvars import bound_contextvars
+
+from pumpkin_py import is_chunk_status_full, normalize_nbt
 
 log = structlog.get_logger()
 
 SECTOR_SIZE = 4096
 
-type Coords = set[tuple[int, int]]
+Coords = set[tuple[int, int]]
 
 
 class RegionFile(TypedDict):

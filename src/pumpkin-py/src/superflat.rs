@@ -135,8 +135,13 @@ impl Superflatten {
         Ok(chunk.write().into())
     }
     pub fn load_from_sections_other(sections: &[u8], other: &[u8]) -> Self {
-        let sections =
-            from_bytes::<SectionsDump>(Cursor::new(sections)).expect("Failed to load sections");
+        let sections = from_bytes::<SectionsDump>(Cursor::new(sections)).expect(
+            format!(
+                "Failed to load sections (first 16 bytes: {:?})",
+                &sections[..16]
+            )
+            .as_str(),
+        );
         let other =
             Nbt::read(&mut NbtReadHelper::new(Cursor::new(other))).expect("Failed to load other");
         Self {

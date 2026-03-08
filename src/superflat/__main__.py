@@ -139,14 +139,17 @@ if __name__ == "__main__":
             "cache_dir": Path(wd / "./temp/cache"),
             "git_dir": Path(wd / "./temp/git"),
             "name": "test42",
+            # "save_dir": Path(
+            #     wd / "./temp/saves/2026-03-08_19-25-54_test42/test42"
+            # ),  # t0
             "save_dir": Path(
-                wd / "./temp/saves/2026-03-08_19-25-54_test42/test42"
-            ),  # t0
-            # "save_dir": Path(working_dir / "./temp/saves/2026-03-08_19-27-12_test42/test42"), # t1
+                wd / "./temp/saves/2026-03-08_19-27-12_test42/test42"
+            ),  # t1
             "seed": 42,
             "version": "1.21.11",
         }
     )
+    log.info("Flattening")
     sf.flatten()
     sf = Superflat(
         {
@@ -158,4 +161,5 @@ if __name__ == "__main__":
             "version": "1.21.11",
         }
     )
+    log.info("Unflattening")
     sf.unflatten()
