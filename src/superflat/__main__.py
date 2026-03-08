@@ -1,165 +1,168 @@
+import json
+import shutil
+from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Annotated, TypedDict
 
 import structlog
 import typer
+from git import Repo
 from platformdirs import user_cache_path, user_config_path
-from structlog.contextvars import bound_contextvars
 
-from superflat.config import Config
-from superflat.dumper import SectionsDumper
-from superflat.executors import Executor
-from superflat.paths import chunk_region_paths_flatten, chunk_region_paths_unflatten
-from superflat.utils import Coords, exrtact_xz, get_full_chunks
+from superflat.app import Applicatioin
 
 APP_NAME = "superflat"
-app = typer.Typer(name=APP_NAME)
+typer_app = typer.Typer(name=APP_NAME)
 log = structlog.get_logger()
 
 
-@app.command()
-def commit(): ...  # TODO
+class Save(TypedDict):
+    name: str
+    seed: int
+    version: str
+    save_dir: str
 
 
-@app.command()
-def restore(): ...  # TODO
+def get_git_dir(save: Save):
+    return user_config_path(APP_NAME) / save["name"]
 
 
-@app.command()
-def push(): ...  # TODO
+def get_cache_dir(save: Save):
+    return user_cache_path(APP_NAME) / save["version"] / str(save["seed"])
 
 
-@app.command()
-def pull(): ...  # TODO
+def load_save(name: str) -> Save:
+    saves_filepath = user_config_path(APP_NAME) / "saves.json"
+    if saves_filepath.exists():
+        with saves_filepath.open("r") as f:
+            saves: list[Save] = json.load(f)
+    else:
+        raise ValueError("saves.json not exists")
+
+    for s in saves:
+        if s["name"] == name:
+            return s
+    else:
+        raise ValueError(f"Save named {name} not found in saves.json")
 
 
-class Superflat:
-    def __init__(self, config: Config):
-        self.save_dir = config["save_dir"]
-        self.git_dir = config["git_dir"] or user_config_path(APP_NAME) / config["name"]
-        cache_dir = config["cache_dir"] or user_cache_path(APP_NAME) / config[
-            "version"
-        ] / str(config["seed"])
-        self.dumper = SectionsDumper(config["seed"], cache_dir)
+@typer_app.command()
+def init(
+    name: str,
+    save_dir: Path,
+    seed: Annotated[int, typer.Option()],
+    version: Annotated[str, typer.Option()],
+):
+    save: Save = {
+        "name": name,
+        "seed": seed,
+        "version": version,
+        "save_dir": str(save_dir),
+    }
+    log.info("Reading saves json")
+    saves_filepath = user_config_path(APP_NAME) / "saves.json"
+    if saves_filepath.exists():
+        with saves_filepath.open("r") as f:
+            saves: list[Save] = json.load(f)
+    else:
+        saves_filepath.parent.mkdir(parents=True, exist_ok=True)
+        saves = []
 
-    def collect_full_chunks(
-        self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
-    ) -> Coords:
-        log.info("Collecting full chunks")
-        coords = set()
-        for dirpath, _dirnames, filenames in base_dir.walk():
-            for filename in filenames:
-                filepath = dirpath / filename
-                rel_path = filepath.relative_to(base_dir)
-                if filepath in pf(base_dir):
-                    if region_xz := exrtact_xz(rel_path.name):
-                        region_x, region_z = region_xz
-                        coords |= get_full_chunks(filepath, region_x, region_z)
-                    else:
-                        log.warn(
-                            f"Cannot exrtact x and z in {rel_path.name}",
-                            filepath=filepath,
-                        )
-        log.info(f"Collected {len(coords)} full chunks", count=len(coords))
-        return coords
+    log.info("Checking independent")
+    for s in saves:
+        if s["name"] == name:
+            raise ValueError(f"Save named {name} already exists")
 
-    def flatten(self):
-        from superflat.executors import (
-            ChunkRegionFileFlattenExecutor,
-            GzipNbtFileFlattenExecutor,
-            OtherRegionFileFlattenExecutor,
-            RawFileFlattenExecutor,
-        )
+    log.info("Checking level.dat file")
+    if not (save_dir / "level.dat").exists():
+        raise ValueError(f"{save_dir / 'level.dat'} not exists")
 
-        log.info("Validating")
-        if not (self.save_dir / "level.dat").exists():
-            raise ValueError(
-                f"{self.save_dir / 'level.dat'} not exists, check save_dir"
-            )
+    log.info("Initializing Git repo")
+    git_dir = get_git_dir(save)
+    git_dir.mkdir()
+    repo = Repo.init(git_dir)
 
-        full_chunks = self.collect_full_chunks(
-            self.save_dir, chunk_region_paths_flatten
-        )
-        self.dumper.batch_generate(full_chunks)
+    log.info("Commiting with README.md")
+    readme_filepath = git_dir / "README.md"
+    readme_filepath.write_text(f"""\
+# {name}
 
-        executors: list[Executor] = [
-            RawFileFlattenExecutor(),
-            GzipNbtFileFlattenExecutor(),
-            ChunkRegionFileFlattenExecutor(self.dumper, full_chunks),
-            OtherRegionFileFlattenExecutor(),
-        ]
-        for e in executors:
-            with bound_contextvars(executor=type(e).__name__):
-                log.info("Collecting tasks")
-                e.collect_task(self.save_dir, self.git_dir)
+- Version: Minecraft Java Edition {version}
+- Seed: {seed}
 
-        for e in executors:
-            with bound_contextvars(executor=type(e).__name__):
-                log.info("Flattening files")
-                e.batch_execute()
+*Powered by Superflat*
+""")
+    repo.index.add(readme_filepath)
+    repo.index.commit("Superflat Initialization")
 
-    def unflatten(self):
-        from superflat.executors import (
-            ChunkRegionFileUnflattenExecutor,
-            GzipNbtFileUnflattenExecutor,
-            OtherRegionFileUnlattenExecutor,
-            RawFileUnflattenExecutor,
-        )
-
-        full_chunks = self.collect_full_chunks(
-            self.save_dir, chunk_region_paths_unflatten
-        )
-        self.dumper.batch_generate(full_chunks)
-
-        executors: list[Executor] = [
-            RawFileUnflattenExecutor(),
-            GzipNbtFileUnflattenExecutor(),
-            ChunkRegionFileUnflattenExecutor(self.dumper, full_chunks),
-            OtherRegionFileUnlattenExecutor(),
-        ]
-        for e in executors:
-            with bound_contextvars(executor=type(e).__name__):
-                log.info("Collecting tasks")
-                e.collect_task(self.save_dir, self.git_dir)
-
-        for e in executors:
-            with bound_contextvars(executor=type(e).__name__):
-                log.info("Unflattening files")
-                e.batch_execute()
-
-    def clear(self): ...
-
-    def delete(self): ...
+    log.info("Writing saves json")
+    saves.append(save)
+    with saves_filepath.open("w") as f:
+        json.dump(saves, f)
 
 
-if __name__ == "__main__":
-    wd = Path("/home/hlsvillager/Desktop/superflat")
-    sf = Superflat(
+@typer_app.command()
+def commit(name: str):
+    log.info("Loading save")
+    save = load_save(name)
+    git_dir = get_git_dir(save)
+    save_dir = Path(save["save_dir"])
+
+    log.info("Removing old files in repo")
+    reserved_paths = {".git", "README.md"}
+    for p in git_dir.iterdir():
+        if p.name not in reserved_paths:
+            if p.is_file():
+                p.unlink()
+            elif p.is_dir():
+                shutil.rmtree(p)
+            else:
+                log.warn(f"Cannot remove {p}, skipped")
+
+    log.info(
+        f"Flattening save from {save_dir} to {git_dir}",
+        save_dir=save_dir,
+        git_dir=git_dir,
+    )
+    app = Applicatioin(
         {
-            "cache_dir": Path(wd / "./temp/cache"),
-            "git_dir": Path(wd / "./temp/git"),
-            "name": "test42",
-            # "save_dir": Path(
-            #     wd / "./temp/saves/2026-03-08_19-25-54_test42/test42"
-            # ),  # t0
-            "save_dir": Path(
-                wd / "./temp/saves/2026-03-08_19-27-12_test42/test42"
-            ),  # t1
-            "seed": 42,
-            "version": "1.21.11",
+            "cache_dir": get_cache_dir(save),
+            "git_dir": git_dir,
+            "save_dir": save_dir,
+            "seed": save["seed"],
         }
     )
-    log.info("Flattening")
-    sf.flatten()
-    sf = Superflat(
+    app.flatten()
+
+    log.info("Commiting")
+    repo = Repo(git_dir)
+    repo.index.add(".")
+    repo.index.commit(f"Update at {datetime.now().isoformat(' ')}")
+
+
+@typer_app.command()
+def restore(name: str):
+    log.info("Loading save")
+    save = load_save(name)
+    git_dir = get_git_dir(save)
+    save_dir = Path(save["save_dir"])
+
+    log.info("Backuping old save")
+    backup_path = save_dir.parent / f"{save_dir}.{datetime.now().isoformat()}.backup"
+    save_dir.replace(backup_path)
+    log.info(f"Backuped old save to {backup_path}")
+
+    log.info(
+        f"Unflattening save from {save_dir} to {git_dir}",
+        save_dir=save["save_dir"],
+        git_dir=git_dir,
+    )
+    app = Applicatioin(
         {
-            "cache_dir": Path(wd / "./temp/cache"),
-            "git_dir": Path(wd / "./temp/git"),
-            "name": "test42",
-            "save_dir": Path(wd / "./temp/restore"),
-            "seed": 42,
-            "version": "1.21.11",
+            "cache_dir": get_cache_dir(save),
+            "git_dir": git_dir,
+            "save_dir": Path(save["save_dir"]),
+            "seed": save["seed"],
         }
     )
-    log.info("Unflattening")
-    sf.unflatten()
+    app.unflatten()
