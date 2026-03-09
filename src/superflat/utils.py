@@ -60,7 +60,6 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
 
     with bound_contextvars(region_filepath=region_filepath, x=region_x, z=region_z):
         with region_filepath.open("rb") as region_reader:
-            log.debug("Parsing header")
             chunks: list[Chunk] = []
             locations_raw = memoryview(region_reader.read(0x1000))
             timestamps_raw = memoryview(region_reader.read(0x1000))
@@ -121,7 +120,6 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
                 )
             chunks.sort(key=lambda c: c["offset_sectors"])
 
-            log.debug("Extracting chunks")
             for chunk in chunks:
                 seek_offset = region_reader.seek(chunk["offset_sectors"] * SECTOR_SIZE)
                 if seek_offset != chunk["offset_sectors"] * SECTOR_SIZE:
