@@ -83,20 +83,6 @@ fn is_chunk_status_full(input: &[u8]) -> PyResult<bool> {
 }
 
 #[pyfunction]
-fn chunk_to_sections_other(nbt: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    Superflatten::from_chunk_nbt(nbt)
-        .expect("Failed to parse nbt")
-        .dump_to_sections_other()
-}
-
-#[pyfunction]
-fn seed_to_sections(seed: u64, chunk_x: i32, chunk_z: i32) -> Vec<u8> {
-    let nbt = generate_chunk_data(seed, chunk_x, chunk_z).expect("Failed to generate chunk data");
-    let sf = Superflatten::from_chunk_data(&nbt);
-    sf.dump_to_sections_other().0
-}
-
-#[pyfunction]
 fn seed_to_sections_batch(seed: u64, coords: Vec<(i32, i32)>) -> Vec<Vec<u8>> {
     coords
         .into_par_iter()
@@ -108,13 +94,6 @@ fn seed_to_sections_batch(seed: u64, coords: Vec<(i32, i32)>) -> Vec<Vec<u8>> {
             zstd::encode_all(Cursor::new(&data), 19).expect("Failed to compress sections")
         })
         .collect()
-}
-
-#[pyfunction]
-fn sections_other_to_chunk(sections: &[u8], other: &[u8]) -> Vec<u8> {
-    Superflatten::load_from_sections_other(sections, other)
-        .to_chunk()
-        .expect("Failed to chunk")
 }
 
 #[pyfunction]
@@ -178,9 +157,6 @@ fn seed_from_level(level_nbt: &[u8]) -> i64 {
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
-    m.add_function(wrap_pyfunction!(chunk_to_sections_other, m)?)?;
-    m.add_function(wrap_pyfunction!(sections_other_to_chunk, m)?)?;
-    m.add_function(wrap_pyfunction!(seed_to_sections, m)?)?;
     m.add_function(wrap_pyfunction!(seed_to_sections_batch, m)?)?;
     m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_region_encode_batch, m)?)?;
