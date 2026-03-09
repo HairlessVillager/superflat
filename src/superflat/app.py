@@ -16,7 +16,7 @@ log = structlog.get_logger()
 class Applicatioin:
     def __init__(self, config: Config):
         self.save_dir = config["save_dir"]
-        self.git_dir = config["git_dir"]
+        self.repo_dir = config["repo_dir"]
         self.dumper = SectionsDumper(config["seed"], config["cache_dir"])
 
     def collect_full_chunks(
@@ -62,7 +62,7 @@ class Applicatioin:
         for e in executors:
             with bound_contextvars(executor=type(e).__name__):
                 log.info("Collecting tasks")
-                e.collect_task(self.save_dir, self.git_dir)
+                e.collect_task(self.save_dir, self.repo_dir)
 
         for e in executors:
             with bound_contextvars(executor=type(e).__name__):
@@ -91,7 +91,7 @@ class Applicatioin:
         for e in executors:
             with bound_contextvars(executor=type(e).__name__):
                 log.info("Collecting tasks")
-                e.collect_task(self.save_dir, self.git_dir)
+                e.collect_task(self.save_dir, self.repo_dir)
 
         for e in executors:
             with bound_contextvars(executor=type(e).__name__):

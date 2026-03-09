@@ -2,11 +2,11 @@ from pathlib import Path
 from typing import TypedDict
 
 import structlog
-
 from pumpkin_py import (
     chunk_region_decode_batch,
     chunk_region_encode_batch,
 )
+
 from superflat.dumper import SectionsDumper
 from superflat.executors.base import Executor, collect_valid_paths
 from superflat.paths import (
@@ -31,9 +31,9 @@ class ChunkRegionFileFlattenExecutor(Executor):
         self.dumper = dumper
         self.full_chunks = full_chunks
 
-    def collect_task(self, save_dir: Path, git_dir: Path):
+    def collect_task(self, save_dir: Path, repo_dir: Path):
         self.save_dir = save_dir
-        self.git_dir = git_dir
+        self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(save_dir, chunk_region_paths_flatten)
 
     def batch_execute(self):
@@ -59,7 +59,8 @@ class ChunkRegionFileFlattenExecutor(Executor):
             if region["is_empty"]:
                 return
             write_bin(
-                self.git_dir / rel_path / "timestamp-header", region["timestamp_header"]
+                self.repo_dir / rel_path / "timestamp-header",
+                region["timestamp_header"],
             )
 
             for chunk_xz, nbt in region["chunkxz2nbt"].items():
@@ -94,11 +95,11 @@ class ChunkRegionFileFlattenExecutor(Executor):
             rel_path = task["rel_path"]
             chunk_x, chunk_z = task["chunk_xz"]
             other_filepath = (
-                self.git_dir / rel_path / "other" / f"c.{chunk_x}.{chunk_z}.nbt"
+                self.repo_dir / rel_path / "other" / f"c.{chunk_x}.{chunk_z}.nbt"
             )
             write_bin(other_filepath, result["other"])
             delta_filepath = (
-                self.git_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
+                self.repo_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
             )
             write_bin(delta_filepath, result["delta_sections"])
         log.debug("Done")
@@ -109,10 +110,10 @@ class ChunkRegionFileUnflattenExecutor(Executor):
         self.dumper = dumper
         self.full_chunks = full_chunks
 
-    def collect_task(self, save_dir: Path, git_dir: Path):
+    def collect_task(self, save_dir: Path, repo_dir: Path):
         self.save_dir = save_dir
-        self.git_dir = git_dir
-        self.rel_paths = collect_valid_paths(git_dir, chunk_region_paths_unflatten)
+        self.repo_dir = repo_dir
+        self.rel_paths = collect_valid_paths(repo_dir, chunk_region_paths_unflatten)
 
     def batch_execute(self):
         class Task(TypedDict):
@@ -145,7 +146,7 @@ class ChunkRegionFileUnflattenExecutor(Executor):
 
             chunkxz2delta: dict[tuple[int, int], bytes] = {}
             chunkxz2other: dict[tuple[int, int], bytes] = {}
-            for dirpath, _dirnames, filenames in (self.git_dir / rel_path).walk():
+            for dirpath, _dirnames, filenames in (self.repo_dir / rel_path).walk():
                 for filename in filenames:
                     filepath = dirpath / filename
                     if filename == "timestamp-header":
@@ -226,9 +227,9 @@ class ChunkRegionFileUnflattenExecutor(Executor):
 
 
 class OtherRegionFileFlattenExecutor(Executor):
-    def collect_task(self, save_dir: Path, git_dir: Path):
+    def collect_task(self, save_dir: Path, repo_dir: Path):
         self.save_dir = save_dir
-        self.git_dir = git_dir
+        self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(save_dir, other_region_paths_flatten)
 
     def batch_execute(self):
@@ -245,18 +246,18 @@ class OtherRegionFileFlattenExecutor(Executor):
         if region["is_empty"]:
             return
         write_bin(
-            self.git_dir / rel_path / "timestamp-header", region["timestamp_header"]
+            self.repo_dir / rel_path / "timestamp-header", region["timestamp_header"]
         )
         for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
-            nbt_filepath = self.git_dir / rel_path / f"c.{chunk_x}.{chunk_z}.nbt"
+            nbt_filepath = self.repo_dir / rel_path / f"c.{chunk_x}.{chunk_z}.nbt"
             write_bin(nbt_filepath, nbt)
 
 
 class OtherRegionFileUnlattenExecutor(Executor):
-    def collect_task(self, save_dir: Path, git_dir: Path):
+    def collect_task(self, save_dir: Path, repo_dir: Path):
         self.save_dir = save_dir
-        self.git_dir = git_dir
-        self.rel_paths = collect_valid_paths(git_dir, other_region_paths_unflatten)
+        self.repo_dir = repo_dir
+        self.rel_paths = collect_valid_paths(repo_dir, other_region_paths_unflatten)
 
     def batch_execute(self):
         for rel_path in self.rel_paths:
@@ -277,7 +278,7 @@ class OtherRegionFileUnlattenExecutor(Executor):
 
         timestamp_header = None
         chunkxz2nbt = {}
-        for dirpath, _dirnames, filenames in (self.git_dir / rel_path).walk():
+        for dirpath, _dirnames, filenames in (self.repo_dir / rel_path).walk():
             for filename in filenames:
                 filepath = dirpath / filename
                 if filename == "timestamp-header":

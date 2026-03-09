@@ -1,6 +1,7 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use pumpkin_world::world_info::anvil::LevelDat;
 use pyo3::exceptions::PyValueError;
 use pyo3::{prelude::*, wrap_pyfunction};
 
@@ -9,7 +10,7 @@ use rayon::prelude::*;
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_nbt::deserializer::NbtReadHelper;
-use pumpkin_nbt::{Nbt, normalize_nbt_bytes};
+use pumpkin_nbt::{Nbt, from_bytes, normalize_nbt_bytes};
 use pumpkin_util::world_seed::Seed;
 use pumpkin_world::biome::hash_seed;
 use pumpkin_world::chunk::ChunkData;
@@ -165,6 +166,15 @@ fn chunk_region_decode_batch(
         .collect()
 }
 
+#[pyfunction]
+fn seed_from_level(level_nbt: &[u8]) -> i64 {
+    from_bytes::<LevelDat>(Cursor::new(level_nbt))
+        .expect("Failed to load level nbt")
+        .data
+        .world_gen_settings
+        .seed
+}
+
 #[pymodule]
 fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
@@ -175,5 +185,6 @@ fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_region_encode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_region_decode_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(seed_from_level, m)?)?;
     Ok(())
 }
