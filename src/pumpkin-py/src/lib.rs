@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use pumpkin_world::world_info::anvil::LevelDat;
 use pyo3::exceptions::PyValueError;
+use pyo3::types::{PyBytes, PyList};
 use pyo3::{prelude::*, wrap_pyfunction};
 
 use rayon::prelude::*;
@@ -83,7 +84,14 @@ fn is_chunk_status_full(input: &[u8]) -> PyResult<bool> {
 }
 
 #[pyfunction]
-fn seed_to_sections_batch(seed: u64, coords: Vec<(i32, i32)>) -> Vec<Vec<u8>> {
+fn seed_to_sections_batch(seed: u64, coords: Bound<'_, PyList>) -> Vec<Vec<u8>> {
+    let coords = coords
+        .iter()
+        .map(|e| {
+            e.extract::<(i32, i32)>()
+                .expect("Failed to exrtact (i32, i32) from coords element")
+        })
+        .collect::<Vec<_>>();
     coords
         .into_par_iter()
         .map(|(chunk_x, chunk_z)| {
@@ -98,9 +106,14 @@ fn seed_to_sections_batch(seed: u64, coords: Vec<(i32, i32)>) -> Vec<Vec<u8>> {
 
 #[pyfunction]
 fn chunk_region_encode_batch(
-    chunk_nbts: Vec<Vec<u8>>,
-    sections_dumps: Vec<Vec<u8>>,
+    chunk_nbts: Vec<Bound<'_, PyBytes>>,
+    sections_dumps: Vec<Bound<'_, PyBytes>>,
 ) -> Vec<(Vec<u8>, Vec<u8>)> {
+    let chunk_nbts = chunk_nbts.iter().map(|e| e.as_bytes()).collect::<Vec<_>>();
+    let sections_dumps = sections_dumps
+        .iter()
+        .map(|e| e.as_bytes())
+        .collect::<Vec<_>>();
     chunk_nbts
         .into_par_iter()
         .zip(sections_dumps.into_par_iter())
@@ -122,10 +135,19 @@ fn chunk_region_encode_batch(
 
 #[pyfunction]
 fn chunk_region_decode_batch(
-    others: Vec<Vec<u8>>,
-    sections_deltas: Vec<Vec<u8>>,
-    sections_dumps: Vec<Vec<u8>>,
+    others: Vec<Bound<'_, PyBytes>>,
+    sections_deltas: Vec<Bound<'_, PyBytes>>,
+    sections_dumps: Vec<Bound<'_, PyBytes>>,
 ) -> Vec<Vec<u8>> {
+    let others = others.iter().map(|e| e.as_bytes()).collect::<Vec<_>>();
+    let sections_deltas = sections_deltas
+        .iter()
+        .map(|e| e.as_bytes())
+        .collect::<Vec<_>>();
+    let sections_dumps = sections_dumps
+        .iter()
+        .map(|e| e.as_bytes())
+        .collect::<Vec<_>>();
     others
         .into_par_iter()
         .zip(sections_deltas.into_par_iter())
