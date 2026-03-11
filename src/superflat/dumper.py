@@ -2,8 +2,7 @@ from pathlib import Path
 
 import zstandard as zstd
 from structlog import get_logger
-
-from pumpkin_py import seed_to_sections_batch
+from superflat_pumpkin import seed_to_sections_batch
 
 from .utils import Coords, write_bin
 

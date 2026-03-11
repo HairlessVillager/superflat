@@ -259,7 +259,7 @@ fn seed_from_level(level_nbt: &[u8]) -> i64 {
 }
 
 #[pymodule]
-fn pumpkin_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(seed_to_sections_batch, m)?)?;
     m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;

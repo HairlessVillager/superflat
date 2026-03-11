@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import TypedDict
 
 import structlog
-from pumpkin_py import (
+from superflat_pumpkin import (
     chunk_region_decode_batch,
     chunk_region_encode_batch,
 )

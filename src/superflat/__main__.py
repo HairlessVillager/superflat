@@ -4,7 +4,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from pumpkin_py import seed_from_level
+from superflat_pumpkin import seed_from_level
 
 from superflat.app import Applicatioin
 
