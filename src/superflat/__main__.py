@@ -4,8 +4,8 @@ from typing import Annotated
 
 import structlog
 import typer
-
 from pumpkin_py import seed_from_level
+
 from superflat.app import Applicatioin
 
 APP_NAME = "superflat"
@@ -26,6 +26,7 @@ def flatten(
         Path,
         typer.Option("--cache-dir", "-c", help="Path to cache the sections dumps"),
     ],
+    # TODO: superflat: not use pumpkin sections dumps
 ):
     save_dir = save_dir.resolve()
     repo_dir = repo_dir.resolve()
