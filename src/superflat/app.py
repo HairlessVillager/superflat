@@ -6,7 +6,7 @@ from structlog.contextvars import bound_contextvars
 
 from superflat import crafters as c
 from superflat.dumper import Dumper
-from superflat.paths import chunk_region_paths_flatten, chunk_region_paths_unflatten
+from superflat.paths import chunk_region_paths_unflatten
 from superflat.utils import Coords, exrtact_xz, get_full_chunks
 
 log = structlog.get_logger()
@@ -22,6 +22,7 @@ class Applicatioin:
         self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
     ) -> Coords:
         log.info("Collecting full chunks")
+        raise NotImplementedError()
         coords = set()
         for dirpath, _dirnames, filenames in base_dir.walk():
             for filename in filenames:
@@ -40,16 +41,17 @@ class Applicatioin:
         return coords
 
     def flatten(self):
-        full_chunks = self.collect_full_chunks(
-            self.save_dir, chunk_region_paths_flatten
-        )
-        self.dumper.batch_generate(full_chunks)
+        # full_chunks = self.collect_full_chunks(
+        #     self.save_dir, chunk_region_paths_flatten
+        # )
+        # self.dumper.batch_generate(full_chunks)
 
         crafters: list[c.Crafter] = [
             c.RawFileFlattenCrafter(self.save_dir, self.repo_dir),
             c.GzipNbtFileFlattenCrafter(self.save_dir, self.repo_dir),
-            c.ChunkRegionFileFlattenCrafter(
-                self.save_dir, self.repo_dir, self.dumper, full_chunks
+            # c.ChunkRegionFileFlattenCrafter(self.save_dir, self.repo_dir, self.dumper),
+            c.ChunkRegionFileFlattenCrafterRust(
+                self.save_dir, self.repo_dir, self.dumper
             ),
             c.OtherRegionFileFlattenCrafter(self.save_dir, self.repo_dir),
         ]

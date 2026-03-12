@@ -89,10 +89,10 @@ def typer_app():
 if __name__ == "__main__":
     cli(
         "flatten",
-        # save_dir=Path(
-        #     "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/lewis20260309 lewis的世界"
-        # ),
-        # repo_dir=Path("temp/repo"),
-        save_dir=Path("temp/saves/2026-03-08_19-25-54_test42/test42"),
-        repo_dir=Path("temp/repo2"),
+        save_dir=Path(
+            "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/lewis20260309 lewis的世界"
+        ),
+        repo_dir=Path("temp/repo"),
+        # save_dir=Path("temp/saves/2026-03-08_19-25-54_test42/test42"),
+        # repo_dir=Path("temp/repo2"),
     )

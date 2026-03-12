@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bytes = { version = "1.11.1", features = ["serde"] }
+flate2 = "1.0"
 futures = "0.3.32"
 pumpkin-config = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-config" }
 pumpkin-data = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pumpkin-data" }
@@ -19,6 +20,7 @@ pumpkin-world = { version = "0.1.0-dev", path = "../../../pumpkin-repository/pum
 pyo3 = { version = "0.28.2", features = ["extension-module"] }
 pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 rayon = "1.11.0"
+regex = "1.11"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = "1.49.0"
 zstd = "0.13.3"

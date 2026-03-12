@@ -5,7 +5,7 @@ use pumpkin_nbt::tag::NbtTag;
 use pumpkin_world::chunk::format::{ChunkNbt, ChunkSectionNBT};
 use pumpkin_world::world_info::anvil::LevelDat;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::{PyBytes, PyDict, PyList};
 use pyo3::{prelude::*, wrap_pyfunction};
 
 use rayon::prelude::*;
@@ -194,10 +194,11 @@ struct EncodeTask<'py> {
 }
 
 #[pyfunction]
-fn chunk_region_encode_batch(
+fn chunk_region_encode_batch<'py>(
+    py: Python<'py>,
     tasks: Vec<EncodeTask>,
     compressed: bool,
-) -> PyResult<Vec<(Vec<u8>, Vec<u8>)>> {
+) -> PyResult<Vec<Bound<'py, PyDict>>> {
     let chunk_xz_list: Vec<_> = tasks.iter().map(|t| t.chunk_xz).collect();
     let chunk_nbts: Vec<_> = tasks.iter().map(|t| t.chunk_nbt.as_bytes()).collect();
     let sections_dumps: Vec<_> = tasks.iter().map(|t| t.sections_dump.as_bytes()).collect();
@@ -206,25 +207,35 @@ fn chunk_region_encode_batch(
         .into_par_iter()
         .zip(sections_dumps.into_par_iter())
         .zip(chunk_xz_list.into_par_iter())
-        .map(|((chunk_nbt_raw, base_sections_raw), (x, z))| {
+        .filter_map(|((chunk_nbt_raw, base_sections_raw), (x, z))| {
+            let is_full = is_chunk_status_full(chunk_nbt_raw)
+                .map_err(|e| PyValueError::new_err(format!("NBT status check failed: {}", e)))
+                .ok()?;
+            if !is_full {
+                return None;
+            }
+
             let base_sections = if compressed {
-                zstd::decode_all(Cursor::new(base_sections_raw)).map_err(|e| {
-                    PyRuntimeError::new_err(format!(
-                        "Failed to decompress sections at chunk ({}, {}): {}",
-                        x, z, e
-                    ))
-                })?
+                zstd::decode_all(Cursor::new(base_sections_raw))
+                    .map_err(|e| {
+                        PyRuntimeError::new_err(format!(
+                            "Failed to decompress sections at chunk ({}, {}): {}",
+                            x, z, e
+                        ))
+                    })
+                    .ok()?
             } else {
                 base_sections_raw.to_vec()
             };
 
-            let chunk_nbt_struct =
-                from_bytes::<ChunkNbt>(Cursor::new(chunk_nbt_raw)).map_err(|e| {
+            let chunk_nbt_struct = from_bytes::<ChunkNbt>(Cursor::new(chunk_nbt_raw))
+                .map_err(|e| {
                     PyValueError::new_err(format!(
                         "Failed to load ChunkNbt from raw nbt bytes at chunk ({}, {}): {}",
                         x, z, e
                     ))
-                })?;
+                })
+                .ok()?;
 
             let chunk_data = ChunkData::from_nbt(chunk_nbt_struct);
             let target_sections = chunk_data_to_sections_dump(&chunk_data);
@@ -237,9 +248,18 @@ fn chunk_region_encode_batch(
                 .map(|(x, y)| x ^ y)
                 .collect();
 
-            Ok((delta_sections, other))
+            Some(Ok(((x, z), delta_sections, other)))
         })
-        .collect()
+        .collect::<PyResult<Vec<_>>>()?
+        .into_iter()
+        .map(|((x, z), delta_sections, other)| {
+            let dict = PyDict::new(py);
+            dict.set_item("chunk_xz", (x, z))?;
+            dict.set_item("delta_sections", delta_sections)?;
+            dict.set_item("other", other)?;
+            Ok(dict)
+        })
+        .collect::<PyResult<Vec<_>>>()
 }
 
 #[pyfunction]
@@ -289,6 +309,8 @@ fn seed_from_level(level_nbt: &[u8]) -> i64 {
         .seed
 }
 
+mod region_crafter;
+
 #[pymodule]
 fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
@@ -297,5 +319,7 @@ fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(chunk_region_encode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_region_decode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(seed_from_level, m)?)?;
+    m.add_function(wrap_pyfunction!(region_crafter::chunk_region_flatten, m)?)?;
+    // m.add_function(wrap_pyfunction!(region_crafter::chunk_region_unflatten, m)?)?;
     Ok(())
 }
