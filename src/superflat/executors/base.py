@@ -7,7 +7,7 @@ log = get_logger()
 
 
 class Executor(Protocol):
-    def collect_task(self, save_dir: Path, repo_dir: Path): ...
+    def collect_task(self, save_dir: Path, repo_dir: Path) -> Iterable[Path]: ...
     def batch_execute(self): ...
 
 
@@ -17,5 +17,5 @@ def collect_valid_paths(base: Path, pf: Callable[[Path], Iterable[Path]]) -> lis
         if p.exists():
             rel_paths.append(p.relative_to(base))
         else:
-            log.warn(f"Skipped {p} for not exists")
+            log.warn(f"{p} not exists, skipped")
     return rel_paths

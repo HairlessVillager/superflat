@@ -35,6 +35,8 @@ class ChunkRegionFileFlattenExecutor(Executor):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(save_dir, chunk_region_paths_flatten)
+        # log.debug(f"{self.rel_paths}=")
+        return self.rel_paths
 
     def batch_execute(self):
         class Task(TypedDict):
@@ -50,6 +52,7 @@ class ChunkRegionFileFlattenExecutor(Executor):
         tasks: list[Task] = []
 
         for rel_path in self.rel_paths:
+            # log.debug(f"processing {rel_path}")
             region_xz = exrtact_xz(rel_path.name)
             if region_xz := exrtact_xz(rel_path.name):
                 region_x, region_z = region_xz
@@ -57,7 +60,7 @@ class ChunkRegionFileFlattenExecutor(Executor):
                 raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
             region = read_region_file(self.save_dir / rel_path, region_x, region_z)
             if region["is_empty"]:
-                return
+                continue
             write_bin(
                 self.repo_dir / rel_path / "timestamp-header",
                 region["timestamp_header"],
@@ -85,8 +88,7 @@ class ChunkRegionFileFlattenExecutor(Executor):
         results: list[TaskResult] = [
             {"delta_sections": e[0], "other": e[1]}
             for e in chunk_region_encode_batch(
-                [t["chunk_nbt"] for t in tasks],
-                [t["sections_dump"] for t in tasks],
+                tasks,  # pyright: ignore[reportArgumentType]
                 self.dumper.compressed,
             )
         ]
@@ -114,6 +116,7 @@ class ChunkRegionFileUnflattenExecutor(Executor):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(repo_dir, chunk_region_paths_unflatten)
+        return self.rel_paths
 
     def batch_execute(self):
         class Task(TypedDict):
@@ -232,6 +235,7 @@ class OtherRegionFileFlattenExecutor(Executor):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(save_dir, other_region_paths_flatten)
+        return self.rel_paths
 
     def batch_execute(self):
         for rel_path in self.rel_paths:
@@ -259,6 +263,7 @@ class OtherRegionFileUnlattenExecutor(Executor):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(repo_dir, other_region_paths_unflatten)
+        return self.rel_paths
 
     def batch_execute(self):
         for rel_path in self.rel_paths:

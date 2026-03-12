@@ -1,7 +1,13 @@
+from typing import TypedDict
+
+class EncodeTask(TypedDict):
+    chunk_xz: tuple[int, int]
+    chunk_nbt: bytes
+    sections_dump: bytes
+
 def normalize_nbt(input: bytes) -> bytes: ...
 def chunk_region_encode_batch(
-    chunk_nbts: list[bytes],
-    sections_dumps: list[bytes],
+    tasks: list[EncodeTask],
     compressed: bool,
 ) -> list[tuple[bytes, bytes]]: ...
 def chunk_region_decode_batch(

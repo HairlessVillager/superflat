@@ -1,47 +1,20 @@
 from pathlib import Path
-from typing import Callable, Iterable
 
 import structlog
 from structlog.contextvars import bound_contextvars
 
-from superflat.config import Config
-from superflat.dumper import SectionsDumper, ZeroDumper
+from superflat.dumper import Dumper
 from superflat.executors import Executor
 from superflat.paths import chunk_region_paths_flatten, chunk_region_paths_unflatten
-from superflat.utils import Coords, exrtact_xz, get_full_chunks
 
 log = structlog.get_logger()
 
 
 class Applicatioin:
-    def __init__(self, config: Config):
-        self.save_dir = config["save_dir"]
-        self.repo_dir = config["repo_dir"]
-        if config["terrain"]:
-            self.dumper = SectionsDumper(config["seed"], config["cache_dir"])
-        else:
-            self.dumper = ZeroDumper()
-
-    def collect_full_chunks(
-        self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
-    ) -> Coords:
-        log.info("Collecting full chunks")
-        coords = set()
-        for dirpath, _dirnames, filenames in base_dir.walk():
-            for filename in filenames:
-                filepath = dirpath / filename
-                rel_path = filepath.relative_to(base_dir)
-                if filepath in pf(base_dir):
-                    if region_xz := exrtact_xz(rel_path.name):
-                        region_x, region_z = region_xz
-                        coords |= get_full_chunks(filepath, region_x, region_z)
-                    else:
-                        log.warn(
-                            f"Cannot exrtact x and z in {rel_path.name}",
-                            filepath=filepath,
-                        )
-        log.info(f"Collected {len(coords)} full chunks", count=len(coords))
-        return coords
+    def __init__(self, save_dir: Path, repo_dir: Path, dumper: Dumper):
+        self.save_dir = save_dir
+        self.repo_dir = repo_dir
+        self.dumper = dumper
 
     def flatten(self):
         from superflat.executors import (
@@ -51,7 +24,7 @@ class Applicatioin:
             RawFileFlattenExecutor,
         )
 
-        full_chunks = self.collect_full_chunks(
+        full_chunks = self.dumper.collect_full_chunks(
             self.save_dir, chunk_region_paths_flatten
         )
         self.dumper.batch_generate(full_chunks)
@@ -63,11 +36,21 @@ class Applicatioin:
             # TODO: EntitiesRegionFile executors
             OtherRegionFileFlattenExecutor(),
         ]
+        flatten_paths = set()
         for e in executors:
             with bound_contextvars(executor=type(e).__name__):
                 log.info("Collecting tasks")
-                e.collect_task(self.save_dir, self.repo_dir)
+                paths = e.collect_task(self.save_dir, self.repo_dir)
+                for p in paths:
+                    flatten_paths.add(p)
 
+        for dirname, _, filenames in self.save_dir.walk():
+            for filename in filenames:
+                rel_path = (dirname / filename).relative_to(self.save_dir)
+                if rel_path not in flatten_paths:
+                    log.warn(f"Skipped {rel_path}")
+
+        # exit(1)
         for e in executors:
             with bound_contextvars(executor=type(e).__name__):
                 log.info("Flattening files")
@@ -81,7 +64,7 @@ class Applicatioin:
             RawFileUnflattenExecutor,
         )
 
-        full_chunks = self.collect_full_chunks(
+        full_chunks = self.dumper.collect_full_chunks(
             self.save_dir, chunk_region_paths_unflatten
         )
         self.dumper.batch_generate(full_chunks)

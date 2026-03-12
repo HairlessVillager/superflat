@@ -33,6 +33,7 @@ def exrtact_xz(filename: str) -> tuple[int, int] | None:
 
 
 def get_full_chunks(region_filepath: Path, region_x: int, region_z: int) -> Coords:
+    # log.debug(f"reading {str(region_filepath)}")
     region = read_region_file(region_filepath, region_x, region_z)
     return {
         (chunk_x, chunk_z)
@@ -120,6 +121,7 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
             chunks.sort(key=lambda c: c["offset_sectors"])
 
             for chunk in chunks:
+                # log.debug(f"reading chunk {chunk['chunk_x']}, {chunk['chunk_z']}")
                 seek_offset = region_reader.seek(chunk["offset_sectors"] * SECTOR_SIZE)
                 if seek_offset != chunk["offset_sectors"] * SECTOR_SIZE:
                     raise RuntimeError(

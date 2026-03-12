@@ -4,7 +4,7 @@ use std::sync::Arc;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_world::chunk::format::{ChunkNbt, ChunkSectionNBT};
 use pumpkin_world::world_info::anvil::LevelDat;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyBytes, PyList};
 use pyo3::{prelude::*, wrap_pyfunction};
 
@@ -183,40 +183,61 @@ fn seed_to_sections_batch(seed: u64, coords: Bound<'_, PyList>) -> Vec<Vec<u8>> 
         .collect()
 }
 
+#[derive(FromPyObject)]
+struct EncodeTask<'py> {
+    #[pyo3(item)]
+    chunk_xz: (i32, i32),
+    #[pyo3(item)]
+    chunk_nbt: Bound<'py, PyBytes>,
+    #[pyo3(item)]
+    sections_dump: Bound<'py, PyBytes>,
+}
+
 #[pyfunction]
 fn chunk_region_encode_batch(
-    chunk_nbts: Vec<Bound<'_, PyBytes>>,
-    sections_dumps: Vec<Bound<'_, PyBytes>>,
+    tasks: Vec<EncodeTask>,
     compressed: bool,
-) -> Vec<(Vec<u8>, Vec<u8>)> {
-    let chunk_nbts = chunk_nbts.iter().map(|e| e.as_bytes()).collect::<Vec<_>>();
-    let sections_dumps = sections_dumps
-        .iter()
-        .map(|e| e.as_bytes())
-        .collect::<Vec<_>>();
+) -> PyResult<Vec<(Vec<u8>, Vec<u8>)>> {
+    let chunk_xz_list: Vec<_> = tasks.iter().map(|t| t.chunk_xz).collect();
+    let chunk_nbts: Vec<_> = tasks.iter().map(|t| t.chunk_nbt.as_bytes()).collect();
+    let sections_dumps: Vec<_> = tasks.iter().map(|t| t.sections_dump.as_bytes()).collect();
+
     chunk_nbts
         .into_par_iter()
         .zip(sections_dumps.into_par_iter())
-        .map(|(chunk_nbt, base_sections)| {
+        .zip(chunk_xz_list.into_par_iter())
+        .map(|((chunk_nbt_raw, base_sections_raw), (x, z))| {
             let base_sections = if compressed {
-                zstd::decode_all(Cursor::new(base_sections)).expect("Failed to decompress sections")
+                zstd::decode_all(Cursor::new(base_sections_raw)).map_err(|e| {
+                    PyRuntimeError::new_err(format!(
+                        "Failed to decompress sections at chunk ({}, {}): {}",
+                        x, z, e
+                    ))
+                })?
             } else {
-                base_sections.to_vec()
+                base_sections_raw.to_vec()
             };
 
-            let target_sections = {
-                let chunk_nbt = from_bytes::<ChunkNbt>(Cursor::new(chunk_nbt))
-                    .expect("Failed to load ChunkNbt from raw nbt bytes");
-                let chunk_data = ChunkData::from_nbt(chunk_nbt);
-                chunk_data_to_sections_dump(&chunk_data)
-            };
-            let other = delete_section_from_nbt(&chunk_nbt);
+            let chunk_nbt_struct =
+                from_bytes::<ChunkNbt>(Cursor::new(chunk_nbt_raw)).map_err(|e| {
+                    PyValueError::new_err(format!(
+                        "Failed to load ChunkNbt from raw nbt bytes at chunk ({}, {}): {}",
+                        x, z, e
+                    ))
+                })?;
+
+            let chunk_data = ChunkData::from_nbt(chunk_nbt_struct);
+            let target_sections = chunk_data_to_sections_dump(&chunk_data);
+
+            let other = delete_section_from_nbt(chunk_nbt_raw);
+
             let delta_sections: Vec<u8> = base_sections
                 .iter()
                 .zip(target_sections.iter())
                 .map(|(x, y)| x ^ y)
                 .collect();
-            (delta_sections, other)
+
+            Ok((delta_sections, other))
         })
         .collect()
 }
@@ -228,33 +249,35 @@ fn chunk_region_decode_batch(
     sections_dumps: Vec<Bound<'_, PyBytes>>,
     compressed: bool,
 ) -> Vec<Vec<u8>> {
-    let others = others.iter().map(|e| e.as_bytes()).collect::<Vec<_>>();
-    let sections_deltas = sections_deltas
-        .iter()
-        .map(|e| e.as_bytes())
-        .collect::<Vec<_>>();
-    let sections_dumps = sections_dumps
-        .iter()
-        .map(|e| e.as_bytes())
-        .collect::<Vec<_>>();
+    let others: Vec<&[u8]> = others.iter().map(|e| e.as_bytes()).collect();
+    let sections_deltas: Vec<&[u8]> = sections_deltas.iter().map(|e| e.as_bytes()).collect();
+    let sections_dumps: Vec<&[u8]> = sections_dumps.iter().map(|e| e.as_bytes()).collect();
+
     others
         .into_par_iter()
         .zip(sections_deltas.into_par_iter())
         .zip(sections_dumps.into_par_iter())
-        .map(|((other, delta_sections), base_sections)| {
+        .map(|((other, delta_sections), base_sections_raw)| {
             let base_sections = if compressed {
-                zstd::decode_all(Cursor::new(base_sections)).expect("Failed to decompress sections")
+                zstd::decode_all(Cursor::new(base_sections_raw)).map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to decompress sections: {}", e))
+                })?
             } else {
-                base_sections.to_vec()
+                base_sections_raw.to_vec()
             };
+
             let target_sections: Vec<u8> = base_sections
                 .iter()
                 .zip(delta_sections.iter())
                 .map(|(x, y)| x ^ y)
                 .collect();
-            restore_chunk_from(&target_sections, &other)
+
+            let result = restore_chunk_from(&target_sections, other);
+
+            Ok(result)
         })
-        .collect()
+        .collect::<PyResult<Vec<Vec<u8>>>>()
+        .expect("Failed to decode chunk region")
 }
 
 #[pyfunction]

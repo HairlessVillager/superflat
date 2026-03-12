@@ -1,15 +1,15 @@
 import gzip
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import structlog
 import typer
 from superflat_pumpkin import seed_from_level
 
 from superflat.app import Applicatioin
+from superflat.dumper import SectionsDumper, ZeroDumper
 
 APP_NAME = "superflat"
-typer_app = typer.Typer(name=APP_NAME)
 log = structlog.get_logger()
 
 OptionSaveDir = Annotated[
@@ -20,7 +20,7 @@ OptionRepoDir = Annotated[
     typer.Option("--repo-dir", "-r", help="Path to the flatten Git repository"),
 ]
 OptionCacheDir = Annotated[
-    Path,
+    Path | None,
     typer.Option("--cache-dir", "-c", help="Path to cache the sections dumps"),
 ]
 OptionTerrain = Annotated[
@@ -32,75 +32,67 @@ OptionTerrain = Annotated[
 ]
 
 
-@typer_app.command()
-def flatten(
+def cli(
+    command: Literal["flatten", "unflatten"],
     save_dir: OptionSaveDir,
     repo_dir: OptionRepoDir,
-    cache_dir: OptionCacheDir,
+    cache_dir: OptionCacheDir = None,
     terrain: OptionTerrain = False,
     # NOTE on 20260312: set default to False because this option cannot save delta space for now.
     # Pumpkin-MC terrain generation is still work in progress, and there will be a day to use True as default.
 ):
     save_dir = save_dir.resolve()
     repo_dir = repo_dir.resolve()
-    cache_dir = cache_dir.resolve()
 
-    level_dat_filepath = save_dir / "level.dat"
-    if not level_dat_filepath.exists():
-        raise ValueError(f"{save_dir / 'level.dat'} not exists")
-    seed = seed_from_level(gzip.decompress(level_dat_filepath.read_bytes()))
+    if terrain:
+        if cache_dir:
+            cache_dir = cache_dir.resolve()
+        else:
+            raise ValueError("cache_dir is required when terrain=True")
+
+        if command == "flatten":
+            level_dat_filepath = save_dir / "level.dat"
+            seed = seed_from_level(gzip.decompress(level_dat_filepath.read_bytes()))
+        elif command == "unflatten":
+            level_dat_filepath = repo_dir / "level.dat"
+            seed = seed_from_level(level_dat_filepath.read_bytes())
+
+        dumper = SectionsDumper(seed, cache_dir)
+    else:
+        dumper = ZeroDumper()
 
     log.info(
-        f"Flattening save from {save_dir} to {repo_dir}, cache on {cache_dir}, "
+        f"{command.capitalize()} save from {save_dir} to {repo_dir}, "
+        + ("cache on {cache_dir}, " if cache_dir else "no cache, ")
         + ("using terrain" if terrain else "disable terrain"),
         save_dir=save_dir,
         repo_dir=repo_dir,
         cache_dir=cache_dir,
         terrain=terrain,
     )
-    app = Applicatioin(
-        {
-            "cache_dir": cache_dir,
-            "repo_dir": repo_dir,
-            "save_dir": save_dir,
-            "seed": seed,
-            "terrain": terrain,
-        }
+
+    app = Applicatioin(save_dir, repo_dir, dumper)
+    if command == "flatten":
+        app.flatten()
+    elif command == "unflatten":
+        app.unflatten()
+
+
+def typer_app():
+    try:
+        typer.run(cli)
+    except Exception:
+        log.exception(f"{APP_NAME} Failed")
+        exit(-1)
+
+
+if __name__ == "__main__":
+    cli(
+        "flatten",
+        save_dir=Path(
+            "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/lewis20260309 lewis的世界"
+        ),
+        repo_dir=Path("temp/repo"),
+        # save_dir=Path("temp/saves/2026-03-08_19-25-54_test42/test42"),
+        # repo_dir=Path("temp/repo2"),
     )
-    app.flatten()
-
-
-@typer_app.command()
-def unflatten(
-    save_dir: OptionSaveDir,
-    repo_dir: OptionRepoDir,
-    cache_dir: OptionCacheDir,
-    terrain: OptionTerrain = False,
-    # NOTE on 20260312: set default to False because this option cannot save delta space for now.
-    # Pumpkin-MC terrain generation is still work in progress, and there will be a day to use True as default.
-):
-    save_dir = save_dir.resolve()
-    repo_dir = repo_dir.resolve()
-    cache_dir = cache_dir.resolve()
-
-    level_dat_filepath = repo_dir / "level.dat"
-    seed = seed_from_level(level_dat_filepath.read_bytes())
-
-    log.info(
-        f"Unflattening save from {repo_dir} to {save_dir}, cache on {cache_dir}"
-        + ("using terrain" if terrain else "disable terrain"),
-        save_dir=save_dir,
-        repo_dir=repo_dir,
-        cache_dir=cache_dir,
-        terrain=terrain,
-    )
-    app = Applicatioin(
-        {
-            "cache_dir": cache_dir,
-            "repo_dir": repo_dir,
-            "save_dir": save_dir,
-            "seed": seed,
-            "terrain": terrain,
-        }
-    )
-    app.unflatten()

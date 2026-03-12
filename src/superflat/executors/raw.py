@@ -10,6 +10,7 @@ class RawFileFlattenExecutor(Executor):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(save_dir, raw_paths)
+        return self.rel_paths
 
     def batch_execute(self):
         for rel_path in self.rel_paths:
@@ -23,6 +24,7 @@ class RawFileUnflattenExecutor(Executor):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.rel_paths = collect_valid_paths(repo_dir, raw_paths)
+        return self.rel_paths
 
     def batch_execute(self):
         for rel_path in self.rel_paths:
