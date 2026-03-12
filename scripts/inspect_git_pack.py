@@ -1,5 +1,6 @@
 import re
 import subprocess
+import zlib
 from functools import cache
 from pathlib import Path
 
@@ -67,6 +68,35 @@ def blob_to_commit(git_path: Path, blob: str):
         raise ValueError(f"Cannot find blob {blob} in all commits")
 
 
+def id_to_raw_size(git_dir: Path, obj_id: str):
+    raw_size = int(
+        subprocess.check_output(
+            [
+                "git",
+                f"--git-dir={str(git_dir)}",
+                "cat-file",
+                "-s",
+                obj_id,
+            ],
+            universal_newlines=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    )
+    return raw_size
+
+
+def pref_str(*nums: int):
+    s = ""
+    last = None
+    for n in nums:
+        if last:
+            s += f"x{n / last * 100:.2f}%=> "
+        s += f"{n:,} "
+        last = n
+
+    return s.strip()
+
+
 def inspect_pack(
     git_path: Path, pack_idx_path: Path, sha1_mapping: dict[str, str], show_commit: bool
 ):
@@ -82,62 +112,76 @@ def inspect_pack(
         stderr=subprocess.DEVNULL,
     )
 
-    total_original_size = 0
-    total_compressed_size = 0
+    total_raw_size = 0
+    total_object_size = 0
+    total_pack_size = 0
     # print(git_sha1_path_mapping)
     for line in result.splitlines():
         # print(line)
         if mc := re.search(
             r"([0-9a-f]{40}) blob +(\d+) (\d+) \d+ (\d+) ([0-9a-f]{40})", line
         ):
-            blob = mc[1]
-            compressed_size = int(mc[2])
-            # size_in_packfile = int(mc[3])
+            blob: str = mc[1]
+            pack_size = int(mc[3])
             depth = int(mc[4])
             base_blob = mc[5]
             blob_path = sha1_mapping[blob]
             base_blob_path = sha1_mapping[base_blob]
-            uncompressed_size = int(
-                subprocess.check_output(
-                    [
-                        "git",
-                        f"--git-dir={str(git_path)}",
-                        "cat-file",
-                        "-s",
-                        blob,
-                    ],
-                    universal_newlines=True,
-                    stderr=subprocess.DEVNULL,
-                ).strip()
-            )
-            pcent = compressed_size / uncompressed_size * 100 - 100
+            raw_size = id_to_raw_size(git_path, blob)
+            raw_content = subprocess.check_output(
+                [
+                    "git",
+                    f"--git-dir={str(git_path)}",
+                    "cat-file",
+                    "blob",
+                    blob,
+                ],
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            object_size = len(zlib.compress(raw_content))
+
+            total_raw_size += raw_size
+            total_object_size += object_size
+            total_pack_size += pack_size
+
             if show_commit:
                 print(
-                    f"DELTA {blob_to_commit(git_path, blob)[:8]}:{blob_path} -> {blob_to_commit(git_path, base_blob)[:8]}:{base_blob_path} @{depth} {uncompressed_size:,} {pcent:+.2f}%"
+                    f"DELTA @{depth} {blob_to_commit(git_path, blob)[:8]}:{blob_path} -> {blob_to_commit(git_path, base_blob)[:8]}:{base_blob_path}"
                 )
             else:
-                print(
-                    f"DELTA {blob} -> {blob_path} @{depth} {uncompressed_size:,} {pcent:+.2f}%"
-                )
-            total_original_size += uncompressed_size
-            total_compressed_size += compressed_size
+                print(f"DELTA @{depth} {blob_path} -> {base_blob_path}")
+            print(f"\t{pref_str(raw_size, object_size, pack_size)}")
         elif mc := re.search(r"([0-9a-f]{40}) blob +(\d+) (\d+) \d+", line):
             blob = mc[1]
-            compressed_size = int(mc[2])
-            # size_in_packfile = int(mc[3])
+            # object_size = int(mc[2])
+            pack_size = int(mc[3])
             blob_path = sha1_mapping[blob]
-            if show_commit:
-                print(
-                    f"BASE {blob_to_commit(git_path, blob)[:8]}:{blob_path} {compressed_size:,}"
-                )
-            else:
-                print(f"BASE {blob_path} {compressed_size:,}")
+            raw_size = id_to_raw_size(git_path, blob)
 
-            total_original_size += compressed_size
-            total_compressed_size += compressed_size
+            raw_content = subprocess.check_output(
+                [
+                    "git",
+                    f"--git-dir={str(git_path)}",
+                    "cat-file",
+                    "blob",
+                    blob,
+                ],
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            object_size = len(zlib.compress(raw_content))
+
+            total_raw_size += raw_size
+            total_object_size += object_size
+            total_pack_size += pack_size
+
+            if show_commit:
+                print(f"BASE {blob_to_commit(git_path, blob)[:8]}:{blob_path}")
+            else:
+                print(f"BASE {blob_path}")
+            print(f"\t{pref_str(raw_size, object_size, pack_size)}")
 
     print(
-        f"Pack performance: {total_compressed_size / total_original_size * 100 - 100:+.2f}% ({total_original_size:,}B -> {total_compressed_size:,}B)"
+        f"Pack performance: {pref_str(total_raw_size, total_object_size, total_pack_size)}"
     )
 
 
