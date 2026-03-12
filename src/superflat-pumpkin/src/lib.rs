@@ -187,6 +187,7 @@ fn seed_to_sections_batch(seed: u64, coords: Bound<'_, PyList>) -> Vec<Vec<u8>> 
 fn chunk_region_encode_batch(
     chunk_nbts: Vec<Bound<'_, PyBytes>>,
     sections_dumps: Vec<Bound<'_, PyBytes>>,
+    compressed: bool,
 ) -> Vec<(Vec<u8>, Vec<u8>)> {
     let chunk_nbts = chunk_nbts.iter().map(|e| e.as_bytes()).collect::<Vec<_>>();
     let sections_dumps = sections_dumps
@@ -196,9 +197,12 @@ fn chunk_region_encode_batch(
     chunk_nbts
         .into_par_iter()
         .zip(sections_dumps.into_par_iter())
-        .map(|(chunk_nbt, compressed_base_sections)| {
-            let base_sections = zstd::decode_all(Cursor::new(compressed_base_sections))
-                .expect("Failed to decompress sections");
+        .map(|(chunk_nbt, base_sections)| {
+            let base_sections = if compressed {
+                zstd::decode_all(Cursor::new(base_sections)).expect("Failed to decompress sections")
+            } else {
+                base_sections.to_vec()
+            };
 
             let target_sections = {
                 let chunk_nbt = from_bytes::<ChunkNbt>(Cursor::new(chunk_nbt))
@@ -222,6 +226,7 @@ fn chunk_region_decode_batch(
     others: Vec<Bound<'_, PyBytes>>,
     sections_deltas: Vec<Bound<'_, PyBytes>>,
     sections_dumps: Vec<Bound<'_, PyBytes>>,
+    compressed: bool,
 ) -> Vec<Vec<u8>> {
     let others = others.iter().map(|e| e.as_bytes()).collect::<Vec<_>>();
     let sections_deltas = sections_deltas
@@ -236,9 +241,12 @@ fn chunk_region_decode_batch(
         .into_par_iter()
         .zip(sections_deltas.into_par_iter())
         .zip(sections_dumps.into_par_iter())
-        .map(|((other, delta_sections), compressed_base_sections)| {
-            let base_sections = zstd::decode_all(Cursor::new(compressed_base_sections))
-                .expect("Failed to decompress sections");
+        .map(|((other, delta_sections), base_sections)| {
+            let base_sections = if compressed {
+                zstd::decode_all(Cursor::new(base_sections)).expect("Failed to decompress sections")
+            } else {
+                base_sections.to_vec()
+            };
             let target_sections: Vec<u8> = base_sections
                 .iter()
                 .zip(delta_sections.iter())

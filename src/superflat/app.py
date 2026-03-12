@@ -5,7 +5,7 @@ import structlog
 from structlog.contextvars import bound_contextvars
 
 from superflat.config import Config
-from superflat.dumper import SectionsDumper
+from superflat.dumper import SectionsDumper, ZeroDumper
 from superflat.executors import Executor
 from superflat.paths import chunk_region_paths_flatten, chunk_region_paths_unflatten
 from superflat.utils import Coords, exrtact_xz, get_full_chunks
@@ -17,7 +17,10 @@ class Applicatioin:
     def __init__(self, config: Config):
         self.save_dir = config["save_dir"]
         self.repo_dir = config["repo_dir"]
-        self.dumper = SectionsDumper(config["seed"], config["cache_dir"])
+        if config["terrain"]:
+            self.dumper = SectionsDumper(config["seed"], config["cache_dir"])
+        else:
+            self.dumper = ZeroDumper()
 
     def collect_full_chunks(
         self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
@@ -57,6 +60,7 @@ class Applicatioin:
             RawFileFlattenExecutor(),
             GzipNbtFileFlattenExecutor(),
             ChunkRegionFileFlattenExecutor(self.dumper, full_chunks),
+            # TODO: EntitiesRegionFile executors
             OtherRegionFileFlattenExecutor(),
         ]
         for e in executors:

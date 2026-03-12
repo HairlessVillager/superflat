@@ -1,9 +1,14 @@
 def normalize_nbt(input: bytes) -> bytes: ...
 def chunk_region_encode_batch(
-    chunk_nbts: list[bytes], sections_dumps: list[bytes]
+    chunk_nbts: list[bytes],
+    sections_dumps: list[bytes],
+    compressed: bool,
 ) -> list[tuple[bytes, bytes]]: ...
 def chunk_region_decode_batch(
-    others: list[bytes], sections_deltas: list[bytes], sections_dumps: list[bytes]
+    others: list[bytes],
+    sections_deltas: list[bytes],
+    sections_dumps: list[bytes],
+    compressed: bool,
 ) -> list[bytes]: ...
 def seed_from_level(level_nbt: bytes) -> int: ...
 def seed_to_sections_batch(seed: int, coords: list[tuple[int, int]]) -> list[bytes]: ...

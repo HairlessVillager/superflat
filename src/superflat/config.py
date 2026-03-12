@@ -7,3 +7,4 @@ class Config(TypedDict):
     repo_dir: Path
     cache_dir: Path
     seed: int
+    terrain: bool

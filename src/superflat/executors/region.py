@@ -7,7 +7,7 @@ from superflat_pumpkin import (
     chunk_region_encode_batch,
 )
 
-from superflat.dumper import SectionsDumper
+from superflat.dumper import Dumper
 from superflat.executors.base import Executor, collect_valid_paths
 from superflat.paths import (
     chunk_region_paths_flatten,
@@ -27,7 +27,7 @@ log = structlog.get_logger()
 
 
 class ChunkRegionFileFlattenExecutor(Executor):
-    def __init__(self, dumper: SectionsDumper, full_chunks: Coords):
+    def __init__(self, dumper: Dumper, full_chunks: Coords):
         self.dumper = dumper
         self.full_chunks = full_chunks
 
@@ -81,16 +81,17 @@ class ChunkRegionFileFlattenExecutor(Executor):
                     }
                 )
 
-        log.debug(f"Collected {len(tasks)} tasks, running", count=len(tasks))
+        log.info(f"Collected {len(tasks)} tasks, running", count=len(tasks))
         results: list[TaskResult] = [
             {"delta_sections": e[0], "other": e[1]}
             for e in chunk_region_encode_batch(
                 [t["chunk_nbt"] for t in tasks],
                 [t["sections_dump"] for t in tasks],
+                self.dumper.compressed,
             )
         ]
 
-        log.debug("Write files")
+        log.info("Write files")
         for task, result in zip(tasks, results, strict=True):
             rel_path = task["rel_path"]
             chunk_x, chunk_z = task["chunk_xz"]
@@ -102,11 +103,10 @@ class ChunkRegionFileFlattenExecutor(Executor):
                 self.repo_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
             )
             write_bin(delta_filepath, result["delta_sections"])
-        log.debug("Done")
 
 
 class ChunkRegionFileUnflattenExecutor(Executor):
-    def __init__(self, dumper: SectionsDumper, full_chunks: Coords):
+    def __init__(self, dumper: Dumper, full_chunks: Coords):
         self.dumper = dumper
         self.full_chunks = full_chunks
 
@@ -191,17 +191,18 @@ class ChunkRegionFileUnflattenExecutor(Executor):
                     }
                 )
 
-        log.debug(f"Collected {len(tasks)} tasks, running", count=len(tasks))
+        log.info(f"Collected {len(tasks)} tasks, running", count=len(tasks))
         results: list[TaskResult] = [
             {"chunk_nbt": e}
             for e in chunk_region_decode_batch(
                 [t["other"] for t in tasks],
                 [t["sections_delta"] for t in tasks],
                 [t["sections_dump"] for t in tasks],
+                self.dumper.compressed,
             )
         ]
 
-        log.debug("Write files")
+        log.info("Write files")
         for task, result in zip(tasks, results, strict=True):
             region_xz = task["region_xz"]
             lst = regionxz2taskresults.get(region_xz, list())

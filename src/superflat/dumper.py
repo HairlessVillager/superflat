@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Protocol
 
 import zstandard as zstd
 from structlog import get_logger
@@ -11,7 +12,14 @@ cctx = zstd.ZstdCompressor()
 dctx = zstd.ZstdDecompressor()
 
 
-class SectionsDumper:
+class Dumper(Protocol):
+    def batch_generate(self, coords: Coords): ...
+    def get(self, chunk_x: int, chunk_z: int) -> bytes | None: ...
+    @property
+    def compressed(self) -> bool: ...
+
+
+class SectionsDumper(Dumper):
     def __init__(self, seed: int, stroage_dir: Path):
         self.seed = seed
         self.stroage_dir = stroage_dir
@@ -42,3 +50,22 @@ class SectionsDumper:
             return data
         else:
             return None
+
+    @property
+    def compressed(self) -> bool:
+        return True
+
+
+class ZeroDumper(Dumper):
+    DUMP_SIZE = 0x3062A
+    ZERO_DUMP = bytes(DUMP_SIZE)
+
+    def batch_generate(self, coords: Coords):
+        pass
+
+    def get(self, chunk_x: int, chunk_z: int) -> bytes | None:
+        return self.ZERO_DUMP
+
+    @property
+    def compressed(self) -> bool:
+        return False
