@@ -1,14 +1,15 @@
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable, Iterable, Protocol
+from typing import Callable, Iterable
 
 from structlog import get_logger
 
 log = get_logger()
 
 
-class Executor(Protocol):
-    def collect_task(self, save_dir: Path, repo_dir: Path) -> Iterable[Path]: ...
-    def batch_execute(self): ...
+class Crafter(ABC):
+    @abstractmethod
+    def __call__(self) -> Iterable[Path]: ...
 
 
 def collect_valid_paths(base: Path, pf: Callable[[Path], Iterable[Path]]) -> list[Path]:

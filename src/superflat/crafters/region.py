@@ -7,8 +7,8 @@ from superflat_pumpkin import (
     chunk_region_encode_batch,
 )
 
+from superflat.crafters.base import Crafter, collect_valid_paths
 from superflat.dumper import Dumper
-from superflat.executors.base import Executor, collect_valid_paths
 from superflat.paths import (
     chunk_region_paths_flatten,
     chunk_region_paths_unflatten,
@@ -26,19 +26,19 @@ from superflat.utils import (
 log = structlog.get_logger()
 
 
-class ChunkRegionFileFlattenExecutor(Executor):
-    def __init__(self, dumper: Dumper, full_chunks: Coords):
+class ChunkRegionFileFlattenCrafter(Crafter):
+    def __init__(
+        self, save_dir: Path, repo_dir: Path, dumper: Dumper, full_chunks: Coords
+    ):
+        self.save_dir = save_dir
+        self.repo_dir = repo_dir
         self.dumper = dumper
         self.full_chunks = full_chunks
 
-    def collect_task(self, save_dir: Path, repo_dir: Path):
-        self.save_dir = save_dir
-        self.repo_dir = repo_dir
-        self.rel_paths = collect_valid_paths(save_dir, chunk_region_paths_flatten)
-        # log.debug(f"{self.rel_paths}=")
-        return self.rel_paths
+    def __call__(self) -> list[Path]:
+        rel_paths = collect_valid_paths(self.save_dir, chunk_region_paths_flatten)
+        # log.debug(f"{rel_paths}=")
 
-    def batch_execute(self):
         class Task(TypedDict):
             chunk_nbt: bytes
             sections_dump: bytes
@@ -51,7 +51,7 @@ class ChunkRegionFileFlattenExecutor(Executor):
 
         tasks: list[Task] = []
 
-        for rel_path in self.rel_paths:
+        for rel_path in rel_paths:
             # log.debug(f"processing {rel_path}")
             region_xz = exrtact_xz(rel_path.name)
             if region_xz := exrtact_xz(rel_path.name):
@@ -106,19 +106,16 @@ class ChunkRegionFileFlattenExecutor(Executor):
             )
             write_bin(delta_filepath, result["delta_sections"])
 
+        return rel_paths
 
-class ChunkRegionFileUnflattenExecutor(Executor):
-    def __init__(self, dumper: Dumper, full_chunks: Coords):
-        self.dumper = dumper
-        self.full_chunks = full_chunks
 
-    def collect_task(self, save_dir: Path, repo_dir: Path):
+class ChunkRegionFileUnflattenCrafter(Crafter):
+    def __init__(self, save_dir: Path, repo_dir: Path, dumper: Dumper):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
-        self.rel_paths = collect_valid_paths(repo_dir, chunk_region_paths_unflatten)
-        return self.rel_paths
+        self.dumper = dumper
 
-    def batch_execute(self):
+    def __call__(self) -> list[Path]:
         class Task(TypedDict):
             other: bytes
             sections_delta: bytes
@@ -129,12 +126,14 @@ class ChunkRegionFileUnflattenExecutor(Executor):
         class TaskResult(TypedDict):
             chunk_nbt: bytes
 
+        rel_paths = collect_valid_paths(self.repo_dir, chunk_region_paths_unflatten)
+
         tasks: list[Task] = []
         regionxz2header: dict[tuple[int, int], bytes] = {}
         regionxz2relpath: dict[tuple[int, int], Path] = {}
         regionxz2taskresults: dict[tuple[int, int], list[tuple[Task, TaskResult]]] = {}
 
-        for rel_path in self.rel_paths:
+        for rel_path in rel_paths:
             # simple check
             if rel_path.name != "timestamp-header":
                 raise ValueError(f"Invalid rel_path: {rel_path}")
@@ -228,88 +227,84 @@ class ChunkRegionFileUnflattenExecutor(Executor):
                 },
                 self.save_dir / rel_path,
             )
+        return rel_paths
 
 
-class OtherRegionFileFlattenExecutor(Executor):
-    def collect_task(self, save_dir: Path, repo_dir: Path):
+class OtherRegionFileFlattenCrafter(Crafter):
+    def __init__(self, save_dir: Path, repo_dir: Path):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
-        self.rel_paths = collect_valid_paths(save_dir, other_region_paths_flatten)
-        return self.rel_paths
 
-    def batch_execute(self):
-        for rel_path in self.rel_paths:
-            self.flatten(rel_path)
-
-    def flatten(self, rel_path: Path):
-        region_xz = exrtact_xz(rel_path.name)
-        if region_xz := exrtact_xz(rel_path.name):
-            region_x, region_z = region_xz
-        else:
-            raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
-        region = read_region_file(self.save_dir / rel_path, region_x, region_z)
-        if region["is_empty"]:
-            return
-        write_bin(
-            self.repo_dir / rel_path / "timestamp-header", region["timestamp_header"]
-        )
-        for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
-            nbt_filepath = self.repo_dir / rel_path / f"c.{chunk_x}.{chunk_z}.nbt"
-            write_bin(nbt_filepath, nbt)
+    def __call__(self) -> list[Path]:
+        rel_paths = collect_valid_paths(self.save_dir, other_region_paths_flatten)
+        for rel_path in rel_paths:
+            region_xz = exrtact_xz(rel_path.name)
+            if region_xz := exrtact_xz(rel_path.name):
+                region_x, region_z = region_xz
+            else:
+                raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
+            region = read_region_file(self.save_dir / rel_path, region_x, region_z)
+            if region["is_empty"]:
+                continue
+            write_bin(
+                self.repo_dir / rel_path / "timestamp-header",
+                region["timestamp_header"],
+            )
+            for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items():
+                nbt_filepath = self.repo_dir / rel_path / f"c.{chunk_x}.{chunk_z}.nbt"
+                write_bin(nbt_filepath, nbt)
+        return rel_paths
 
 
-class OtherRegionFileUnlattenExecutor(Executor):
-    def collect_task(self, save_dir: Path, repo_dir: Path):
+class OtherRegionFileUnflattenCrafter(Crafter):
+    def __init__(self, save_dir: Path, repo_dir: Path):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
-        self.rel_paths = collect_valid_paths(repo_dir, other_region_paths_unflatten)
-        return self.rel_paths
 
-    def batch_execute(self):
-        for rel_path in self.rel_paths:
-            self.unflatten(rel_path)
+    def __call__(self) -> list[Path]:
+        rel_paths = collect_valid_paths(self.repo_dir, other_region_paths_unflatten)
+        for rel_path in rel_paths:
+            # simple check
+            if rel_path.name != "timestamp-header":
+                raise ValueError(f"Invalid rel_path: {rel_path}")
 
-    def unflatten(self, rel_path: Path):
-        # simple check
-        if rel_path.name != "timestamp-header":
-            raise ValueError(f"Invalid rel_path: {rel_path}")
+            rel_path = rel_path.parent
 
-        rel_path = rel_path.parent
+            region_xz = exrtact_xz(rel_path.name)
+            if region_xz := exrtact_xz(rel_path.name):
+                region_x, region_z = region_xz
+            else:
+                raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
 
-        region_xz = exrtact_xz(rel_path.name)
-        if region_xz := exrtact_xz(rel_path.name):
-            region_x, region_z = region_xz
-        else:
-            raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
+            timestamp_header = None
+            chunkxz2nbt = {}
+            for dirpath, _dirnames, filenames in (self.repo_dir / rel_path).walk():
+                for filename in filenames:
+                    filepath = dirpath / filename
+                    if filename == "timestamp-header":
+                        timestamp_header = filepath.read_bytes()
+                    elif (
+                        chunk_xz := exrtact_xz(filepath.name)
+                    ) and filepath.suffix == ".nbt":
+                        chunk_x, chunk_z = chunk_xz
+                        nbt = filepath.read_bytes()
+                        chunkxz2nbt[(chunk_x, chunk_z)] = nbt
+                    else:
+                        log.warn(
+                            f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
+                        )
 
-        timestamp_header = None
-        chunkxz2nbt = {}
-        for dirpath, _dirnames, filenames in (self.repo_dir / rel_path).walk():
-            for filename in filenames:
-                filepath = dirpath / filename
-                if filename == "timestamp-header":
-                    timestamp_header = filepath.read_bytes()
-                elif (
-                    chunk_xz := exrtact_xz(filepath.name)
-                ) and filepath.suffix == ".nbt":
-                    chunk_x, chunk_z = chunk_xz
-                    nbt = filepath.read_bytes()
-                    chunkxz2nbt[(chunk_x, chunk_z)] = nbt
-                else:
-                    log.warn(
-                        f"Skipped unrecognized file: {rel_path} (full path: {filepath})"
-                    )
+            if not timestamp_header:
+                raise RuntimeError(f"Timestamp header file not found for {rel_path}")
 
-        if not timestamp_header:
-            raise RuntimeError(f"Timestamp header file not found for {rel_path}")
-
-        write_region_file(
-            {
-                "region_x": region_x,
-                "region_z": region_z,
-                "is_empty": False,
-                "timestamp_header": timestamp_header,
-                "chunkxz2nbt": chunkxz2nbt,
-            },
-            self.save_dir / rel_path,
-        )
+            write_region_file(
+                {
+                    "region_x": region_x,
+                    "region_z": region_z,
+                    "is_empty": False,
+                    "timestamp_header": timestamp_header,
+                    "chunkxz2nbt": chunkxz2nbt,
+                },
+                self.save_dir / rel_path,
+            )
+        return rel_paths

@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Callable, Iterable, Protocol
+from typing import Protocol
 
 import zstandard as zstd
 from structlog import get_logger
 from superflat_pumpkin import seed_to_sections_batch
 
-from .utils import Coords, exrtact_xz, get_full_chunks, write_bin
+from .utils import Coords, write_bin
 
 log = get_logger()
 cctx = zstd.ZstdCompressor()
@@ -17,9 +17,6 @@ class Dumper(Protocol):
     def get(self, chunk_x: int, chunk_z: int) -> bytes | None: ...
     @property
     def compressed(self) -> bool: ...
-    def collect_full_chunks(
-        self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
-    ) -> Coords: ...
 
 
 class SectionsDumper(Dumper):
@@ -32,27 +29,6 @@ class SectionsDumper(Dumper):
 
     def is_cached(self, chunk_x: int, chunk_z: int) -> bool:
         return self.stroage_filepath(chunk_x, chunk_z).exists()
-
-    def collect_full_chunks(
-        self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
-    ) -> Coords:
-        log.info("Collecting full chunks")
-        coords = set()
-        for dirpath, _dirnames, filenames in base_dir.walk():
-            for filename in filenames:
-                filepath = dirpath / filename
-                rel_path = filepath.relative_to(base_dir)
-                if filepath in pf(base_dir):
-                    if region_xz := exrtact_xz(rel_path.name):
-                        region_x, region_z = region_xz
-                        coords |= get_full_chunks(filepath, region_x, region_z)
-                    else:
-                        log.warn(
-                            f"Cannot exrtact x and z in {rel_path.name}",
-                            filepath=filepath,
-                        )
-        log.info(f"Collected {len(coords)} full chunks", count=len(coords))
-        return coords
 
     # TODO: dim
     def batch_generate(self, coords: Coords):
@@ -93,8 +69,3 @@ class ZeroDumper(Dumper):
     @property
     def compressed(self) -> bool:
         return False
-
-    def collect_full_chunks(
-        self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
-    ) -> Coords:
-        return set()
