@@ -3,13 +3,21 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use pyo3::exceptions::PyRuntimeError;
+use pumpkin_nbt::from_bytes;
+use pumpkin_world::chunk::format::ChunkNbt;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
-use crate::{chunk_data_to_sections_dump, delete_section_from_nbt, is_chunk_status_full};
+use crate::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
+use crate::{check_chunk_status_full, chunk_data_to_sections_dump, delete_section_from_nbt};
 
 const SECTOR_SIZE: usize = 4096;
+
+fn normalize_chunk_nbt(nbt: &[u8], mapping: &HashMap<&str, &str>) -> Result<Vec<u8>, String> {
+    let bytes: Vec<u8> = normalize_nbt_bytes_mapping(&nbt, |v| apply_block_id_mapping(v, mapping))
+        .map(|v| v.into())?;
+    Ok(bytes)
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -33,6 +41,7 @@ fn read_region_file(
     region_filepath: &Path,
     region_x: i32,
     region_z: i32,
+    block_id_mapping: &HashMap<&str, &str>,
 ) -> Result<RegionFile, String> {
     let size = region_filepath
         .metadata()
@@ -155,7 +164,7 @@ fn read_region_file(
             }
         };
 
-        let nbt = crate::normalize_nbt(&data).map_err(|e| {
+        let nbt = normalize_chunk_nbt(&data, block_id_mapping).map_err(|e| {
             format!(
                 "Failed to normalize NBT: {} at chunk ({}, {})",
                 e, chunk_x, chunk_z
@@ -175,18 +184,27 @@ fn read_region_file(
 }
 
 fn write_bin(filepath: &Path, data: &[u8]) -> std::io::Result<()> {
+    // not write in test
+    if cfg!(test) {
+        return std::io::Result::Ok(());
+    }
+
     if let Some(parent) = filepath.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::write(filepath, data)
 }
 
-#[pyfunction]
-pub fn chunk_region_flatten<'py>(
-    _py: Python<'py>,
+pub fn chunk_region_flatten(
     save_dir: PathBuf,
     repo_dir: PathBuf,
-) -> PyResult<Vec<PathBuf>> {
+    block_id_mapping: HashMap<String, String>,
+) -> Result<Vec<PathBuf>, String> {
+    let block_id_mapping = block_id_mapping
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect::<HashMap<_, _>>();
+
     // Collect region files
     let mut region_files = Vec::new();
 
@@ -201,11 +219,10 @@ pub fn chunk_region_flatten<'py>(
             continue;
         }
 
-        for entry in fs::read_dir(&region_dir)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to read directory: {}", e)))?
+        for entry in
+            fs::read_dir(&region_dir).map_err(|e| format!("Failed to read directory: {}", e))?
         {
-            let entry = entry
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to read entry: {}", e)))?;
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("mca") {
@@ -213,11 +230,10 @@ pub fn chunk_region_flatten<'py>(
                 if let Some((region_x, region_z)) = extract_xz(filename) {
                     let rel_path = path
                         .strip_prefix(&save_dir)
-                        .map_err(|e| {
-                            PyRuntimeError::new_err(format!("Failed to get relative path: {}", e))
-                        })?
+                        .map_err(|e| format!("Failed to get relative path: {}", e))?
                         .to_path_buf();
                     region_files.push((rel_path, region_x, region_z));
+                    eprintln!("collected {:?}", path.as_os_str());
                 }
             }
         }
@@ -229,15 +245,17 @@ pub fn chunk_region_flatten<'py>(
         .into_par_iter()
         .map(
             |(rel_path, region_x, region_z)| -> Result<Option<PathBuf>, String> {
+                eprintln!("process {:?}", rel_path.as_os_str());
                 let region_filepath = save_dir.join(&rel_path);
                 let region =
-                    read_region_file(&region_filepath, region_x, region_z).map_err(|e| {
-                        format!(
-                            "Failed to read region file (path: {:?}): {}",
-                            region_filepath.as_os_str(),
-                            e,
-                        )
-                    })?;
+                    read_region_file(&region_filepath, region_x, region_z, &block_id_mapping)
+                        .map_err(|e| {
+                            format!(
+                                "Failed to read region file (path: {:?}): {}",
+                                region_filepath.as_os_str(),
+                                e,
+                            )
+                        })?;
 
                 if region.is_empty {
                     return Ok(None);
@@ -252,13 +270,12 @@ pub fn chunk_region_flatten<'py>(
                 region
                     .chunkxz2nbt
                     .into_par_iter()
-                    .filter(|(_, nbt)| is_chunk_status_full(nbt).unwrap_or(false))
+                    .filter(|(_, nbt)| check_chunk_status_full(nbt).unwrap_or(false))
                     .try_for_each(|((chunk_x, chunk_z), nbt)| -> Result<(), String> {
+                        eprintln!("process chunk ({}, {})", chunk_x, chunk_z);
                         let sections_dump = {
-                            let chunk_nbt_struct = pumpkin_nbt::from_bytes::<
-                                pumpkin_world::chunk::format::ChunkNbt,
-                            >(Cursor::new(&nbt))
-                            .map_err(|e| format!("Failed to parse ChunkNbt: {}", e))?;
+                            let chunk_nbt_struct = from_bytes::<ChunkNbt>(Cursor::new(&nbt))
+                                .map_err(|e| format!("Failed to parse ChunkNbt: {}", e))?;
                             let chunk_data =
                                 pumpkin_world::chunk::ChunkData::from_nbt(chunk_nbt_struct);
                             chunk_data_to_sections_dump(&chunk_data)
@@ -289,8 +306,7 @@ pub fn chunk_region_flatten<'py>(
                 Ok(Some(rel_path))
             },
         )
-        .collect::<Result<Vec<_>, String>>()
-        .map_err(PyRuntimeError::new_err)?
+        .collect::<Result<Vec<_>, String>>()?
         .into_iter()
         .flatten()
         .collect::<Vec<PathBuf>>();
@@ -308,4 +324,26 @@ pub fn _chunk_region_unflatten<'py>(
 ) -> PyResult<Vec<String>> {
     // TODO: Implement unflatten
     Ok(vec![])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, path::PathBuf};
+
+    use crate::region_crafter::chunk_region_flatten;
+
+    #[ignore = "very slow, very CPU/disk heavy"]
+    #[test]
+    fn chunk_region_flatten_works() {
+        chunk_region_flatten(
+            PathBuf::from(
+                "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/lewis20260309 lewis的世界",
+            ),
+            PathBuf::from("temp/repo"),
+            HashMap::from_iter([
+                ("minecraft:grass".to_string(), "minecraft:short_grass".to_string()),
+                ("minecraft:chain".to_string(), "minecraft:iron_chain".to_string()),
+            ]),
+        ).unwrap();
+    }
 }

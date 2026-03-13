@@ -12,6 +12,21 @@ from superflat.dumper import SectionsDumper, ZeroDumper
 APP_NAME = "superflat"
 log = structlog.get_logger()
 
+
+def parse_kvs(kvs: list[str]) -> dict[str, str]:
+    d = {}
+    if kvs:
+        for item in kvs:
+            if "=" not in item:
+                raise typer.BadParameter(
+                    f"Failed to parse '{item}', expected KEY=VALUE"
+                )
+            key, val = item.split("=", 1)
+            d[key.strip()] = val.strip()
+    log.debug(f"parse keys: {d}")
+    return d
+
+
 OptionSaveDir = Annotated[
     Path, typer.Option("--save-dir", "-s", help="Path to your save")
 ]
@@ -30,17 +45,27 @@ OptionTerrain = Annotated[
         help="Use sections dumps from natural terrain (powered by Pumpkin-MC). Disable this when world has no natural terrain (eg. superflat world, UGC save)",
     ),
 ]
+OptionBlockIdMappingList = Annotated[
+    list[str],
+    typer.Option(
+        "--block-id-mapping",
+        "-b",
+        help="Setting block id mapping. A workaround for difference block id between Minecraft version (format: KEY=VALUE)",
+    ),
+]
 
 
 def cli(
     command: Literal["flatten", "unflatten"],
     save_dir: OptionSaveDir,
     repo_dir: OptionRepoDir,
+    block_id_mapping_list: OptionBlockIdMappingList,
     cache_dir: OptionCacheDir = None,
     terrain: OptionTerrain = False,
     # NOTE on 20260312: set default to False because this option cannot save delta space for now.
     # Pumpkin-MC terrain generation is still work in progress, and there will be a day to use True as default.
 ):
+    block_id_mapping = parse_kvs(block_id_mapping_list)
     save_dir = save_dir.resolve()
     repo_dir = repo_dir.resolve()
 
@@ -71,7 +96,7 @@ def cli(
         terrain=terrain,
     )
 
-    app = Applicatioin(save_dir, repo_dir, dumper)
+    app = Applicatioin(save_dir, repo_dir, dumper, block_id_mapping)
     if command == "flatten":
         app.flatten()
     elif command == "unflatten":
@@ -95,4 +120,8 @@ if __name__ == "__main__":
         repo_dir=Path("temp/repo"),
         # save_dir=Path("temp/saves/2026-03-08_19-25-54_test42/test42"),
         # repo_dir=Path("temp/repo2"),
+        block_id_mapping_list=[
+            "minecraft:grass=minecraft:short_grass"  # 1.20.3
+            "minecraft:chain=minecraft:iron_chain"  # 1.21.9
+        ],
     )

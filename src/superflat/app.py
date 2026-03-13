@@ -13,10 +13,17 @@ log = structlog.get_logger()
 
 
 class Applicatioin:
-    def __init__(self, save_dir: Path, repo_dir: Path, dumper: Dumper):
+    def __init__(
+        self,
+        save_dir: Path,
+        repo_dir: Path,
+        dumper: Dumper,
+        block_id_mapping: dict[str, str],
+    ):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.dumper = dumper
+        self.block_id_mapping = block_id_mapping
 
     def collect_full_chunks(
         self, base_dir: Path, pf: Callable[[Path], Iterable[Path]]
@@ -51,7 +58,7 @@ class Applicatioin:
             c.GzipNbtFileFlattenCrafter(self.save_dir, self.repo_dir),
             # c.ChunkRegionFileFlattenCrafter(self.save_dir, self.repo_dir, self.dumper),
             c.ChunkRegionFileFlattenCrafterRust(
-                self.save_dir, self.repo_dir, self.dumper
+                self.save_dir, self.repo_dir, self.dumper, self.block_id_mapping
             ),
             c.OtherRegionFileFlattenCrafter(self.save_dir, self.repo_dir),
         ]

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use pumpkin_nbt::{Error, Nbt, compound::NbtCompound, deserializer::NbtReadHelper, tag::NbtTag};
+use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelper, tag::NbtTag};
 
 trait Normalize {
     fn normalize(self) -> Self;
@@ -49,6 +49,88 @@ impl Normalize for NbtTag {
     }
 }
 
+pub fn apply_block_id_mapping(
+    root: &mut NbtCompound,
+    block_id_mapping: &HashMap<&str, &str>,
+) -> Result<(), String> {
+    let sections = root
+        .child_tags
+        .iter_mut()
+        .find(|(k, _)| k == "sections")
+        .ok_or("Failed to apply block id mapping: missing sections field")?;
+
+    let NbtTag::List(sections_list) = &mut sections.1 else {
+        return Err("Failed to apply block id mapping: sections is not a List".to_string());
+    };
+
+    for (section_idx, section) in sections_list.iter_mut().enumerate() {
+        let NbtTag::Compound(section_compound) = section else {
+            return Err(format!(
+                "Failed to apply block id mapping: sections.{} is not a Compound",
+                section_idx
+            ));
+        };
+
+        let Some(block_states_entry) = section_compound
+            .child_tags
+            .iter_mut()
+            .find(|(k, _)| k == "block_states")
+        else {
+            // return Err(format!(
+            //     "Failed to apply block id mapping: missing sections.{}.block_states field",
+            //     section_idx
+            // ));
+            continue;
+        };
+
+        let NbtTag::Compound(block_states_compound) = &mut block_states_entry.1 else {
+            return Err(format!(
+                "Failed to apply block id mapping: sections.{}.block_states is not a Compound",
+                section_idx
+            ));
+        };
+
+        let Some(palette_entry) = block_states_compound
+            .child_tags
+            .iter_mut()
+            .find(|(k, _)| k == "palette")
+        else {
+            return Err(format!(
+                "Failed to apply block id mapping: missing sections.{}.block_states.palette field",
+                section_idx
+            ));
+        };
+
+        let NbtTag::List(palette_list) = &mut palette_entry.1 else {
+            return Err(format!(
+                "Failed to apply block id mapping: sections.{}.block_states.palette is not a List",
+                section_idx
+            ));
+        };
+
+        for (block_state_idx, block_state) in palette_list.iter_mut().enumerate() {
+            let NbtTag::Compound(block_state_compound) = block_state else {
+                return Err(format!(
+                    "Failed to apply block id mapping: sections.{}.block_states.palette.{} is not a Compound",
+                    section_idx, block_state_idx
+                ));
+            };
+
+            for (key, value) in block_state_compound.child_tags.iter_mut() {
+                if key == "Name" {
+                    if let NbtTag::String(name) = value {
+                        if let Some(&new_name) = block_id_mapping.get(name.as_str()) {
+                            *name = new_name.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Normalizes NBT data by sorting compound tag keys in lexicographical order.
 ///
 /// This function takes raw NBT bytes, deserializes them, sorts all compound tag
@@ -67,75 +149,36 @@ impl Normalize for NbtTag {
 /// # let nbt_data: &[u8] = &[0x0A, 0x00, 0x00, 0x00]; // Example NBT bytes
 /// let normalized = normalize_nbt_bytes(&nbt_data).unwrap();
 /// ```
-pub fn normalize_nbt_bytes(
+pub fn normalize_nbt_bytes(bytes: &[u8]) -> Result<Bytes, String> {
+    let mapping = |_: &mut NbtCompound| Ok(());
+    normalize_nbt_bytes_mapping(bytes, mapping)
+}
+
+pub fn normalize_nbt_bytes_mapping(
     bytes: &[u8],
-    block_id_mapping: Option<&HashMap<&str, &str>>,
+    mapping: impl Fn(&mut NbtCompound) -> Result<(), String>,
 ) -> Result<Bytes, String> {
     use std::io::Cursor;
 
-    let (is_named, nbt) = {
+    let (is_named, mut nbt) = {
         let cursor = Cursor::new(bytes);
         let nbt_result = Nbt::read(&mut NbtReadHelper::new(cursor));
 
         // Try to deserialize as named NBT first
         if let Ok(nbt) = nbt_result {
-            // Successfully parsed as named NBT
             (true, nbt)
-            // Ok(normalized_nbt.write())
         } else {
             // Try as unnamed NBT
             let cursor = Cursor::new(bytes);
             let nbt = Nbt::read_unnamed(&mut NbtReadHelper::new(cursor))
                 .map_err(|e| format!("Failed to parse nbt as named or unnamed: {}", e))?;
             (false, nbt)
-            // let normalized_nbt = Nbt::new(nbt.name, nbt.root_tag.normalize());
-            // Ok(normalized_nbt.write_unnamed())
         }
     };
 
-    let normalized_nbt = Nbt::new(nbt.name, nbt.root_tag.normalize());
+    mapping(&mut nbt.root_tag)?;
 
-    if let Some(block_id_mapping) = block_id_mapping {
-        let sections = normalized_nbt
-            .get_list("sections")
-            .ok_or_else(|| format!("Failed to mapping block id: missing sections field"))?;
-        for (section_idx, section) in sections.iter().enumerate() {
-            if let NbtTag::Compound(section) = section {
-                let block_states = section.get_compound("block_states").ok_or_else(|| {
-                    format!(
-                        "Failed to mapping block id: missing sections.{}.block_states field",
-                        section_idx
-                    )
-                })?;
-                let palette = block_states.get_list("palette").ok_or_else(|| {
-                    format!(
-                        "Failed to mapping block id: missing sections.{}.block_states.palette field",
-                        section_idx
-                    )
-                })?;
-                for (block_state_id, block_state) in palette.iter().enumerate() {
-                    if let NbtTag::Compound(block_state) = block_state {
-                        let block_id = block_state.get_string("Name").ok_or_else(|| {
-                            format!(
-                                "Failed to mapping block id: missing sections.{}.block_states.palette.{}.Name field",
-                                section_idx, block_state_id
-                            )
-                        })?;
-                    } else {
-                        return Err(format!(
-                            "Failed to mapping block id: sections.{}.block_states.palette.{} field is not a NbtTag::Compound: {:?}",
-                            section_idx, block_state_id, block_state
-                        ));
-                    }
-                }
-            } else {
-                return Err(format!(
-                    "Failed to mapping block id: sections.{} field is not a NbtTag::Compound: {:?}",
-                    section_idx, section
-                ));
-            }
-        }
-    }
+    let normalized_nbt = Nbt::new(nbt.name, nbt.root_tag.normalize());
 
     let bytes = if is_named {
         normalized_nbt.write()
@@ -149,6 +192,8 @@ pub fn normalize_nbt_bytes(
 mod tests {
     use pumpkin_nbt::{from_bytes_unnamed, to_bytes_unnamed};
     use serde::{Deserialize, Serialize};
+
+    use crate::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
 
     #[test]
     fn normalize_nbt_bytes_works() {
@@ -273,6 +318,66 @@ mod tests {
         let reconstructed: TestWithList =
             from_bytes_unnamed(std::io::Cursor::new(normalized_bytes)).unwrap();
         assert_eq!(test_data, reconstructed);
+    }
+
+    #[test]
+    fn block_id_mapping_works() {
+        use std::collections::HashMap;
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct BlockState {
+            #[serde(rename = "Name")]
+            name: String,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct BlockStates {
+            palette: Vec<BlockState>,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct Section {
+            block_states: BlockStates,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct ChunkLike {
+            sections: Vec<Section>,
+        }
+
+        let original = ChunkLike {
+            sections: vec![Section {
+                block_states: BlockStates {
+                    palette: vec![
+                        BlockState {
+                            name: "minecraft:grass".to_string(),
+                        },
+                        BlockState {
+                            name: "minecraft:air".to_string(),
+                        },
+                    ],
+                },
+            }],
+        };
+
+        let mut bytes = Vec::new();
+        to_bytes_unnamed(&original, &mut bytes).unwrap();
+
+        let mut mapping = HashMap::new();
+        mapping.insert("minecraft:grass", "minecraft:short_grass");
+
+        let mapped_bytes =
+            normalize_nbt_bytes_mapping(&bytes, |v| apply_block_id_mapping(v, &mapping)).unwrap();
+        let result: ChunkLike = from_bytes_unnamed(std::io::Cursor::new(mapped_bytes)).unwrap();
+
+        assert_eq!(
+            result.sections[0].block_states.palette[0].name,
+            "minecraft:short_grass"
+        );
+        assert_eq!(
+            result.sections[0].block_states.palette[1].name, "minecraft:air",
+            "unmapped block ids should be left unchanged"
+        );
     }
 }
 

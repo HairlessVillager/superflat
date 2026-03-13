@@ -35,15 +35,23 @@ log = structlog.get_logger()
 class ChunkRegionFileFlattenCrafterRust(Crafter):
     """Rust implementation of ChunkRegionFileFlattenCrafter"""
 
-    def __init__(self, save_dir: Path, repo_dir: Path, dumper: Dumper):
+    def __init__(
+        self,
+        save_dir: Path,
+        repo_dir: Path,
+        dumper: Dumper,
+        block_id_mapping: dict[str, str] | None = None,
+    ):
         self.save_dir = save_dir
         self.repo_dir = repo_dir
         self.dumper = dumper
+        self.block_id_mapping = block_id_mapping or {}
 
     def __call__(self) -> list[Path]:
         processed = chunk_region_flatten(
-            str(self.save_dir),
-            str(self.repo_dir),
+            self.save_dir,
+            self.repo_dir,
+            self.block_id_mapping,
         )
         return [Path(p) for p in processed]
 

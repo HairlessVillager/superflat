@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::io::Cursor;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use pumpkin_nbt::tag::NbtTag;
@@ -75,15 +77,18 @@ fn normalize_nbt<'py>(nbt: &[u8]) -> PyResult<Vec<u8>> {
     Ok(bytes)
 }
 
+pub(crate) fn check_chunk_status_full(input: &[u8]) -> Result<bool, String> {
+    let cursor = Cursor::new(input);
+    let nbt = Nbt::read(&mut NbtReadHelper::new(cursor)).map_err(|e| e.to_string())?;
+    let status = nbt
+        .get_string("Status")
+        .ok_or_else(|| "Chunk NBT does not have Status field".to_string())?;
+    Ok(status == "minecraft:full")
+}
+
 #[pyfunction]
 fn is_chunk_status_full(input: &[u8]) -> PyResult<bool> {
-    let cursor = Cursor::new(input);
-    let nbt = Nbt::read(&mut NbtReadHelper::new(cursor))
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    let status = nbt.get_string("Status").ok_or(PyValueError::new_err(
-        "Chunk NBT does not have Status field".to_string(),
-    ))?;
-    Ok(status == "minecraft:full")
+    check_chunk_status_full(input).map_err(|e| PyValueError::new_err(e))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -315,6 +320,16 @@ fn seed_from_level(level_nbt: &[u8]) -> i64 {
 
 mod region_crafter;
 
+#[pyfunction]
+fn chunk_region_flatten(
+    save_dir: PathBuf,
+    repo_dir: PathBuf,
+    block_id_mapping: HashMap<String, String>,
+) -> PyResult<Vec<PathBuf>> {
+    region_crafter::chunk_region_flatten(save_dir, repo_dir, block_id_mapping)
+        .map_err(|e| PyRuntimeError::new_err(e))
+}
+
 #[pymodule]
 fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
@@ -323,7 +338,7 @@ fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(chunk_region_encode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_region_decode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(seed_from_level, m)?)?;
-    m.add_function(wrap_pyfunction!(region_crafter::chunk_region_flatten, m)?)?;
+    m.add_function(wrap_pyfunction!(chunk_region_flatten, m)?)?;
     // m.add_function(wrap_pyfunction!(region_crafter::chunk_region_unflatten, m)?)?;
     Ok(())
 }
