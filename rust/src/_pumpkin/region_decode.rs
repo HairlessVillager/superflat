@@ -6,7 +6,7 @@ use pumpkin_nbt::{Nbt, deserializer::NbtReadHelper, from_bytes, tag::NbtTag, to_
 use pumpkin_world::chunk::ChunkSections;
 use pumpkin_world::chunk::format::ChunkSectionNBT;
 
-fn restore_chunk_from(sections_dump: &[u8], other: &[u8]) -> Vec<u8> {
+pub fn restore_chunk_from_raw(sections_dump: &[u8], other: &[u8]) -> Vec<u8> {
     let sections = from_bytes::<crate::_pumpkin::SectionsDump>(Cursor::new(sections_dump))
         .expect("Failed to load sections");
     let other =
@@ -48,7 +48,6 @@ fn restore_chunk_from(sections_dump: &[u8], other: &[u8]) -> Vec<u8> {
     chunk.write().into()
 }
 
-// TODO: remove pyo3 dep
 pub fn chunk_region_decode_batch(
     others: Vec<&[u8]>,
     sections_deltas: Vec<&[u8]>,
@@ -73,7 +72,7 @@ pub fn chunk_region_decode_batch(
                 .map(|(x, y)| x ^ y)
                 .collect();
 
-            let result = restore_chunk_from(&target_sections, other);
+            let result = restore_chunk_from_raw(&target_sections, other);
 
             Ok(result)
         })

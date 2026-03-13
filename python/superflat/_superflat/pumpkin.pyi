@@ -13,3 +13,7 @@ def chunk_region_flatten(
     repo_dir: Path,
     block_id_mapping: dict[str, str],
 ) -> list[Path]: ...
+def chunk_region_unflatten(
+    save_dir: Path,
+    repo_dir: Path,
+) -> list[Path]: ...

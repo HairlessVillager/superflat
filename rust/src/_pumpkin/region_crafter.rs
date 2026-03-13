@@ -3,6 +3,8 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use flate2::Compression;
+use flate2::write::ZlibEncoder;
 use pumpkin_nbt::{from_bytes, to_bytes};
 use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::chunk::format::ChunkNbt;
@@ -248,6 +250,7 @@ pub fn chunk_region_flatten(
 
     // Process region files in parallel
     // TODO: flatten two into_par_iter into only one for better pref
+    // TODO: use cooler and more readable stderr log
     let processed_paths = region_files
         .into_par_iter()
         .map(
@@ -318,5 +321,247 @@ pub fn chunk_region_flatten(
         .flatten()
         .collect::<Vec<PathBuf>>();
 
+    Ok(processed_paths)
+}
+
+fn write_region_file(
+    region_filepath: &Path,
+    region_x: i32,
+    region_z: i32,
+    timestamp_header: &[u8],
+    chunkxz2nbt: &HashMap<(i32, i32), Vec<u8>>,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    if timestamp_header.len() != SECTOR_SIZE {
+        return Err(format!(
+            "Invalid timestamp header length: {} != {}",
+            timestamp_header.len(),
+            SECTOR_SIZE,
+        ));
+    }
+
+    let mut locations = vec![0u8; SECTOR_SIZE];
+    let mut chunk_data_buffer: Vec<u8> = Vec::new();
+    let mut current_sector: usize = 2;
+
+    // Sort chunks for deterministic output
+    let mut chunks: Vec<_> = chunkxz2nbt.iter().collect();
+    chunks.sort_by_key(|((cx, cz), _)| (*cx, *cz));
+
+    for ((chunk_x, chunk_z), nbt) in chunks {
+        let local_x = chunk_x - region_x * 32;
+        let local_z = chunk_z - region_z * 32;
+        if !(0..32).contains(&local_x) || !(0..32).contains(&local_z) {
+            return Err(format!(
+                "Chunk outside region boundary: chunk_x={}, chunk_z={}",
+                chunk_x, chunk_z
+            ));
+        }
+        let index = (local_x + local_z * 32) as usize;
+
+        // zlib compress
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(nbt)
+            .map_err(|e| format!("Failed to compress chunk nbt: {}", e))?;
+        let compressed = encoder
+            .finish()
+            .map_err(|e| format!("Failed to finish zlib compression: {}", e))?;
+
+        let content_length = compressed.len() + 1; // +1 for compression type byte
+        let mut chunk_payload = Vec::with_capacity(4 + content_length);
+        chunk_payload.extend_from_slice(&(content_length as u32).to_be_bytes());
+        chunk_payload.push(2u8); // zlib compression
+        chunk_payload.extend_from_slice(&compressed);
+
+        let sectors_needed = chunk_payload.len().div_ceil(SECTOR_SIZE);
+        if sectors_needed >= 256 {
+            return Err(format!(
+                "Chunk too large: {} sectors needed (>= 256) at ({}, {})",
+                sectors_needed, chunk_x, chunk_z
+            ));
+        }
+
+        // Update location header
+        let loc_offset = index * 4;
+        let sector_bytes = current_sector.to_be_bytes();
+        locations[loc_offset] = sector_bytes[5];
+        locations[loc_offset + 1] = sector_bytes[6];
+        locations[loc_offset + 2] = sector_bytes[7];
+        locations[loc_offset + 3] = sectors_needed as u8;
+
+        // Write chunk data padded to sector boundary
+        let padded_size = sectors_needed * SECTOR_SIZE;
+        chunk_data_buffer.extend_from_slice(&chunk_payload);
+        chunk_data_buffer.resize(
+            chunk_data_buffer.len() + padded_size - chunk_payload.len(),
+            0,
+        );
+
+        current_sector += sectors_needed;
+    }
+
+    let mut content = Vec::with_capacity(2 * SECTOR_SIZE + chunk_data_buffer.len());
+    content.extend_from_slice(&locations);
+    content.extend_from_slice(timestamp_header);
+    content.extend_from_slice(&chunk_data_buffer);
+
+    if let Some(parent) = region_filepath.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create directories: {}", e))?;
+    }
+    fs::write(region_filepath, &content)
+        .map_err(|e| format!("Failed to write region file: {}", e))?;
+
+    Ok(())
+}
+
+// TODO: use cooler and more readable stderr log
+pub fn chunk_region_unflatten(
+    save_dir: &PathBuf,
+    repo_dir: &PathBuf,
+) -> Result<Vec<PathBuf>, String> {
+    // Collect timestamp-header files across region dirs
+    let mut region_dirs: Vec<(PathBuf, i32, i32)> = Vec::new();
+
+    for dimensions_dir in &["", "DIM1", "DIM-1"] {
+        let region_dir = if dimensions_dir.is_empty() {
+            repo_dir.join("region")
+        } else {
+            repo_dir.join(dimensions_dir).join("region")
+        };
+
+        if !region_dir.exists() {
+            continue;
+        }
+
+        for entry in
+            fs::read_dir(&region_dir).map_err(|e| format!("Failed to read directory: {}", e))?
+        {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let dirname = path.file_name().unwrap().to_str().unwrap();
+            if let Some((region_x, region_z)) = extract_xz(dirname) {
+                let timestamp_path = path.join("timestamp-header");
+                if timestamp_path.exists() {
+                    let rel_path = path
+                        .strip_prefix(repo_dir)
+                        .map_err(|e| format!("Failed to get relative path: {}", e))?
+                        .to_path_buf();
+                    region_dirs.push((rel_path, region_x, region_z));
+                }
+            }
+        }
+    }
+
+    let processed_paths = region_dirs
+        .into_par_iter()
+        .map(
+            |(rel_path, region_x, region_z)| -> Result<Vec<PathBuf>, String> {
+                let mut processed_paths = Vec::with_capacity(1024 + 1024 + 1);
+                let region_repo_dir = repo_dir.join(&rel_path);
+                let timestamp_header_filepath = region_repo_dir.join("timestamp-header");
+                let timestamp_header = fs::read(&timestamp_header_filepath)
+                    .map_err(|e| format!("Failed to read timestamp-header: {}", e))?;
+                processed_paths.push(
+                    timestamp_header_filepath
+                        .strip_prefix(repo_dir)
+                        .unwrap()
+                        .to_path_buf(),
+                );
+
+                let mut chunkxz2nbt: HashMap<(i32, i32), Vec<u8>> = HashMap::new();
+
+                // Read other/*.nbt and sections/*.delta
+                let other_dir = region_repo_dir.join("other");
+                let sections_dir = region_repo_dir.join("sections");
+
+                let mut chunkxz2other: HashMap<(i32, i32), Vec<u8>> = HashMap::new();
+                let mut chunkxz2delta: HashMap<(i32, i32), Vec<u8>> = HashMap::new();
+
+                if other_dir.exists() {
+                    for entry in fs::read_dir(&other_dir)
+                        .map_err(|e| format!("Failed to read other dir: {}", e))?
+                    {
+                        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+                        let path = entry.path();
+                        let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+                        if let Some(chunk_xz) = extract_xz(&filename) {
+                            if path.extension().and_then(|s| s.to_str()) == Some("nbt") {
+                                let data = fs::read(&path)
+                                    .map_err(|e| format!("Failed to read other file: {}", e))?;
+                                chunkxz2other.insert(chunk_xz, data);
+                                processed_paths
+                                    .push(path.strip_prefix(repo_dir).unwrap().to_path_buf());
+                            }
+                        }
+                    }
+                }
+
+                if sections_dir.exists() {
+                    for entry in fs::read_dir(&sections_dir)
+                        .map_err(|e| format!("Failed to read sections dir: {}", e))?
+                    {
+                        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+                        let path = entry.path();
+                        let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+                        if let Some(chunk_xz) = extract_xz(&filename) {
+                            if path.extension().and_then(|s| s.to_str()) == Some("delta") {
+                                let data = fs::read(&path)
+                                    .map_err(|e| format!("Failed to read delta file: {}", e))?;
+                                chunkxz2delta.insert(chunk_xz, data);
+                                processed_paths
+                                    .push(path.strip_prefix(repo_dir).unwrap().to_path_buf());
+                            }
+                        }
+                    }
+                }
+
+                // Decode each chunk: delta IS the sections_dump (no base XOR needed here,
+                // since flatten writes sections_dump directly as .delta)
+                for chunk_xz in chunkxz2delta
+                    .keys()
+                    .chain(chunkxz2other.keys())
+                    .cloned()
+                    .collect::<std::collections::HashSet<_>>()
+                {
+                    let other = chunkxz2other.get(&chunk_xz).ok_or_else(|| {
+                        format!(
+                            "Missing other nbt for chunk ({}, {})",
+                            chunk_xz.0, chunk_xz.1
+                        )
+                    })?;
+                    let sections_dump = chunkxz2delta.get(&chunk_xz).ok_or_else(|| {
+                        format!(
+                            "Missing sections delta for chunk ({}, {})",
+                            chunk_xz.0, chunk_xz.1
+                        )
+                    })?;
+                    let chunk_nbt =
+                        super::region_decode::restore_chunk_from_raw(sections_dump, other);
+                    chunkxz2nbt.insert(chunk_xz, chunk_nbt);
+                }
+
+                // rel_path in repo_dir maps to same relative path in save_dir
+                let save_region_path = save_dir.join(&rel_path);
+
+                write_region_file(
+                    &save_region_path,
+                    region_x,
+                    region_z,
+                    &timestamp_header,
+                    &chunkxz2nbt,
+                )?;
+
+                Ok(processed_paths)
+            },
+        )
+        .collect::<Result<Vec<Vec<_>>, String>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     Ok(processed_paths)
 }

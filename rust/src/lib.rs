@@ -25,6 +25,15 @@ mod pumpkin {
     }
 
     #[pyfunction]
+    fn chunk_region_unflatten(
+        save_dir: PathBuf,
+        repo_dir: PathBuf,
+    ) -> PyResult<Vec<PathBuf>> {
+        _pumpkin::region_crafter::chunk_region_unflatten(&save_dir, &repo_dir)
+            .map_err(|e| PyRuntimeError::new_err(e))
+    }
+
+    #[pyfunction]
     pub fn normalize_nbt<'py>(nbt: &[u8]) -> PyResult<Vec<u8>> {
         let bytes: Vec<u8> = _pumpkin::normalize::normalize_nbt_bytes(&nbt)
             .map(|v| v.into())

@@ -3,7 +3,7 @@ from .gzip_nbt import GzipNbtFileFlattenCrafter, GzipNbtFileUnflattenCrafter
 from .raw import RawFileFlattenCrafter, RawFileUnflattenCrafter
 from .region import (
     ChunkRegionFileFlattenCrafterRust,
-    ChunkRegionFileUnflattenCrafter,
+    ChunkRegionFileUnflattenCrafterRust,
     OtherRegionFileFlattenCrafter,
     OtherRegionFileUnflattenCrafter,
 )
@@ -15,7 +15,7 @@ __all__ = [
     "RawFileFlattenCrafter",
     "RawFileUnflattenCrafter",
     "ChunkRegionFileFlattenCrafterRust",
-    "ChunkRegionFileUnflattenCrafter",
+    "ChunkRegionFileUnflattenCrafterRust",
     "OtherRegionFileFlattenCrafter",
     "OtherRegionFileUnflattenCrafter",
 ]

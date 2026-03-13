@@ -5,7 +5,6 @@ from structlog.contextvars import bound_contextvars
 
 from superflat import crafters as c
 from superflat.dumper import Dumper
-from superflat.paths import chunk_region_paths_unflatten
 
 log = structlog.get_logger()
 
@@ -48,17 +47,10 @@ class Applicatioin:
                     log.warn(f"Skipped {rel_path}")
 
     def unflatten(self):
-        full_chunks = self.collect_full_chunks(
-            self.repo_dir, chunk_region_paths_unflatten
-        )
-        self.dumper.batch_generate(full_chunks)
-
         crafters: list[c.Crafter] = [
             c.RawFileUnflattenCrafter(self.save_dir, self.repo_dir),
             c.GzipNbtFileUnflattenCrafter(self.save_dir, self.repo_dir),
-            c.ChunkRegionFileUnflattenCrafter(
-                self.save_dir, self.repo_dir, self.dumper
-            ),
+            c.ChunkRegionFileUnflattenCrafterRust(self.save_dir, self.repo_dir),
             c.OtherRegionFileUnflattenCrafter(self.save_dir, self.repo_dir),
         ]
         flatten_paths = set()
@@ -69,8 +61,8 @@ class Applicatioin:
                 for p in paths:
                     flatten_paths.add(p)
 
-        for dirname, _, filenames in self.save_dir.walk():
+        for dirname, _, filenames in self.repo_dir.walk():
             for filename in filenames:
-                rel_path = (dirname / filename).relative_to(self.save_dir)
+                rel_path = (dirname / filename).relative_to(self.repo_dir)
                 if rel_path not in flatten_paths:
                     log.warn(f"Skipped {rel_path}")

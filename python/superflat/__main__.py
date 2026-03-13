@@ -99,13 +99,13 @@ def typer_app():
 
 if __name__ == "__main__":
     cli(
-        "flatten",
+        "unflatten",
         # save_dir=Path(
         #     "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/lewis20260309 lewis的世界"
         # ),
         # repo_dir=Path("temp/repo"),
-        save_dir=Path("temp/saves/2026-03-08_19-25-54_test42/test42"),
-        repo_dir=Path("temp/repo2"),
+        save_dir=Path("/tmp/unflatten-save"),
+        repo_dir=Path("/tmp/repo"),
         # block_id_mapping_list=[
         #     "minecraft:grass=minecraft:short_grass"  # 1.20.3
         #     "minecraft:chain=minecraft:iron_chain"  # 1.21.9

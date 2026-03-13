@@ -87,3 +87,27 @@ pumpkin.seed_from_level(...)
 或者直接在 superflat 包层面导出。
 
 ✻ Cooked for 1m 26s
+
+---
+
+"pumpkin" is not a known attribute of module "superflat.\_superflat" python/superflat/crafters/region.py 为什么会出现这个 lsp 报错？我不是已经把 pumpkin.pyi 写了吗
+
+---
+
+● Searched for 1 pattern, read 3 files (ctrl+o to expand)
+
+● 问题很明显：**init**.pyi 没有声明 pumpkin 子模块的存在。
+
+LSP（Pylance/pyright）查看 \_superflat 包时，只看 **init**.pyi 的内容来确定有哪些属性，而 pumpkin.pyi 虽然存在，但没有在 **init**.pyi 中被引用，所以它被忽略了。
+
+需要在 **init**.pyi 里声明 pumpkin 子模块：
+
+● Update(python/superflat/\_superflat/**init**.pyi)
+⎿  Added 2 lines
+1 +from superflat.\_superflat import pumpkin as pumpkin
+2 +
+3 def sum_as_string(a: int, b: int) -> str: ...
+
+● 这样 LSP 就能知道 \_superflat.pumpkin 是一个有效的子模块，错误应该消失了。
+
+as pumpkin 这种 re-export 写法是 .pyi 文件中声明公开属性的标准方式（PEP 484），让类型检查器认为它是显式导出的。
