@@ -4,7 +4,7 @@ mod _pumpkin;
 
 #[pymodule]
 mod pumpkin {
-    use pyo3::{exceptions::PyRuntimeError, prelude::*, types::PyBytes};
+    use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
     use std::{collections::HashMap, path::PathBuf};
 
@@ -25,10 +25,7 @@ mod pumpkin {
     }
 
     #[pyfunction]
-    fn chunk_region_unflatten(
-        save_dir: PathBuf,
-        repo_dir: PathBuf,
-    ) -> PyResult<Vec<PathBuf>> {
+    fn chunk_region_unflatten(save_dir: PathBuf, repo_dir: PathBuf) -> PyResult<Vec<PathBuf>> {
         _pumpkin::region_crafter::chunk_region_unflatten(&save_dir, &repo_dir)
             .map_err(|e| PyRuntimeError::new_err(e))
     }
@@ -39,25 +36,6 @@ mod pumpkin {
             .map(|v| v.into())
             .map_err(|e| PyRuntimeError::new_err(e))?;
         Ok(bytes)
-    }
-
-    #[pyfunction]
-    fn chunk_region_decode_batch(
-        others: Vec<Bound<'_, PyBytes>>,
-        sections_deltas: Vec<Bound<'_, PyBytes>>,
-        sections_dumps: Vec<Bound<'_, PyBytes>>,
-        compressed: bool,
-    ) -> PyResult<Vec<Vec<u8>>> {
-        let others: Vec<&[u8]> = others.iter().map(|e| e.as_bytes()).collect();
-        let sections_deltas: Vec<&[u8]> = sections_deltas.iter().map(|e| e.as_bytes()).collect();
-        let sections_dumps: Vec<&[u8]> = sections_dumps.iter().map(|e| e.as_bytes()).collect();
-        _pumpkin::region_decode::chunk_region_decode_batch(
-            others,
-            sections_deltas,
-            sections_dumps,
-            compressed,
-        )
-        .map_err(|e| PyRuntimeError::new_err(e))
     }
 
     #[pyfunction]

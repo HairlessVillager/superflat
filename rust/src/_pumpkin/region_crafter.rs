@@ -5,15 +5,58 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
-use pumpkin_nbt::{from_bytes, to_bytes};
-use pumpkin_world::chunk::ChunkData;
-use pumpkin_world::chunk::format::ChunkNbt;
 use rayon::prelude::*;
 
 use super::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
 use super::{check_chunk_status_full, delete_section_from_nbt};
 
 const SECTOR_SIZE: usize = 4096;
+
+use pumpkin_nbt::{Nbt, deserializer::NbtReadHelper, from_bytes, tag::NbtTag, to_bytes};
+use pumpkin_world::chunk::format::{ChunkNbt, ChunkSectionNBT};
+use pumpkin_world::chunk::{ChunkData, ChunkSections};
+
+pub fn restore_chunk_from_raw(sections_dump: &[u8], other: &[u8]) -> Vec<u8> {
+    let sections = from_bytes::<crate::_pumpkin::SectionsDump>(Cursor::new(sections_dump))
+        .expect("Failed to load sections");
+    let other =
+        Nbt::read(&mut NbtReadHelper::new(Cursor::new(other))).expect("Failed to load other");
+
+    let mut chunk = other;
+
+    // load sections
+    let sections = {
+        let section =
+            ChunkSections::from_blocks_biomes(&sections.blocks_dump, &sections.biomes_dump);
+        let block_lock = section.block_sections.read().unwrap();
+        let biome_lock = section.biome_sections.read().unwrap();
+        let min_section_y = (section.min_y >> 4) as i8;
+
+        (0..section.count)
+            .map(|i| ChunkSectionNBT {
+                y: i as i8 + min_section_y,
+                block_states: Some(block_lock[i].to_disk_nbt()),
+                biomes: Some(biome_lock[i].to_disk_nbt()),
+
+                // drop block & sky lighting because Minecraft will re-compute them
+                block_light: None,
+                sky_light: None,
+            })
+            .map(|nbt| {
+                let mut bytes: Vec<u8> = Vec::new();
+                to_bytes(&nbt, &mut bytes).expect("Failed to serialize ChunkSectionNBT to bytes");
+                let nbt = Nbt::read(&mut NbtReadHelper::new(Cursor::new(bytes)))
+                    .expect("Failed to build NBT from ChunkSectionNBT bytes");
+                NbtTag::Compound(nbt.root_tag)
+            })
+            .collect::<Vec<_>>()
+    };
+
+    // insert to other nbt
+    chunk.root_tag.put_list("sections", sections);
+
+    chunk.write().into()
+}
 
 fn chunk_data_to_sections_dump(chunk_data: &ChunkData) -> Vec<u8> {
     let dump = super::SectionsDump {
@@ -540,8 +583,7 @@ pub fn chunk_region_unflatten(
                             chunk_xz.0, chunk_xz.1
                         )
                     })?;
-                    let chunk_nbt =
-                        super::region_decode::restore_chunk_from_raw(sections_dump, other);
+                    let chunk_nbt = restore_chunk_from_raw(sections_dump, other);
                     chunkxz2nbt.insert(chunk_xz, chunk_nbt);
                 }
 

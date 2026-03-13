@@ -6,7 +6,6 @@ use pumpkin_nbt::{Nbt, deserializer::NbtReadHelper, tag::NbtTag};
 
 pub mod normalize;
 pub mod region_crafter;
-pub mod region_decode;
 
 #[derive(Serialize, Deserialize)]
 struct SectionsDump {
