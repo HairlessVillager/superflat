@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_nbt::deserializer::NbtReadHelper;
-use pumpkin_nbt::{Nbt, from_bytes, normalize_nbt_bytes, to_bytes};
+use pumpkin_nbt::{Nbt, from_bytes, to_bytes};
 use pumpkin_util::world_seed::Seed;
 use pumpkin_world::biome::hash_seed;
 use pumpkin_world::chunk::{ChunkData, ChunkSections};
@@ -21,6 +21,10 @@ use pumpkin_world::chunk_system::{Chunk, StagedChunkEnum, generate_single_chunk}
 use pumpkin_world::generation::get_world_gen;
 use pumpkin_world::world::BlockRegistryExt;
 use serde::{Deserialize, Serialize};
+
+mod normalize;
+
+use normalize::normalize_nbt_bytes;
 
 fn generate_chunk_data(seed: u64, chunk_x: i32, chunk_z: i32) -> Result<Arc<ChunkData>, String> {
     struct BlockRegistry;
