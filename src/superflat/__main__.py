@@ -46,7 +46,7 @@ OptionTerrain = Annotated[
     ),
 ]
 OptionBlockIdMappingList = Annotated[
-    list[str],
+    list[str] | None,
     typer.Option(
         "--block-id-mapping",
         "-b",
@@ -59,13 +59,16 @@ def cli(
     command: Literal["flatten", "unflatten"],
     save_dir: OptionSaveDir,
     repo_dir: OptionRepoDir,
-    block_id_mapping_list: OptionBlockIdMappingList,
+    block_id_mapping_list: OptionBlockIdMappingList = None,
     cache_dir: OptionCacheDir = None,
     terrain: OptionTerrain = False,
     # NOTE on 20260312: set default to False because this option cannot save delta space for now.
     # Pumpkin-MC terrain generation is still work in progress, and there will be a day to use True as default.
 ):
-    block_id_mapping = parse_kvs(block_id_mapping_list)
+    if terrain:
+        raise NotImplementedError("terrain is temporarily not maintained")
+
+    block_id_mapping = parse_kvs(block_id_mapping_list) if block_id_mapping_list else {}
     save_dir = save_dir.resolve()
     repo_dir = repo_dir.resolve()
 
