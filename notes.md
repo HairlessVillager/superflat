@@ -1,0 +1,3 @@
+normalize_nbt
+chunk_region_flatten
+chunk_region_decode_batch

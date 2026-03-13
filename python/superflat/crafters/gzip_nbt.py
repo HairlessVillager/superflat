@@ -2,8 +2,8 @@ import gzip
 from pathlib import Path
 
 from structlog import get_logger
-from superflat.superflat_pumpkin import normalize_nbt
 
+from superflat import _superflat
 from superflat.crafters.base import Crafter, collect_valid_paths
 from superflat.paths import gzip_nbt_paths
 from superflat.utils import write_bin
@@ -21,7 +21,7 @@ class GzipNbtFileFlattenCrafter(Crafter):
         for rel_path in rel_paths:
             content = (self.save_dir / rel_path).read_bytes()
             content = gzip.decompress(content)
-            content = normalize_nbt(content)
+            content = _superflat.pumpkin.normalize_nbt(content)
             write_bin(self.repo_dir / rel_path, content)
         return rel_paths
 

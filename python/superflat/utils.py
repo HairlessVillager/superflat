@@ -6,7 +6,8 @@ from typing import TypedDict
 
 import structlog
 from structlog.contextvars import bound_contextvars
-from superflat.superflat_pumpkin import is_chunk_status_full, normalize_nbt
+
+from superflat import _superflat
 
 log = structlog.get_logger()
 
@@ -38,7 +39,7 @@ def get_full_chunks(region_filepath: Path, region_x: int, region_z: int) -> Coor
     return {
         (chunk_x, chunk_z)
         for (chunk_x, chunk_z), nbt in region["chunkxz2nbt"].items()
-        if is_chunk_status_full(nbt)
+        if _superflat.pumpkin.is_chunk_status_full(nbt)
     }
 
 
@@ -141,7 +142,7 @@ def read_region_file(region_filepath: Path, region_x: int, region_z: int) -> Reg
                     raise NotImplementedError(
                         f"Unsupportd compression_type: {compression_type}"
                     )
-                nbt = normalize_nbt(data)
+                nbt = _superflat.pumpkin.normalize_nbt(data)
                 chunk["compression_type"] = compression_type
                 chunk["nbt"] = nbt
 

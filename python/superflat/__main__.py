@@ -1,13 +1,11 @@
-import gzip
 from pathlib import Path
 from typing import Annotated, Literal
 
 import structlog
 import typer
-from _superflat.pumpkin import seed_from_level
 
 from superflat.app import Applicatioin
-from superflat.dumper import SectionsDumper, ZeroDumper
+from superflat.dumper import ZeroDumper
 
 APP_NAME = "superflat"
 log = structlog.get_logger()
@@ -72,22 +70,7 @@ def cli(
     save_dir = save_dir.resolve()
     repo_dir = repo_dir.resolve()
 
-    if terrain:
-        if cache_dir:
-            cache_dir = cache_dir.resolve()
-        else:
-            raise ValueError("cache_dir is required when terrain=True")
-
-        if command == "flatten":
-            level_dat_filepath = save_dir / "level.dat"
-            seed = seed_from_level(gzip.decompress(level_dat_filepath.read_bytes()))
-        elif command == "unflatten":
-            level_dat_filepath = repo_dir / "level.dat"
-            seed = seed_from_level(level_dat_filepath.read_bytes())
-
-        dumper = SectionsDumper(seed, cache_dir)
-    else:
-        dumper = ZeroDumper()
+    dumper = ZeroDumper()
 
     log.info(
         f"{command.capitalize()} save from {save_dir} to {repo_dir}, "

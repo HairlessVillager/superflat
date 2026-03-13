@@ -1,17 +1,12 @@
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TypedDict
 
 import structlog
-from superflat.superflat_pumpkin import (
-    chunk_region_decode_batch,
-    chunk_region_encode_batch,
-    chunk_region_flatten,
-)
 
+from superflat import _superflat
 from superflat.crafters.base import Crafter, collect_valid_paths
 from superflat.dumper import Dumper
 from superflat.paths import (
-    chunk_region_paths_flatten,
     chunk_region_paths_unflatten,
     other_region_paths_flatten,
     other_region_paths_unflatten,
@@ -22,12 +17,6 @@ from superflat.utils import (
     write_bin,
     write_region_file,
 )
-
-if TYPE_CHECKING:
-    from superflat.superflat_pumpkin import (
-        EncodeTask,
-        EncodeTaskResult,
-    )
 
 log = structlog.get_logger()
 
@@ -48,76 +37,12 @@ class ChunkRegionFileFlattenCrafterRust(Crafter):
         self.block_id_mapping = block_id_mapping or {}
 
     def __call__(self) -> list[Path]:
-        processed = chunk_region_flatten(
+        processed = _superflat.pumpkin.chunk_region_flatten(
             self.save_dir,
             self.repo_dir,
             self.block_id_mapping,
         )
         return [Path(p) for p in processed]
-
-
-class ChunkRegionFileFlattenCrafter(Crafter):
-    def __init__(self, save_dir: Path, repo_dir: Path, dumper: Dumper):
-        self.save_dir = save_dir
-        self.repo_dir = repo_dir
-        self.dumper = dumper
-
-    def __call__(self) -> list[Path]:
-        rel_paths = collect_valid_paths(self.save_dir, chunk_region_paths_flatten)
-        # log.debug(f"{rel_paths}=")
-
-        tasks: list[EncodeTask] = []
-
-        for rel_path in rel_paths:
-            log.debug(f"processing {rel_path}")
-            region_xz = exrtact_xz(rel_path.name)
-            if region_xz := exrtact_xz(rel_path.name):
-                region_x, region_z = region_xz
-            else:
-                raise ValueError(f"Cannot exrtact x and z in {rel_path.name}")
-            region = read_region_file(self.save_dir / rel_path, region_x, region_z)
-            if region["is_empty"]:
-                continue
-            write_bin(
-                self.repo_dir / rel_path / "timestamp-header",
-                region["timestamp_header"],
-            )
-
-            for chunk_xz, nbt in region["chunkxz2nbt"].items():
-                chunk_x, chunk_z = chunk_xz
-                sections_dump = self.dumper.get(chunk_x, chunk_z)
-                if not sections_dump:
-                    raise ValueError(f"Cannot get SFNBT on {chunk_x=}, {chunk_z=}")
-                tasks.append(
-                    {
-                        "chunk_nbt": nbt,
-                        "chunk_xz": chunk_xz,
-                        "rel_path": rel_path,
-                        "sections_dump": sections_dump,
-                    }
-                )
-
-        log.info(f"Collected {len(tasks)} potential tasks, running", count=len(tasks))
-        results: list[EncodeTaskResult] = chunk_region_encode_batch(
-            tasks,  # pyright: ignore[reportArgumentType]
-            self.dumper.compressed,
-        )
-        log.info(f"Collected {len(results)} task results", count=len(results))
-
-        log.info("Write files")
-        for task, result in zip(tasks, results, strict=True):
-            rel_path = task["rel_path"]
-            chunk_x, chunk_z = task["chunk_xz"]
-            other_filepath = (
-                self.repo_dir / rel_path / "other" / f"c.{chunk_x}.{chunk_z}.nbt"
-            )
-            write_bin(other_filepath, result["other"])
-            delta_filepath = (
-                self.repo_dir / rel_path / "sections" / f"c.{chunk_x}.{chunk_z}.delta"
-            )
-            write_bin(delta_filepath, result["delta_sections"])
-
-        return rel_paths
 
 
 class ChunkRegionFileUnflattenCrafter(Crafter):
@@ -207,7 +132,7 @@ class ChunkRegionFileUnflattenCrafter(Crafter):
         log.info(f"Collected {len(tasks)} tasks, running", count=len(tasks))
         results: list[TaskResult] = [
             {"chunk_nbt": e}
-            for e in chunk_region_decode_batch(
+            for e in _superflat.pumpkin.chunk_region_decode_batch(
                 [t["other"] for t in tasks],
                 [t["sections_delta"] for t in tasks],
                 [t["sections_dump"] for t in tasks],

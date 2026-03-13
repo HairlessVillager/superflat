@@ -3,15 +3,27 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use pumpkin_nbt::from_bytes;
+use pumpkin_nbt::{from_bytes, to_bytes};
+use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::chunk::format::ChunkNbt;
-use pyo3::prelude::*;
 use rayon::prelude::*;
 
 use super::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
-use super::{check_chunk_status_full, chunk_data_to_sections_dump, delete_section_from_nbt};
+use super::{check_chunk_status_full, delete_section_from_nbt};
 
 const SECTOR_SIZE: usize = 4096;
+
+fn chunk_data_to_sections_dump(chunk_data: &ChunkData) -> Vec<u8> {
+    let dump = super::SectionsDump {
+        biomes_dump: chunk_data.section.dump_biomes(),
+        blocks_dump: chunk_data.section.dump_blocks(),
+    };
+    let mut buf = Vec::new(); // TODO: use .with_capacity here
+    to_bytes(&dump, &mut buf).expect("Failed to dump thin data");
+    super::normalize::normalize_nbt_bytes(&buf)
+        .expect("Failed to normalize sections dump")
+        .into()
+}
 
 fn normalize_chunk_nbt(nbt: &[u8], mapping: &HashMap<&str, &str>) -> Result<Vec<u8>, String> {
     let bytes: Vec<u8> = normalize_nbt_bytes_mapping(&nbt, |v| apply_block_id_mapping(v, mapping))
@@ -196,15 +208,10 @@ fn write_bin(filepath: &Path, data: &[u8]) -> std::io::Result<()> {
 }
 
 pub fn chunk_region_flatten(
-    save_dir: PathBuf,
-    repo_dir: PathBuf,
-    block_id_mapping: HashMap<String, String>,
+    save_dir: &PathBuf,
+    repo_dir: &PathBuf,
+    block_id_mapping: &HashMap<&str, &str>,
 ) -> Result<Vec<PathBuf>, String> {
-    let block_id_mapping = block_id_mapping
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect::<HashMap<_, _>>();
-
     // Collect region files
     let mut region_files = Vec::new();
 
@@ -312,38 +319,4 @@ pub fn chunk_region_flatten(
         .collect::<Vec<PathBuf>>();
 
     Ok(processed_paths)
-}
-
-#[pyfunction]
-pub fn _chunk_region_unflatten<'py>(
-    _py: Python<'py>,
-    _save_dir: &str,
-    _repo_dir: &str,
-    _dumper_get: Bound<'py, PyAny>,
-    _dumper_compressed: bool,
-) -> PyResult<Vec<String>> {
-    // TODO: Implement unflatten
-    Ok(vec![])
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{collections::HashMap, path::PathBuf};
-
-    use super::chunk_region_flatten;
-
-    #[ignore = "very slow, very CPU/disk heavy"]
-    #[test]
-    fn chunk_region_flatten_works() {
-        chunk_region_flatten(
-            PathBuf::from(
-                "/home/hlsvillager/.config/hmcl/.minecraft/versions/Fabulously-Optimized-1.21.11/saves/lewis20260309 lewis的世界",
-            ),
-            PathBuf::from("temp/repo"),
-            HashMap::from_iter([
-                ("minecraft:grass".to_string(), "minecraft:short_grass".to_string()),
-                ("minecraft:chain".to_string(), "minecraft:iron_chain".to_string()),
-            ]),
-        ).unwrap();
-    }
 }
