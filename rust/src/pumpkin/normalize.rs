@@ -193,13 +193,11 @@ mod tests {
     use pumpkin_nbt::{from_bytes_unnamed, to_bytes_unnamed};
     use serde::{Deserialize, Serialize};
 
-    use crate::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
+    use super::normalize_nbt_bytes;
+    use super::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
 
     #[test]
     fn normalize_nbt_bytes_works() {
-        use crate::normalize_nbt_bytes;
-        use serde::{Deserialize, Serialize};
-
         #[derive(Serialize, Deserialize, Debug, PartialEq)]
         #[allow(clippy::struct_field_names)]
         struct TestStruct {
@@ -238,7 +236,6 @@ mod tests {
 
     #[test]
     fn normalize_nested_compounds() {
-        use crate::normalize_nbt_bytes;
         #[derive(Serialize, Deserialize, Debug, PartialEq)]
         struct Inner {
             z_inner: i32,
@@ -277,7 +274,6 @@ mod tests {
 
     #[test]
     fn normalize_with_lists() {
-        use crate::normalize_nbt_bytes;
         #[derive(Serialize, Deserialize, Debug, PartialEq)]
         struct TestStruct {
             z_field: String,
@@ -393,7 +389,7 @@ mod tests_pumpkin_world_gen {
     use pumpkin_world::world::BlockRegistryExt;
     use std::sync::Arc;
 
-    use crate::normalize::normalize_nbt_bytes;
+    use super::normalize_nbt_bytes;
 
     struct BlockRegistry;
     impl BlockRegistryExt for BlockRegistry {

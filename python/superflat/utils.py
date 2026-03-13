@@ -6,7 +6,7 @@ from typing import TypedDict
 
 import structlog
 from structlog.contextvars import bound_contextvars
-from superflat_pumpkin import is_chunk_status_full, normalize_nbt
+from superflat.superflat_pumpkin import is_chunk_status_full, normalize_nbt
 
 log = structlog.get_logger()
 

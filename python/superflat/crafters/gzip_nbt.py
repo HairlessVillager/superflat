@@ -2,7 +2,7 @@ import gzip
 from pathlib import Path
 
 from structlog import get_logger
-from superflat_pumpkin import normalize_nbt
+from superflat.superflat_pumpkin import normalize_nbt
 
 from superflat.crafters.base import Crafter, collect_valid_paths
 from superflat.paths import gzip_nbt_paths

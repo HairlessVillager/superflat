@@ -8,8 +8,8 @@ use pumpkin_world::chunk::format::ChunkNbt;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
-use crate::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
-use crate::{check_chunk_status_full, chunk_data_to_sections_dump, delete_section_from_nbt};
+use super::normalize::{apply_block_id_mapping, normalize_nbt_bytes_mapping};
+use super::{check_chunk_status_full, chunk_data_to_sections_dump, delete_section_from_nbt};
 
 const SECTOR_SIZE: usize = 4096;
 
@@ -330,7 +330,7 @@ pub fn _chunk_region_unflatten<'py>(
 mod tests {
     use std::{collections::HashMap, path::PathBuf};
 
-    use crate::region_crafter::chunk_region_flatten;
+    use super::chunk_region_flatten;
 
     #[ignore = "very slow, very CPU/disk heavy"]
     #[test]

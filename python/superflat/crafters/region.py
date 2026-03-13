@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import structlog
-from superflat_pumpkin import (
+from superflat.superflat_pumpkin import (
     chunk_region_decode_batch,
     chunk_region_encode_batch,
     chunk_region_flatten,
@@ -24,7 +24,7 @@ from superflat.utils import (
 )
 
 if TYPE_CHECKING:
-    from superflat_pumpkin import (
+    from superflat.superflat_pumpkin import (
         EncodeTask,
         EncodeTaskResult,
     )

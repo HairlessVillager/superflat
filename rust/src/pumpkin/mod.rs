@@ -330,8 +330,7 @@ fn chunk_region_flatten(
         .map_err(|e| PyRuntimeError::new_err(e))
 }
 
-#[pymodule]
-fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn init_submodule(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_nbt, m)?)?;
     m.add_function(wrap_pyfunction!(seed_to_sections_batch, m)?)?;
     m.add_function(wrap_pyfunction!(is_chunk_status_full, m)?)?;
@@ -339,6 +338,5 @@ fn superflat_pumpkin(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(chunk_region_decode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(seed_from_level, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_region_flatten, m)?)?;
-    // m.add_function(wrap_pyfunction!(region_crafter::chunk_region_unflatten, m)?)?;
     Ok(())
 }
