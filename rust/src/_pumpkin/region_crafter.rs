@@ -516,8 +516,6 @@ pub fn chunk_region_unflatten(
                         .to_path_buf(),
                 );
 
-                let mut chunkxz2nbt: HashMap<(i32, i32), Vec<u8>> = HashMap::new();
-
                 // Read other/*.nbt and sections/*.delta
                 let other_dir = region_repo_dir.join("other");
                 let sections_dir = region_repo_dir.join("sections");
@@ -563,29 +561,45 @@ pub fn chunk_region_unflatten(
                     }
                 }
 
-                // Decode each chunk: delta IS the sections_dump (no base XOR needed here,
-                // since flatten writes sections_dump directly as .delta)
-                for chunk_xz in chunkxz2delta
-                    .keys()
-                    .chain(chunkxz2other.keys())
-                    .cloned()
-                    .collect::<std::collections::HashSet<_>>()
-                {
-                    let other = chunkxz2other.get(&chunk_xz).ok_or_else(|| {
-                        format!(
-                            "Missing other nbt for chunk ({}, {})",
-                            chunk_xz.0, chunk_xz.1
-                        )
-                    })?;
-                    let sections_dump = chunkxz2delta.get(&chunk_xz).ok_or_else(|| {
-                        format!(
-                            "Missing sections delta for chunk ({}, {})",
-                            chunk_xz.0, chunk_xz.1
-                        )
-                    })?;
-                    let chunk_nbt = restore_chunk_from_raw(sections_dump, other);
-                    chunkxz2nbt.insert(chunk_xz, chunk_nbt);
-                }
+                let chunkxz2nbt: HashMap<(i32, i32), Vec<u8>> = {
+                    let mut chunkxz2nbt: HashMap<(i32, i32), Vec<u8>> = HashMap::new();
+
+                    let mut unique_chunk_xzs: Vec<(i32, i32)> = chunkxz2delta
+                        .keys()
+                        .chain(chunkxz2other.keys())
+                        .cloned()
+                        .collect();
+
+                    unique_chunk_xzs.sort_unstable();
+                    unique_chunk_xzs.dedup();
+
+                    let processed_chunks: Vec<((i32, i32), Vec<u8>)> = unique_chunk_xzs
+                        .into_par_iter()
+                        .map(|chunk_xz| {
+                            let other = chunkxz2other.get(&chunk_xz).ok_or_else(|| {
+                                format!(
+                                    "Missing other nbt for chunk ({}, {})",
+                                    chunk_xz.0, chunk_xz.1
+                                )
+                            })?;
+                            let sections_dump = chunkxz2delta.get(&chunk_xz).ok_or_else(|| {
+                                format!(
+                                    "Missing sections delta for chunk ({}, {})",
+                                    chunk_xz.0, chunk_xz.1
+                                )
+                            })?;
+
+                            let chunk_nbt = restore_chunk_from_raw(sections_dump, other);
+
+                            Ok((chunk_xz, chunk_nbt))
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
+
+                    for (chunk_xz, chunk_nbt) in processed_chunks {
+                        chunkxz2nbt.insert(chunk_xz, chunk_nbt);
+                    }
+                    chunkxz2nbt
+                };
 
                 // rel_path in repo_dir maps to same relative path in save_dir
                 let save_region_path = save_dir.join(&rel_path);
