@@ -16,17 +16,22 @@
 
 use flate2::{Compression, write::ZlibEncoder};
 use sha1::{Digest, Sha1};
-use std::{collections::HashMap, fs::File, io::Write};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
 
-pub const OFS_DELTA: u8 = 6;
-pub const REF_DELTA: u8 = 7;
+const OFS_DELTA: u8 = 6;
+const REF_DELTA: u8 = 7;
 
 /// Encode pack object header bytes (type + variable-length size + optional delta base).
 ///
 /// Mirrors dulwich's `pack_object_header()`.
 ///
 /// Returns `Err` if the type requires a delta argument that was not supplied.
-pub fn encode_pack_object_header(
+fn encode_pack_object_header(
     type_num: u8,
     size: usize,
     ofs_delta: Option<u64>,
@@ -67,7 +72,7 @@ pub fn encode_pack_object_header(
 }
 
 /// Compress `data` with zlib at the given level (-1 = default).
-pub fn compress_zlib(data: &[u8], level: i32) -> std::io::Result<Vec<u8>> {
+fn compress_zlib(data: &[u8], level: i32) -> std::io::Result<Vec<u8>> {
     let compression = if level < 0 {
         Compression::default()
     } else {
@@ -79,31 +84,33 @@ pub fn compress_zlib(data: &[u8], level: i32) -> std::io::Result<Vec<u8>> {
 }
 
 /// File writer that computes a running SHA-1 over all written bytes.
-pub struct HashingWriter {
-    file: File,
-    hasher: Sha1,
-    pub offset: u64,
+struct HashingWriter<W> {
+    file: W,
+    hasher: Sha1, // TODO: use sha256 if possible
+    offset: u64,
 }
 
-impl HashingWriter {
-    pub fn create(path: &str) -> std::io::Result<Self> {
-        Ok(Self {
-            file: File::create(path)?,
-            hasher: Sha1::new(),
-            offset: 0,
-        })
-    }
-
+impl<W: Write> HashingWriter<W> {
     /// Write the final SHA-1 digest to the file and return it.
     /// The digest itself is not included in the hash.
-    pub fn finish(mut self) -> std::io::Result<[u8; 20]> {
+    fn close(mut self) -> std::io::Result<(W, [u8; 20])> {
         let digest: [u8; 20] = self.hasher.finalize().into();
         self.file.write_all(&digest)?;
-        Ok(digest)
+        Ok((self.file, digest))
     }
 }
 
-impl Write for HashingWriter {
+impl<W: Write> From<W> for HashingWriter<W> {
+    fn from(value: W) -> Self {
+        Self {
+            file: value,
+            hasher: Sha1::new(),
+            offset: 0,
+        }
+    }
+}
+
+impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = self.file.write(buf)?;
         self.hasher.update(&buf[..n]);
@@ -117,10 +124,10 @@ impl Write for HashingWriter {
 }
 
 /// One entry in the resulting pack (sha, pack offset, crc32).
-pub struct PackEntry {
-    pub sha: Vec<u8>,
-    pub offset: u64,
-    pub crc32: u32,
+struct PackEntry {
+    sha: Vec<u8>,
+    offset: u64,
+    crc32: u32,
 }
 
 /// Write a pack data file at `path`.
@@ -138,13 +145,13 @@ pub struct PackEntry {
 /// When the base object has already been written we emit an OFS_DELTA; otherwise REF_DELTA.
 ///
 /// Returns `(pack_entries, pack_checksum)`.
-pub fn write_pack_data_raw(
-    path: &str,
+fn write_pack_data_raw(
+    packfile: impl Write,
     records: impl Iterator<Item = (u8, Vec<u8>, Option<Vec<u8>>, Vec<u8>)>,
     num_records: usize,
     compression_level: i32,
 ) -> std::io::Result<(Vec<PackEntry>, [u8; 20])> {
-    let mut writer = HashingWriter::create(path)?;
+    let mut writer = HashingWriter::from(packfile);
     // sha -> (pack_offset, crc32) for resolving delta bases.
     let mut entries_map: HashMap<Vec<u8>, (u64, u32)> = HashMap::with_capacity(num_records);
     let mut entries_list: Vec<PackEntry> = Vec::with_capacity(num_records);
@@ -201,7 +208,7 @@ pub fn write_pack_data_raw(
         ));
     }
 
-    let pack_checksum = writer.finish()?;
+    let (_, pack_checksum) = writer.close()?;
     Ok((entries_list, pack_checksum))
 }
 
@@ -213,8 +220,8 @@ pub fn write_pack_data_raw(
 ///   magic(4) + version(4) + fan_out(1024) + shas(20*N) +
 ///   crc32s(4*N) + offsets(4*N) + [large_offsets(8*M)] +
 ///   pack_checksum(20) + index_checksum(20)
-pub fn write_pack_index_v2_raw(
-    path: &str,
+fn write_pack_index_v2_raw(
+    idxfile: impl Write,
     sorted_entries: &[PackEntry],
     pack_checksum: &[u8],
 ) -> std::io::Result<[u8; 20]> {
@@ -223,7 +230,7 @@ pub fn write_pack_index_v2_raw(
         "sorted_entries must be sorted by SHA ascending"
     );
 
-    let mut writer = HashingWriter::create(path)?;
+    let mut writer = HashingWriter::from(idxfile);
 
     // Magic 0xFF744F63 and version 2.
     writer.write_all(b"\xfftOc")?;
@@ -272,7 +279,8 @@ pub fn write_pack_index_v2_raw(
     writer.write_all(pack_checksum)?;
 
     // Index checksum (SHA-1 of all preceding index bytes).
-    writer.finish()
+    let (_, checksum) = writer.close()?;
+    Ok(checksum)
 }
 
 /// Write both a pack file (`filename`.pack) and an index file (`filename`.idx).
@@ -280,21 +288,37 @@ pub fn write_pack_index_v2_raw(
 /// Each record is `(pack_type_num, sha, delta_base_sha_or_none, raw_data)`.
 ///
 /// Returns `(pack_checksum, index_checksum)`.
+#[allow(dead_code)]
 pub fn write_pack(
-    filename: &str,
+    pack_dir: &PathBuf,
+    basename: &str,
     records: impl Iterator<Item = (u8, Vec<u8>, Option<Vec<u8>>, Vec<u8>)>,
     num_records: usize,
     compression_level: i32,
 ) -> std::io::Result<([u8; 20], [u8; 20])> {
-    let pack_path = format!("{filename}.pack");
-    let idx_path = format!("{filename}.idx");
+    let mut pack_buf: Vec<u8> = Vec::new();
+    let mut idx_buf: Vec<u8> = Vec::new();
 
     let (mut entries_list, pack_checksum) =
-        write_pack_data_raw(&pack_path, records, num_records, compression_level)?;
+        write_pack_data_raw(&mut pack_buf, records, num_records, compression_level)?;
 
     entries_list.sort_by(|a, b| a.sha.cmp(&b.sha));
+    let idx_checksum = write_pack_index_v2_raw(&mut idx_buf, &entries_list, &pack_checksum)?;
 
-    let idx_checksum = write_pack_index_v2_raw(&idx_path, &entries_list, &pack_checksum)?;
+    let write_file = |buf, ext| -> io::Result<()> {
+        let mut file_path = pack_dir.clone();
+        file_path.push(Path::new(&format!(
+            "{}-{}",
+            basename,
+            hex::encode(pack_checksum)
+        )));
+        file_path.set_extension(ext);
+        let mut file = File::create_new(file_path)?;
+        file.write_all(buf)?;
+        Ok(())
+    };
+    write_file(&pack_buf, "pack")?;
+    write_file(&idx_buf, "idx")?;
 
     Ok((pack_checksum, idx_checksum))
 }
@@ -500,16 +524,24 @@ mod tests {
             (3, sha2.to_vec(), Some(sha1.to_vec()), delta),
         ];
 
-        let (mut entries, pack_checksum) =
-            write_pack_data_raw(pack_path.to_str().unwrap(), records.into_iter(), 2, -1)
-                .expect("write_pack_data_raw");
+        let (mut entries, pack_checksum) = write_pack_data_raw(
+            File::create_new(&pack_path).unwrap(),
+            records.into_iter(),
+            2,
+            -1,
+        )
+        .expect("write_pack_data_raw");
         entries.sort_by(|a, b| a.sha.cmp(&b.sha));
-        write_pack_index_v2_raw(idx_path.to_str().unwrap(), &entries, &pack_checksum)
-            .expect("write_pack_index_v2_raw");
+        write_pack_index_v2_raw(
+            File::create_new(&idx_path).unwrap(),
+            &entries,
+            &pack_checksum,
+        )
+        .expect("write_pack_index_v2_raw");
 
         // Verify the pack is well-formed.
         let out = Command::new("git")
-            .args(["verify-pack", "-v", pack_path.to_str().unwrap()])
+            .args(["verify-pack", "-v", &pack_path.to_str().unwrap()])
             .output()
             .expect("git verify-pack");
         let stdout = String::from_utf8_lossy(&out.stdout);

@@ -13,6 +13,7 @@ bytes = { version = "1.11.1", features = ["serde"] }
 crc32fast = "1.5.0"
 flate2 = "1.0"
 futures = "0.3.32"
+hex = "0.4.3"
 pumpkin-config = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
 pumpkin-data = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
 pumpkin-nbt = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
