@@ -26,6 +26,103 @@ use std::{
 const OFS_DELTA: u8 = 6;
 const REF_DELTA: u8 = 7;
 
+type ObjID = [u8; 20];
+
+// ── Delta encoder ────────────────────────────────────────────────────────
+
+/// Variable-length size encoding used in git delta headers.
+///
+/// See https://git-scm.com/docs/gitformat-pack#_size_encoding
+fn encode_size(mut size: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let byte = (size & 0x7F) as u8;
+        size >>= 7;
+        if size > 0 {
+            out.push(byte | 0x80);
+        } else {
+            out.push(byte);
+            break;
+        }
+    }
+    out
+}
+
+/// Encode a delta COPY instruction (offset + size into src).
+fn delta_copy(offset: usize, size: usize) -> Vec<u8> {
+    let mut instr = vec![0x80u8];
+    for i in 0..4usize {
+        let byte = ((offset >> (i * 8)) & 0xFF) as u8;
+        if byte != 0 {
+            instr.push(byte);
+            instr[0] |= 1 << i;
+        }
+    }
+    // size 0 encodes as 0x10000; we never emit that here (max copy 0xFFFF).
+    for i in 0..2usize {
+        let byte = ((size >> (i * 8)) & 0xFF) as u8;
+        if byte != 0 {
+            instr.push(byte);
+            instr[0] |= 1 << (4 + i);
+        }
+    }
+    instr
+}
+
+/// Simple block-hash delta encoder (16-byte blocks, first-match wins).
+/// Mirrors the logic of dulwich's `_create_delta_py` but in Rust.
+#[allow(dead_code)] // TODO: remove allow
+pub fn create_delta(src: &[u8], dst: &[u8]) -> Vec<u8> {
+    const BLOCK: usize = 16;
+    const MAX_COPY: usize = 0xFFFF;
+
+    // Index every aligned 16-byte block in src (first occurrence wins).
+    let mut block_map: HashMap<&[u8], usize> = HashMap::new();
+    let mut p = 0;
+    while p + BLOCK <= src.len() {
+        block_map.entry(&src[p..p + BLOCK]).or_insert(p);
+        p += BLOCK;
+    }
+
+    let mut delta = Vec::new();
+    delta.extend(encode_size(src.len()));
+    delta.extend(encode_size(dst.len()));
+
+    let mut di = 0;
+    while di < dst.len() {
+        // Try to find a block match in src.
+        if di + BLOCK <= dst.len() {
+            if let Some(&si) = block_map.get(&dst[di..di + BLOCK]) {
+                // Extend match forward as far as possible.
+                let limit = (src.len() - si).min(dst.len() - di).min(MAX_COPY);
+                let mut copy_len = BLOCK;
+                while copy_len < limit && src[si + copy_len] == dst[di + copy_len] {
+                    copy_len += 1;
+                }
+                delta.extend(delta_copy(si, copy_len));
+                di += copy_len;
+                continue;
+            }
+        }
+
+        // No match — collect bytes into an INSERT instruction (max 127 bytes).
+        let mut end = di + 1;
+        while end < dst.len() && end - di < 127 {
+            // Stop early if the next block would be a good copy candidate.
+            if end + BLOCK <= dst.len() && block_map.contains_key(&dst[end..end + BLOCK]) {
+                break;
+            }
+            end += 1;
+        }
+        let insert_len = end - di;
+        delta.push(insert_len as u8);
+        delta.extend_from_slice(&dst[di..di + insert_len]);
+        di += insert_len;
+    }
+
+    delta
+}
+
 /// Encode pack object header bytes (type + variable-length size + optional delta base).
 ///
 /// Mirrors dulwich's `pack_object_header()`.
@@ -35,7 +132,7 @@ fn encode_pack_object_header(
     type_num: u8,
     size: usize,
     ofs_delta: Option<u64>,
-    ref_delta: Option<&[u8]>,
+    ref_delta: Option<&ObjID>,
 ) -> Result<Vec<u8>, String> {
     let mut header = Vec::new();
 
@@ -93,8 +190,8 @@ struct HashingWriter<W> {
 impl<W: Write> HashingWriter<W> {
     /// Write the final SHA-1 digest to the file and return it.
     /// The digest itself is not included in the hash.
-    fn close(mut self) -> std::io::Result<(W, [u8; 20])> {
-        let digest: [u8; 20] = self.hasher.finalize().into();
+    fn finalize(mut self) -> std::io::Result<(W, ObjID)> {
+        let digest: ObjID = self.hasher.finalize().into(); // TODO: use sha256 if possible
         self.file.write_all(&digest)?;
         Ok((self.file, digest))
     }
@@ -125,7 +222,7 @@ impl<W: Write> Write for HashingWriter<W> {
 
 /// One entry in the resulting pack (sha, pack offset, crc32).
 struct PackEntry {
-    sha: Vec<u8>,
+    sha: ObjID,
     offset: u64,
     crc32: u32,
 }
@@ -147,13 +244,13 @@ struct PackEntry {
 /// Returns `(pack_entries, pack_checksum)`.
 fn write_pack_data_raw(
     packfile: impl Write,
-    records: impl Iterator<Item = (u8, Vec<u8>, Option<Vec<u8>>, Vec<u8>)>,
+    records: impl Iterator<Item = (u8, ObjID, Option<ObjID>, Vec<u8>)>,
     num_records: usize,
     compression_level: i32,
-) -> std::io::Result<(Vec<PackEntry>, [u8; 20])> {
+) -> std::io::Result<(Vec<PackEntry>, ObjID)> {
     let mut writer = HashingWriter::from(packfile);
     // sha -> (pack_offset, crc32) for resolving delta bases.
-    let mut entries_map: HashMap<Vec<u8>, (u64, u32)> = HashMap::with_capacity(num_records);
+    let mut entries_map: HashMap<ObjID, (u64, u32)> = HashMap::with_capacity(num_records);
     let mut entries_list: Vec<PackEntry> = Vec::with_capacity(num_records);
 
     // Pack header: b"PACK" + version 2 (u32 BE) + object count (u32 BE).
@@ -163,7 +260,7 @@ fn write_pack_data_raw(
     hdr[8..].copy_from_slice(&(num_records as u32).to_be_bytes());
     writer.write_all(&hdr)?;
 
-    let mut count = 0usize;
+    let mut count: usize = 0;
     for (pack_type_num, sha, delta_base, raw_data) in records {
         let obj_offset = writer.offset;
 
@@ -208,7 +305,7 @@ fn write_pack_data_raw(
         ));
     }
 
-    let (_, pack_checksum) = writer.close()?;
+    let (_, pack_checksum) = writer.finalize()?;
     Ok((entries_list, pack_checksum))
 }
 
@@ -224,7 +321,7 @@ fn write_pack_index_v2_raw(
     idxfile: impl Write,
     sorted_entries: &[PackEntry],
     pack_checksum: &[u8],
-) -> std::io::Result<[u8; 20]> {
+) -> std::io::Result<ObjID> {
     debug_assert!(
         sorted_entries.windows(2).all(|w| w[0].sha <= w[1].sha),
         "sorted_entries must be sorted by SHA ascending"
@@ -279,7 +376,7 @@ fn write_pack_index_v2_raw(
     writer.write_all(pack_checksum)?;
 
     // Index checksum (SHA-1 of all preceding index bytes).
-    let (_, checksum) = writer.close()?;
+    let (_, checksum) = writer.finalize()?;
     Ok(checksum)
 }
 
@@ -287,15 +384,17 @@ fn write_pack_index_v2_raw(
 ///
 /// Each record is `(pack_type_num, sha, delta_base_sha_or_none, raw_data)`.
 ///
+/// You should provide delta instructions as raw_data when delta_base_sha is not None
+///
 /// Returns `(pack_checksum, index_checksum)`.
-#[allow(dead_code)]
+#[allow(dead_code)] // TODO: remove allow
 pub fn write_pack(
     pack_dir: &PathBuf,
     basename: &str,
-    records: impl Iterator<Item = (u8, Vec<u8>, Option<Vec<u8>>, Vec<u8>)>,
+    records: impl Iterator<Item = (u8, ObjID, Option<ObjID>, Vec<u8>)>,
     num_records: usize,
     compression_level: i32,
-) -> std::io::Result<([u8; 20], [u8; 20])> {
+) -> std::io::Result<(ObjID, ObjID)> {
     let mut pack_buf: Vec<u8> = Vec::new();
     let mut idx_buf: Vec<u8> = Vec::new();
 
@@ -381,7 +480,7 @@ mod tests {
     }
 
     /// SHA-1 of a git object: `sha1(<header>\0<content>)`.
-    fn object_sha1(header: &[u8], content: &[u8]) -> [u8; 20] {
+    fn object_sha1(header: &[u8], content: &[u8]) -> ObjID {
         let mut h = Sha1::new();
         h.update(header);
         h.update(b"\0");
@@ -391,98 +490,6 @@ mod tests {
 
     fn hex_encode(b: &[u8]) -> String {
         b.iter().map(|b| format!("{b:02x}")).collect()
-    }
-
-    // ── Delta encoder ────────────────────────────────────────────────────────
-
-    /// Variable-length size encoding used in git delta headers.
-    fn delta_varint(mut size: usize) -> Vec<u8> {
-        let mut out = Vec::new();
-        loop {
-            let byte = (size & 0x7F) as u8;
-            size >>= 7;
-            if size > 0 {
-                out.push(byte | 0x80);
-            } else {
-                out.push(byte);
-                break;
-            }
-        }
-        out
-    }
-
-    /// Encode a delta COPY instruction (offset + size into src).
-    fn delta_copy(offset: usize, size: usize) -> Vec<u8> {
-        let mut instr = vec![0x80u8];
-        for i in 0..4usize {
-            let byte = ((offset >> (i * 8)) & 0xFF) as u8;
-            if byte != 0 {
-                instr.push(byte);
-                instr[0] |= 1 << i;
-            }
-        }
-        // size 0 encodes as 0x10000; we never emit that here (max copy 0xFFFF).
-        for i in 0..2usize {
-            let byte = ((size >> (i * 8)) & 0xFF) as u8;
-            if byte != 0 {
-                instr.push(byte);
-                instr[0] |= 1 << (4 + i);
-            }
-        }
-        instr
-    }
-
-    /// Simple block-hash delta encoder (16-byte blocks, first-match wins).
-    /// Mirrors the logic of dulwich's `_create_delta_py` but in Rust.
-    fn create_delta(src: &[u8], dst: &[u8]) -> Vec<u8> {
-        const BLOCK: usize = 16;
-        const MAX_COPY: usize = 0xFFFF;
-
-        // Index every aligned 16-byte block in src (first occurrence wins).
-        let mut block_map: HashMap<&[u8], usize> = HashMap::new();
-        let mut p = 0;
-        while p + BLOCK <= src.len() {
-            block_map.entry(&src[p..p + BLOCK]).or_insert(p);
-            p += BLOCK;
-        }
-
-        let mut delta = Vec::new();
-        delta.extend(delta_varint(src.len()));
-        delta.extend(delta_varint(dst.len()));
-
-        let mut di = 0;
-        while di < dst.len() {
-            // Try to find a block match in src.
-            if di + BLOCK <= dst.len() {
-                if let Some(&si) = block_map.get(&dst[di..di + BLOCK]) {
-                    // Extend match forward as far as possible.
-                    let limit = (src.len() - si).min(dst.len() - di).min(MAX_COPY);
-                    let mut copy_len = BLOCK;
-                    while copy_len < limit && src[si + copy_len] == dst[di + copy_len] {
-                        copy_len += 1;
-                    }
-                    delta.extend(delta_copy(si, copy_len));
-                    di += copy_len;
-                    continue;
-                }
-            }
-
-            // No match — collect bytes into an INSERT instruction (max 127 bytes).
-            let mut end = di + 1;
-            while end < dst.len() && end - di < 127 {
-                // Stop early if the next block would be a good copy candidate.
-                if end + BLOCK <= dst.len() && block_map.contains_key(&dst[end..end + BLOCK]) {
-                    break;
-                }
-                end += 1;
-            }
-            let insert_len = end - di;
-            delta.push(insert_len as u8);
-            delta.extend_from_slice(&dst[di..di + insert_len]);
-            di += insert_len;
-        }
-
-        delta
     }
 
     // ── Test ─────────────────────────────────────────────────────────────────
@@ -519,9 +526,9 @@ mod tests {
         // Pack: SOURCE as full blob, TARGET as OFS_DELTA relative to SOURCE.
         let pack_path = tmp.join("test.pack");
         let idx_path = tmp.join("test.idx");
-        let records: Vec<(u8, Vec<u8>, Option<Vec<u8>>, Vec<u8>)> = vec![
-            (3, sha1.to_vec(), None, content1.to_vec()),
-            (3, sha2.to_vec(), Some(sha1.to_vec()), delta),
+        let records: Vec<(u8, ObjID, Option<ObjID>, Vec<u8>)> = vec![
+            (3, sha1, None, content1.to_vec()),
+            (3, sha2, Some(sha1), delta),
         ];
 
         let (mut entries, pack_checksum) = write_pack_data_raw(
