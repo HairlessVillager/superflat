@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bytes = { version = "1.11.1", features = ["serde"] }
+crc32fast = "1.5.0"
 flate2 = "1.0"
 futures = "0.3.32"
 pumpkin-config = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
@@ -22,5 +23,6 @@ pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 rayon = "1.11.0"
 regex = "1.11"
 serde = { version = "1.0.228", features = ["derive"] }
+sha1 = "0.10.6"
 tokio = "1.49.0"
 zstd = "0.13.3"

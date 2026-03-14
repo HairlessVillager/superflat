@@ -275,6 +275,30 @@ pub fn write_pack_index_v2_raw(
     writer.finish()
 }
 
+/// Write both a pack file (`filename`.pack) and an index file (`filename`.idx).
+///
+/// Each record is `(pack_type_num, sha, delta_base_sha_or_none, raw_data)`.
+///
+/// Returns `(pack_checksum, index_checksum)`.
+pub fn write_pack(
+    filename: &str,
+    records: impl Iterator<Item = (u8, Vec<u8>, Option<Vec<u8>>, Vec<u8>)>,
+    num_records: usize,
+    compression_level: i32,
+) -> std::io::Result<([u8; 20], [u8; 20])> {
+    let pack_path = format!("{filename}.pack");
+    let idx_path = format!("{filename}.idx");
+
+    let (mut entries_list, pack_checksum) =
+        write_pack_data_raw(&pack_path, records, num_records, compression_level)?;
+
+    entries_list.sort_by(|a, b| a.sha.cmp(&b.sha));
+
+    let idx_checksum = write_pack_index_v2_raw(&idx_path, &entries_list, &pack_checksum)?;
+
+    Ok((pack_checksum, idx_checksum))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
