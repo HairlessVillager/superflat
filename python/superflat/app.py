@@ -34,7 +34,7 @@ class Applicatioin:
         ]
         flatten_paths = set()
         for crafter in crafters:
-            with bound_contextvars(executor=crafter.__class__.__name__):
+            with bound_contextvars(crafter=crafter.__class__.__name__):
                 log.info("Flattening files")
                 paths = crafter()
                 for p in paths:
@@ -55,7 +55,7 @@ class Applicatioin:
         ]
         flatten_paths = set()
         for crafter in crafters:
-            with bound_contextvars(executor=crafter.__class__.__name__):
+            with bound_contextvars(crafter=crafter.__class__.__name__):
                 log.info("Unflattening files")
                 paths = crafter()
                 for p in paths:
