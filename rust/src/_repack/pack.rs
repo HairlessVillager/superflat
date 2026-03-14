@@ -23,105 +23,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::git_helper::ObjID;
+
 const OFS_DELTA: u8 = 6;
 const REF_DELTA: u8 = 7;
-
-type ObjID = [u8; 20];
-
-// ── Delta encoder ────────────────────────────────────────────────────────
-
-/// Variable-length size encoding used in git delta headers.
-///
-/// See https://git-scm.com/docs/gitformat-pack#_size_encoding
-fn encode_size(mut size: usize) -> Vec<u8> {
-    let mut out = Vec::new();
-    loop {
-        let byte = (size & 0x7F) as u8;
-        size >>= 7;
-        if size > 0 {
-            out.push(byte | 0x80);
-        } else {
-            out.push(byte);
-            break;
-        }
-    }
-    out
-}
-
-/// Encode a delta COPY instruction (offset + size into src).
-fn delta_copy(offset: usize, size: usize) -> Vec<u8> {
-    let mut instr = vec![0x80u8];
-    for i in 0..4usize {
-        let byte = ((offset >> (i * 8)) & 0xFF) as u8;
-        if byte != 0 {
-            instr.push(byte);
-            instr[0] |= 1 << i;
-        }
-    }
-    // size 0 encodes as 0x10000; we never emit that here (max copy 0xFFFF).
-    for i in 0..2usize {
-        let byte = ((size >> (i * 8)) & 0xFF) as u8;
-        if byte != 0 {
-            instr.push(byte);
-            instr[0] |= 1 << (4 + i);
-        }
-    }
-    instr
-}
-
-/// Simple block-hash delta encoder (16-byte blocks, first-match wins).
-/// Mirrors the logic of dulwich's `_create_delta_py` but in Rust.
-#[allow(dead_code)] // TODO: remove allow
-pub fn create_delta(src: &[u8], dst: &[u8]) -> Vec<u8> {
-    const BLOCK: usize = 16;
-    const MAX_COPY: usize = 0xFFFF;
-
-    // Index every aligned 16-byte block in src (first occurrence wins).
-    let mut block_map: HashMap<&[u8], usize> = HashMap::new();
-    let mut p = 0;
-    while p + BLOCK <= src.len() {
-        block_map.entry(&src[p..p + BLOCK]).or_insert(p);
-        p += BLOCK;
-    }
-
-    let mut delta = Vec::new();
-    delta.extend(encode_size(src.len()));
-    delta.extend(encode_size(dst.len()));
-
-    let mut di = 0;
-    while di < dst.len() {
-        // Try to find a block match in src.
-        if di + BLOCK <= dst.len() {
-            if let Some(&si) = block_map.get(&dst[di..di + BLOCK]) {
-                // Extend match forward as far as possible.
-                let limit = (src.len() - si).min(dst.len() - di).min(MAX_COPY);
-                let mut copy_len = BLOCK;
-                while copy_len < limit && src[si + copy_len] == dst[di + copy_len] {
-                    copy_len += 1;
-                }
-                delta.extend(delta_copy(si, copy_len));
-                di += copy_len;
-                continue;
-            }
-        }
-
-        // No match — collect bytes into an INSERT instruction (max 127 bytes).
-        let mut end = di + 1;
-        while end < dst.len() && end - di < 127 {
-            // Stop early if the next block would be a good copy candidate.
-            if end + BLOCK <= dst.len() && block_map.contains_key(&dst[end..end + BLOCK]) {
-                break;
-            }
-            end += 1;
-        }
-        let insert_len = end - di;
-        delta.push(insert_len as u8);
-        delta.extend_from_slice(&dst[di..di + insert_len]);
-        di += insert_len;
-    }
-
-    delta
-}
 
 /// Encode pack object header bytes (type + variable-length size + optional delta base).
 ///
@@ -409,7 +314,7 @@ pub fn write_pack(
         file_path.push(Path::new(&format!(
             "{}-{}",
             basename,
-            hex::encode(pack_checksum)
+            hex::encode(&pack_checksum)
         )));
         file_path.set_extension(ext);
         let mut file = File::create_new(file_path)?;
@@ -424,73 +329,13 @@ pub fn write_pack(
 
 #[cfg(test)]
 mod tests {
+    use super::super::delta;
+    use super::super::git_helper::*;
     use super::*;
-    use flate2::read::ZlibDecoder;
-    use std::io::{Read, Write};
-    use std::path::Path;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     const SOURCE: &[u8] = b"the quick brown fox jumps over the slow lazy dog";
     const TARGET: &[u8] = b"a swift auburn fox jumps over three dormant hounds";
-
-    // ── Git helpers ──────────────────────────────────────────────────────────
-
-    /// `git init` a new repo in `dir`.
-    fn git_init(dir: &Path) {
-        let status = Command::new("git")
-            .args(["init", "-q", dir.to_str().unwrap()])
-            .status()
-            .expect("git init");
-        assert!(status.success(), "git init failed");
-    }
-
-    /// Write `content` as a loose blob via `git hash-object -w --stdin`.
-    /// Returns the 40-char hex SHA-1.
-    fn git_hash_object(repo: &Path, content: &[u8]) -> String {
-        let mut child = Command::new("git")
-            .args(["-C", repo.to_str().unwrap(), "hash-object", "-w", "--stdin"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("spawn git hash-object");
-        child.stdin.take().unwrap().write_all(content).unwrap();
-        let out = child.wait_with_output().expect("git hash-object wait");
-        assert!(out.status.success(), "git hash-object failed");
-        String::from_utf8(out.stdout).unwrap().trim().to_string()
-    }
-
-    /// Decompress the loose object at `<repo>/.git/objects/<xx>/<rest>`.
-    fn read_loose_object(repo: &Path, sha_hex: &str) -> Vec<u8> {
-        let path = repo
-            .join(".git")
-            .join("objects")
-            .join(&sha_hex[..2])
-            .join(&sha_hex[2..]);
-        let file = File::open(&path).expect("open loose object");
-        let mut decoder = ZlibDecoder::new(file);
-        let mut out = Vec::new();
-        decoder.read_to_end(&mut out).expect("zlib decompress");
-        out
-    }
-
-    /// Split `<type> <size>\0<content>` into (header, content).
-    fn parse_object(data: &[u8]) -> (&[u8], &[u8]) {
-        let nul = data.iter().position(|&b| b == 0).expect("NUL separator");
-        (&data[..nul], &data[nul + 1..])
-    }
-
-    /// SHA-1 of a git object: `sha1(<header>\0<content>)`.
-    fn object_sha1(header: &[u8], content: &[u8]) -> ObjID {
-        let mut h = Sha1::new();
-        h.update(header);
-        h.update(b"\0");
-        h.update(content);
-        h.finalize().into()
-    }
-
-    fn hex_encode(b: &[u8]) -> String {
-        b.iter().map(|b| format!("{b:02x}")).collect()
-    }
 
     // ── Test ─────────────────────────────────────────────────────────────────
 
@@ -517,19 +362,17 @@ mod tests {
         // Verify our SHA-1 computation agrees with git.
         let sha1 = object_sha1(hdr1, content1);
         let sha2 = object_sha1(hdr2, content2);
-        assert_eq!(hex_encode(&sha1), sha_hex_1, "SHA-1 mismatch for SOURCE");
-        assert_eq!(hex_encode(&sha2), sha_hex_2, "SHA-1 mismatch for TARGET");
+        assert_eq!(hex::encode(&sha1), sha_hex_1, "SHA-1 mismatch for SOURCE");
+        assert_eq!(hex::encode(&sha2), sha_hex_2, "SHA-1 mismatch for TARGET");
 
         // Delta-encode TARGET relative to SOURCE.
-        let delta = create_delta(content1, content2);
+        let d = delta::dulwich::create_delta(content1, content2);
 
         // Pack: SOURCE as full blob, TARGET as OFS_DELTA relative to SOURCE.
         let pack_path = tmp.join("test.pack");
         let idx_path = tmp.join("test.idx");
-        let records: Vec<(u8, ObjID, Option<ObjID>, Vec<u8>)> = vec![
-            (3, sha1, None, content1.to_vec()),
-            (3, sha2, Some(sha1), delta),
-        ];
+        let records: Vec<(u8, ObjID, Option<ObjID>, Vec<u8>)> =
+            vec![(3, sha1, None, content1.to_vec()), (3, sha2, Some(sha1), d)];
 
         let (mut entries, pack_checksum) = write_pack_data_raw(
             File::create_new(&pack_path).unwrap(),
@@ -568,5 +411,114 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Space-efficiency benchmark for `create_delta`.
+    ///
+    /// Simulates a realistic document-editing workflow: a base document is
+    /// mutated version-by-version (insertions, deletions, and in-place edits)
+    /// according to a deterministic seed. Adjacent versions are delta-encoded
+    /// and the resulting sizes are printed.
+    ///
+    /// Run with: `cargo test test_delta_space_efficiency -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn test_delta_space_efficiency() {
+        /// Minimal LCG PRNG — avoids pulling in the `rand` crate.
+        struct Lcg(u64);
+        impl Lcg {
+            fn next(&mut self) -> u64 {
+                // Knuth multiplicative hash constants.
+                self.0 = self
+                    .0
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                self.0
+            }
+            fn next_usize(&mut self, max: usize) -> usize {
+                (self.next() % max as u64) as usize
+            }
+        }
+
+        const SEED: u64 = 42;
+        const NUM_VERSIONS: usize = 20;
+        const BASE_SIZE: usize = 4096;
+        const EDITS_PER_VERSION: usize = 10;
+
+        // "Word soup" that produces text-like, compressible content.
+        const WORDS: &[u8] = b"the quick brown fox jumps over the lazy dog\n";
+
+        let mut rng = Lcg(SEED);
+
+        // Build a base document by repeating random word-like slices.
+        let mut base: Vec<u8> = Vec::with_capacity(BASE_SIZE + 64);
+        while base.len() < BASE_SIZE {
+            let start = rng.next_usize(WORDS.len() - 4);
+            let max_len = (WORDS.len() - start).min(20);
+            let len = 4 + rng.next_usize(max_len.max(1));
+            let len = len.min(WORDS.len() - start);
+            base.extend_from_slice(&WORDS[start..start + len]);
+        }
+        base.truncate(BASE_SIZE);
+
+        // Evolve the document through NUM_VERSIONS generations.
+        let mut versions: Vec<Vec<u8>> = vec![base];
+        for _ in 1..NUM_VERSIONS {
+            let mut doc = versions.last().unwrap().clone();
+            for _ in 0..EDITS_PER_VERSION {
+                if doc.is_empty() {
+                    break;
+                }
+                match rng.next_usize(3) {
+                    0 => {
+                        // Insert a short snippet at a random position.
+                        let pos = rng.next_usize(doc.len() + 1);
+                        let snippet_len = 4 + rng.next_usize(32);
+                        let snippet: Vec<u8> = (0..snippet_len)
+                            .map(|_| WORDS[rng.next_usize(WORDS.len())])
+                            .collect();
+                        doc.splice(pos..pos, snippet);
+                    }
+                    1 => {
+                        // Delete a short run.
+                        let pos = rng.next_usize(doc.len());
+                        let len = (1 + rng.next_usize(32)).min(doc.len() - pos);
+                        doc.drain(pos..pos + len);
+                    }
+                    _ => {
+                        // Overwrite a short run with fresh word-soup bytes.
+                        let pos = rng.next_usize(doc.len());
+                        let len = (4 + rng.next_usize(16)).min(doc.len() - pos);
+                        for i in 0..len {
+                            doc[pos + i] = WORDS[rng.next_usize(WORDS.len())];
+                        }
+                    }
+                }
+            }
+            versions.push(doc);
+        }
+
+        // Delta-encode every adjacent pair and report sizes.
+        println!("\n=== Delta space-efficiency test (seed={SEED}) ===");
+        println!(
+            "{:<10} {:>10} {:>10} {:>12} {:>8}",
+            "pair", "src_bytes", "dst_bytes", "delta_bytes", "ratio%"
+        );
+        println!("{}", "-".repeat(54));
+
+        for i in 0..versions.len() - 1 {
+            let src = &versions[i];
+            let dst = &versions[i + 1];
+            let d = delta::dulwich::create_delta(src, dst);
+            let ratio = d.len() as f64 / dst.len() as f64 * 100.0;
+            println!(
+                "{:<10} {:>10} {:>10} {:>12} {:>7.1}%",
+                format!("{}→{}", i, i + 1),
+                src.len(),
+                dst.len(),
+                d.len(),
+                ratio,
+            );
+        }
     }
 }
