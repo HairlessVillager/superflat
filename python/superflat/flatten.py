@@ -9,7 +9,7 @@ from superflat.dumper import Dumper
 log = structlog.get_logger()
 
 
-class Applicatioin:
+class FlattenManager:
     def __init__(
         self,
         save_dir: Path,

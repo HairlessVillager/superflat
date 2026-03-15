@@ -4,8 +4,8 @@ from typing import Annotated, Literal
 import structlog
 import typer
 
-from superflat.app import Applicatioin
 from superflat.dumper import ZeroDumper
+from superflat.flatten import FlattenManager
 
 APP_NAME = "superflat"
 log = structlog.get_logger()
@@ -82,7 +82,7 @@ def cli(
         terrain=terrain,
     )
 
-    app = Applicatioin(save_dir, repo_dir, dumper, block_id_mapping)
+    app = FlattenManager(save_dir, repo_dir, dumper, block_id_mapping)
     if command == "flatten":
         app.flatten()
     elif command == "unflatten":
