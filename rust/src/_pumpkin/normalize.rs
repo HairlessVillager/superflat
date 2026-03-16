@@ -513,9 +513,9 @@ mod tests_pumpkin_world_gen {
         !different_flag
     }
 
-    #[tokio::test]
+    #[test]
     #[ignore = "very slow, should be tested under release profile (-r)"]
-    async fn slow_generate_chunk_should_identical() {
+    fn slow_generate_chunk_should_identical() {
         use rayon::prelude::*;
 
         let chunk_x = 669;

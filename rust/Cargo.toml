@@ -20,10 +20,8 @@ pumpkin-nbt = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "
 pumpkin-util = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
 pumpkin-world = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
 pyo3 = { version = "0.28.2" }
-pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 rayon = "1.11.0"
 regex = "1.11"
 serde = { version = "1.0.228", features = ["derive"] }
 sha1 = "0.10.6"
-tokio = "1.49.0"
 zstd = "0.13.3"
