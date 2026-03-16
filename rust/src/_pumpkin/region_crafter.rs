@@ -285,7 +285,7 @@ pub fn chunk_region_flatten(
                         .map_err(|e| format!("Failed to get relative path: {}", e))?
                         .to_path_buf();
                     region_files.push((rel_path, region_x, region_z));
-                    eprintln!("collected {:?}", path.as_os_str());
+                    // eprintln!("collected {:?}", path.as_os_str());
                 }
             }
         }
@@ -298,7 +298,7 @@ pub fn chunk_region_flatten(
         .into_par_iter()
         .map(
             |(rel_path, region_x, region_z)| -> Result<Option<PathBuf>, String> {
-                eprintln!("process {:?}", rel_path.as_os_str());
+                // eprintln!("process {:?}", rel_path.as_os_str());
                 let region_filepath = save_dir.join(&rel_path);
                 let region =
                     read_region_file(&region_filepath, region_x, region_z, &block_id_mapping)
@@ -325,7 +325,7 @@ pub fn chunk_region_flatten(
                     .into_par_iter()
                     .filter(|(_, nbt)| check_chunk_status_full(nbt).unwrap_or(false))
                     .try_for_each(|((chunk_x, chunk_z), nbt)| -> Result<(), String> {
-                        eprintln!("process chunk ({}, {})", chunk_x, chunk_z);
+                        // eprintln!("process chunk ({}, {})", chunk_x, chunk_z);
                         let sections_dump = {
                             let chunk_nbt_struct = from_bytes::<ChunkNbt>(Cursor::new(&nbt))
                                 .map_err(|e| format!("Failed to parse ChunkNbt: {}", e))?;
