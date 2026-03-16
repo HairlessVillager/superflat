@@ -1,15 +1,23 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, TypedDict
 
 from structlog import get_logger
 
 log = get_logger()
 
 
+class CrafterEntry(TypedDict):
+    input_paths: Iterable[Path]
+    output_path_bins: Iterable[tuple[Path, bytes]]
+
+
 class Crafter(ABC):
     @abstractmethod
-    def __call__(self) -> Iterable[Path]: ...
+    def flatten(self) -> Iterable[CrafterEntry]: ...
+
+    @abstractmethod
+    def unflatten(self) -> Iterable[CrafterEntry]: ...
 
 
 def collect_valid_paths(base: Path, pf: Callable[[Path], Iterable[Path]]) -> list[Path]:
