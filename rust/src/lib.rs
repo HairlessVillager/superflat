@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 
 mod _pumpkin;
-mod _repack;
 
 #[pymodule]
 mod pumpkin {
