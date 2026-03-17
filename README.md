@@ -6,7 +6,7 @@
 > **Development Warning**: This project is currently in an aggressive development phase. The Command Line Interface (CLI) and storage formats are not yet stable.
 
 > [!IMPORTANT]
-> **Version Support**: Currently targets **Minecraft 1.21.1 Java Edition**. Compatibility with other versions is still being evaluated.
+> **Version Support**: Currently targets **Minecraft 1.21.11 Java Edition**. Compatibility with other versions is still being evaluated.
 
 > [!IMPORTANT]
 > **Storage Footprint**: After flattening a save, the intermediate product (flattened directory) will expand to approximately **20 times** its original size.
@@ -27,7 +27,7 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
 - [ ] Reduce dependency on Pumpkin for the Sections Dump feature.
-- [ ] Expand support for legacy versions (pre-1.21.1).
+- [ ] Expand support for legacy versions (pre-1.21.11).
 - [ ] Chunk de-duplication based on Pumpkin terrain generation algorithms (storing only modifications).
 
 ## Credits
