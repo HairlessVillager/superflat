@@ -1,11 +1,3 @@
-# /// script
-# dependencies = [
-#   "matplotlib",
-#   "numpy",
-#   "typer",
-# ]
-# ///
-
 # rm -rf temp/git
 # git init --bare temp/git
 
@@ -50,7 +42,6 @@ def command(*cmd: str) -> str:
 
 
 SAVE_DIRS = [
-    "/home/hlsvillager/Desktop/test-saves/test42/2026-03-15_17-00-40_test42/test42",
     "/home/hlsvillager/Desktop/test-saves/test42/2026-03-15_15-55-44_test42/test42",
     "/home/hlsvillager/Desktop/test-saves/test42/2026-03-15_16-09-57_test42/test42",
     "/home/hlsvillager/Desktop/test-saves/test42/2026-03-15_16-20-00_test42/test42",
@@ -73,6 +64,7 @@ def flatten(repo_base_dir: Path) -> list[Path]:
     for idx, save_dir in enumerate(SAVE_DIRS):
         repo_dir = repo_base_dir / str(idx)
         print(idx, str(save_dir), str(repo_dir))
+        start = time.perf_counter()
         command(
             "uv",
             "run",
@@ -87,6 +79,9 @@ def flatten(repo_base_dir: Path) -> list[Path]:
             "-b",
             "minecraft:chain=minecraft:iron_chain",  # 1.21.9
         )
+        end = time.perf_counter()
+        duration = end - start
+        print(f"#{idx}, Executed in {duration:.4f}s")
         repo_dirs.append(repo_dir)
     return repo_dirs
 
@@ -94,7 +89,7 @@ def flatten(repo_base_dir: Path) -> list[Path]:
 @app.command()
 def commit_repack(
     repo_base_dir: Path,
-    window: int = 1,
+    window: int,
     csv_output: bool = typer.Option(False, "--csv"),
 ):
     csv_path = Path("bench-results.csv")
@@ -129,18 +124,22 @@ def commit_repack(
                 f"time-{idx}",
             )
             start = time.perf_counter()
-            command(
-                "git",
-                "--git-dir",
-                str(git_dir),
-                "repack",
-                "-a",
-                "-d",
-                "--depth",
-                "4095",
-                "--window",
-                str(window),
-            )
+            if window == 0:
+                command("git", "--git-dir", str(git_dir), "gc", "--aggressive")
+            else:
+                command(
+                    "git",
+                    "--git-dir",
+                    str(git_dir),
+                    "repack",
+                    "-a",
+                    "-d",
+                    "--depth",
+                    "4095",
+                    "--window",
+                    str(window),
+                )
+
             end = time.perf_counter()
             pack_result = command(
                 "git",
@@ -174,7 +173,7 @@ def commit_repack(
 
 @app.command()
 def plot(
-    csv_path: Path = Path("bench-results.csv"), output: Path = Path("bench-window.png")
+    csv_path: Path = Path("bench-results.csv"), output: Path = Path("bench-results.png")
 ):
     import csv as csv_mod
     from collections import defaultdict
