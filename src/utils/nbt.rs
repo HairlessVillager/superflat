@@ -1,4 +1,7 @@
-use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
+use std::io::{Read, Seek};
+
+use bytes::Bytes;
+use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelper, tag::NbtTag};
 
 fn sort_nbt_compound(compound: NbtCompound) -> NbtCompound {
     let mut normalized: Vec<(String, NbtTag)> = compound
@@ -25,4 +28,21 @@ fn sort_nbt_tag(tag: NbtTag) -> NbtTag {
 
 pub fn sort_nbt(nbt: Nbt) -> Nbt {
     Nbt::new(nbt.name, sort_nbt_compound(nbt.root_tag))
+}
+
+pub fn load_nbt<R: Read + Seek>(reader: R, named: bool) -> Nbt {
+    let mut helper = NbtReadHelper::new(reader);
+    if named {
+        Nbt::read(&mut helper).unwrap()
+    } else {
+        Nbt::read_unnamed(&mut helper).unwrap()
+    }
+}
+
+pub fn dump_nbt(nbt: Nbt, named: bool) -> Bytes {
+    if named {
+        nbt.write()
+    } else {
+        nbt.write_unnamed()
+    }
 }

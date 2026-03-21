@@ -1,5 +1,8 @@
+use std::io::Cursor;
+
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
+use crate::utils::nbt::{dump_nbt, load_nbt, sort_nbt};
 use crate::utils::region::{flatten_region, parse_xz, unflatten_region};
 
 const FLATTEN_PATTERNS: &[&str] = &[
@@ -41,6 +44,12 @@ impl Crafter for OtherRegionCrafter {
                     .put(&format!("{}/timestamp-header", key), timestamp_header)
                     .await;
                 for (chunk_x, chunk_z, nbt) in chunks {
+                    let nbt = {
+                        let raw = load_nbt(Cursor::new(&nbt), true);
+                        let sorted = sort_nbt(raw);
+                        let bytes = dump_nbt(sorted, true);
+                        bytes
+                    };
                     storage
                         .put(&format!("{}/c.{}.{}.nbt", key, chunk_x, chunk_z), &nbt)
                         .await;
