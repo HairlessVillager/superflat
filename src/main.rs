@@ -7,23 +7,35 @@ use superflat_rs::{checkout, commit, flatten, unflatten};
 #[derive(Parser)]
 enum Cli {
     Flatten {
+        /// Path to your save
         save_dir: PathBuf,
+        /// Path to the flatten Git repository
         repo_dir: PathBuf,
     },
     Unflatten {
+        /// Path to your save
         save_dir: PathBuf,
+        /// Path to the flatten Git repository
         repo_dir: PathBuf,
     },
     Commit {
+        /// Path to your save
         save_dir: PathBuf,
+        /// Path to the bare Git repository
         git_dir: PathBuf,
+        /// Commit ID of the first source. Leave empty to create a initial commit.
         from: Option<String>,
+        /// Commit IDs of other sources.
         merge: Vec<String>,
+        /// Commit message
         commit_message: String,
     },
     Checkout {
+        /// Path to your save
         save_dir: PathBuf,
+        /// Path to the bare Git repository
         git_dir: PathBuf,
+        /// Commit ID to checkout
         commit_id: String,
     },
 }
