@@ -3,7 +3,7 @@ use std::io::Cursor;
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
 use crate::utils::nbt::{dump_nbt, load_nbt, sort_nbt};
-use crate::utils::region::{flatten_region, parse_xz, unflatten_region};
+use crate::utils::region::{parse_xz, read_region, write_region};
 
 const FLATTEN_PATTERNS: &[&str] = &[
     "entities/r.*.*.mca",
@@ -36,7 +36,7 @@ impl Crafter for OtherRegionCrafter {
                 let data = save.get(&key).await;
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename);
-                let Some((timestamp_header, chunks)) = flatten_region(&data, region_x, region_z)
+                let Some((timestamp_header, chunks)) = read_region(&data, region_x, region_z)
                 else {
                     continue;
                 };
@@ -75,7 +75,7 @@ impl Crafter for OtherRegionCrafter {
                     let nbt = storage.get(&chunk_key).await;
                     chunks.push((chunk_x, chunk_z, nbt));
                 }
-                let mca_data = unflatten_region(region_x, region_z, &timestamp_header, &chunks);
+                let mca_data = write_region(region_x, region_z, &timestamp_header, &chunks);
                 save.put(region_key, &mca_data).await;
             }
         }

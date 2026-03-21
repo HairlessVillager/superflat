@@ -5,7 +5,7 @@ const SECTOR_SIZE: usize = 4096;
 
 /// Parse a .mca region file into its timestamp header and chunks.
 /// Returns None if the file is empty or has no chunks.
-pub fn flatten_region(
+pub fn read_region(
     data: &'_ [u8],
     region_x: i32,
     region_z: i32,
@@ -48,7 +48,7 @@ pub fn flatten_region(
 }
 
 /// Reconstruct a .mca region file from a timestamp header and chunks.
-pub fn unflatten_region(
+pub fn write_region(
     region_x: i32,
     region_z: i32,
     timestamp_header: &[u8],
