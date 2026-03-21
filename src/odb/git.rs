@@ -1,73 +1,28 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
-type Object = Vec<u8>;
-
-pub trait OdbReader {
-    async fn get(&self, key: &str) -> Object;
-    async fn glob(&self, pattern: &str) -> Vec<String>;
-}
-pub trait OdbWriter: OdbReader {
-    async fn put(&mut self, key: &str, value: &Object);
-}
-
-pub struct LocalFsOdb {
-    root_dir: PathBuf,
-}
-
-impl LocalFsOdb {
-    pub fn from_dir(root: PathBuf) -> Self {
-        Self { root_dir: root }
-    }
-}
-
-impl OdbReader for LocalFsOdb {
-    async fn get(&self, key: &str) -> Object {
-        tokio::fs::read(self.root_dir.join(key)).await.unwrap()
-    }
-
-    async fn glob(&self, pattern: &str) -> Vec<String> {
-        let full_pattern = self.root_dir.join(pattern);
-        let root = self.root_dir.clone();
-        tokio::task::spawn_blocking(move || -> Vec<String> {
-            glob::glob(full_pattern.to_str().unwrap())
-                .unwrap()
-                .filter_map(|e| e.ok())
-                .filter_map(|path| {
-                    path.strip_prefix(&root)
-                        .ok()
-                        .and_then(|p| p.to_str().map(|s| s.to_string()))
-                })
-                .collect()
-        })
-        .await
-        .unwrap()
-    }
-}
-
-impl OdbWriter for LocalFsOdb {
-    async fn put(&mut self, key: &str, value: &Object) {
-        let path = self.root_dir.join(key);
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await.unwrap();
-        }
-        tokio::fs::write(path, value).await.unwrap();
-    }
-}
+use crate::odb::{OdbReader, OdbWriter};
 
 pub struct LocalGitOdb {
     git_dir: PathBuf,
     /// Current commit used for read operations (get/glob).
-    commit: String,
+    commit: Option<String>,
     /// Accumulated blobs not yet committed: path → sha1.
     pending: HashMap<String, String>,
 }
 
 impl LocalGitOdb {
-    pub fn new(git_dir: PathBuf, commit: String) -> Self {
+    pub fn new(git_dir: PathBuf) -> Self {
         Self {
             git_dir,
-            commit,
+            commit: None,
+            pending: HashMap::new(),
+        }
+    }
+
+    pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
+        Self {
+            git_dir,
+            commit: Some(commit),
             pending: HashMap::new(),
         }
     }
@@ -86,7 +41,7 @@ impl LocalGitOdb {
     /// their underlying commit objects.
     ///
     /// Returns the sha1 of the new commit.
-    pub async fn commit(self, parents: &[&str], message: &str) -> String {
+    pub async fn commit(self, parents: &[impl AsRef<str>], message: &str) -> String {
         let Self {
             git_dir, pending, ..
         } = self;
@@ -96,7 +51,7 @@ impl LocalGitOdb {
         cmd.args(["--git-dir", git_dir.to_str().unwrap()]);
         cmd.arg("commit-tree").arg(&tree_sha);
         for parent in parents {
-            cmd.args(["-p", &format!("{}^0", parent)]);
+            cmd.args(["-p", &format!("{}^0", parent.as_ref())]);
         }
         cmd.args(["-m", message]);
 
@@ -162,10 +117,13 @@ async fn build_tree(git_dir: &PathBuf, entries: &HashMap<String, String>, prefix
 }
 
 impl OdbReader for LocalGitOdb {
-    async fn get(&self, key: &str) -> Object {
+    async fn get(&self, key: &str) -> Vec<u8> {
+        let Some(commit) = &self.commit else {
+            panic!("No blob exists");
+        };
         self.git()
             .arg("show")
-            .arg(format!("{}:{}", self.commit, key))
+            .arg(format!("{}:{}", commit, key))
             .output()
             .await
             .unwrap()
@@ -173,24 +131,27 @@ impl OdbReader for LocalGitOdb {
     }
 
     async fn glob(&self, pattern: &str) -> Vec<String> {
-        let output = self
-            .git()
-            .args(["ls-tree", "-r", "--name-only"])
-            .arg(&self.commit)
-            .output()
-            .await
-            .unwrap();
-        let pat = glob::Pattern::new(pattern).unwrap();
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| pat.matches(line))
-            .map(|s| s.to_string())
-            .collect()
+        if let Some(commit) = &self.commit {
+            let output = self
+                .git()
+                .args(["ls-tree", "-r", "--name-only", &commit])
+                .output()
+                .await
+                .unwrap();
+            let pat = glob::Pattern::new(pattern).unwrap();
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter(|line| pat.matches(line))
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            return Vec::new();
+        }
     }
 }
 
 impl OdbWriter for LocalGitOdb {
-    async fn put(&mut self, key: &str, value: &Object) {
+    async fn put(&mut self, key: &str, value: &[u8]) {
         use tokio::io::AsyncWriteExt;
         let mut child = self
             .git()
@@ -217,32 +178,6 @@ mod tests {
     use super::*;
     use std::process::Command;
 
-    // ── LocalFsOdb ──────────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn fs_put_get_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
-        let data = b"hello superflat".to_vec();
-        odb.put("foo/bar.bin", &data).await;
-        let got = odb.get("foo/bar.bin").await;
-        assert_eq!(got, data);
-    }
-
-    #[tokio::test]
-    async fn fs_glob_returns_matching_keys() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
-        odb.put("a/x.txt", &b"1".to_vec()).await;
-        odb.put("a/y.txt", &b"2".to_vec()).await;
-        odb.put("b/z.bin", &b"3".to_vec()).await;
-        let mut matches = odb.glob("a/*.txt").await;
-        matches.sort();
-        assert_eq!(matches, vec!["a/x.txt", "a/y.txt"]);
-    }
-
-    // ── LocalGitOdb ─────────────────────────────────────────────────────────
-
     /// Initialise a bare git repo in a tempdir and return its path.
     fn init_bare_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -267,14 +202,14 @@ mod tests {
     #[tokio::test]
     async fn git_put_commit_get_roundtrip() {
         let repo = init_bare_repo();
-        let mut odb = LocalGitOdb::new(repo.path().to_path_buf(), String::new());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         let data = b"hello git odb".to_vec();
         odb.put("src/hello.txt", &data).await;
-        let commit_sha = odb.commit(&[], "initial").await;
+        let commit_sha = odb.commit(&[] as &[&str], "initial").await;
         assert_eq!(commit_sha.len(), 40);
 
-        let odb = LocalGitOdb::new(repo.path().to_path_buf(), commit_sha);
+        let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
         let got = odb.get("src/hello.txt").await;
         assert_eq!(got, data);
     }
@@ -282,14 +217,14 @@ mod tests {
     #[tokio::test]
     async fn git_glob_after_commit() {
         let repo = init_bare_repo();
-        let mut odb = LocalGitOdb::new(repo.path().to_path_buf(), String::new());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         odb.put("a/x.rs", &b"fn x(){}".to_vec()).await;
         odb.put("a/y.rs", &b"fn y(){}".to_vec()).await;
         odb.put("b/z.md", &b"# Z".to_vec()).await;
-        let commit_sha = odb.commit(&[], "add files").await;
+        let commit_sha = odb.commit(&[] as &[&str], "add files").await;
 
-        let odb = LocalGitOdb::new(repo.path().to_path_buf(), commit_sha);
+        let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
         let mut matches = odb.glob("a/*.rs").await;
         matches.sort();
         assert_eq!(matches, vec!["a/x.rs", "a/y.rs"]);
@@ -298,13 +233,13 @@ mod tests {
     #[tokio::test]
     async fn git_commit_with_parent() {
         let repo = init_bare_repo();
-        let mut odb = LocalGitOdb::new(repo.path().to_path_buf(), String::new());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         odb.put("a.txt", &b"v1".to_vec()).await;
-        let first = odb.commit(&[], "first").await;
+        let first = odb.commit(&[] as &[&str], "first").await;
 
         // Second commit only puts b.txt — a.txt is NOT inherited
-        let mut odb = LocalGitOdb::new(repo.path().to_path_buf(), first.clone());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone());
         odb.put("b.txt", &b"v2".to_vec()).await;
         let second = odb.commit(&[&first], "second").await;
 
