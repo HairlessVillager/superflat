@@ -1,5 +1,6 @@
-use super::{Crafter, region};
+use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
+use crate::utils::region::{flatten_region, parse_xz, unflatten_region};
 
 const FLATTEN_PATTERNS: &[&str] = &[
     "region/r.*.*.mca",
@@ -23,9 +24,8 @@ impl Crafter for ChunkRegionCrafter {
             for key in save.glob(pattern).await {
                 let data = save.get(&key).await;
                 let filename = key.split('/').next_back().unwrap_or("");
-                let (region_x, region_z) = region::parse_xz(filename);
-                let Some((timestamp_header, chunks)) =
-                    region::flatten_region(&data, region_x, region_z)
+                let (region_x, region_z) = parse_xz(filename);
+                let Some((timestamp_header, chunks)) = flatten_region(&data, region_x, region_z)
                 else {
                     continue;
                 };
@@ -48,18 +48,17 @@ impl Crafter for ChunkRegionCrafter {
                     continue;
                 };
                 let filename = region_key.split('/').next_back().unwrap_or("");
-                let (region_x, region_z) = region::parse_xz(filename);
+                let (region_x, region_z) = parse_xz(filename);
                 let timestamp_header = storage.get(&ts_key).await;
                 let chunk_pattern = format!("{}/c.*.*.nbt", region_key);
                 let mut chunks = Vec::new();
                 for chunk_key in storage.glob(&chunk_pattern).await {
                     let chunk_filename = chunk_key.split('/').next_back().unwrap_or("");
-                    let (chunk_x, chunk_z) = region::parse_xz(chunk_filename);
+                    let (chunk_x, chunk_z) = parse_xz(chunk_filename);
                     let nbt = storage.get(&chunk_key).await;
                     chunks.push((chunk_x, chunk_z, nbt));
                 }
-                let mca_data =
-                    region::unflatten_region(region_x, region_z, &timestamp_header, &chunks);
+                let mca_data = unflatten_region(region_x, region_z, &timestamp_header, &chunks);
                 save.put(region_key, &mca_data).await;
             }
         }

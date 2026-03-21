@@ -10,6 +10,14 @@ flate2 = "1.1.9"
 glob = "0.3.3"
 rayon = "1.11.0"
 tokio = { version = "1.50.0", features = ["fs", "io-util", "macros", "process", "rt", "rt-multi-thread"] }
+pumpkin-config = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
+pumpkin-data = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
+pumpkin-nbt = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
+pumpkin-util = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
+pumpkin-world = { git = "https://github.com/HairlessVillager/Pumpkin.git", rev = "b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470" }
+serde = { version = "1.0.228", features = ["derive"] }
+bytes = { version = "1.11.1", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+futures = "0.3.32"

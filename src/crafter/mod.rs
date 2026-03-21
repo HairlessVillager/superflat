@@ -4,7 +4,6 @@ mod chunk_region;
 mod gzip_nbt;
 mod other_region;
 mod raw;
-mod region;
 
 pub use chunk_region::ChunkRegionCrafter;
 pub use gzip_nbt::GzipNbtCrafter;
