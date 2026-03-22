@@ -1,5 +1,9 @@
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
+use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+
+use crate::utils::palette::{BiomePalette, BlockPalette};
 
 const SECTOR_SIZE: usize = 4096;
 
@@ -100,4 +104,110 @@ pub fn parse_xz(filename: &str) -> (i32, i32) {
     let x: i32 = parts[1].parse().unwrap();
     let z: i32 = parts[2].parse().unwrap();
     (x, z)
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Section {
+    pub y: i8,
+    pub biome: Vec<u8>,
+    pub block_state: Vec<u16>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SectionsDump {
+    sections: Vec<Section>,
+}
+
+fn dump_sections(sections: &[NbtTag]) -> SectionsDump {
+    let sections = sections
+        .iter()
+        .map(|section| {
+            let section = section.extract_compound().unwrap();
+            let y = section.get_byte("Y").unwrap();
+            let biome_dump = {
+                let biome = section.get_compound("biomes").expect(
+                    format!("Should section contain 'biomes', got: {:#?}", section).as_str(),
+                );
+                BiomePalette::from_disk_nbt(biome)
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>()
+            };
+            let block_dump = {
+                let block_states = section.get_compound("block_states").unwrap();
+                BlockPalette::from_disk_nbt(block_states)
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>()
+            };
+            // TODO: extract block/sky light
+            Section {
+                y,
+                biome: biome_dump,
+                block_state: block_dump,
+            }
+        })
+        .collect::<Vec<_>>();
+    SectionsDump { sections }
+}
+
+fn load_sections(dump: SectionsDump) -> Vec<NbtTag> {
+    dump.sections
+        .into_iter()
+        .map(|section| {
+            NbtTag::Compound(NbtCompound {
+                child_tags: vec![
+                    ("Y".into(), NbtTag::Byte(section.y)),
+                    (
+                        "biomes".into(),
+                        NbtTag::Compound(
+                            BiomePalette::from_iter(section.biome.into_iter()).to_disk_nbt(),
+                        ),
+                    ),
+                    (
+                        "block_states".into(),
+                        NbtTag::Compound(
+                            BlockPalette::from_iter(section.block_state.into_iter()).to_disk_nbt(),
+                        ),
+                    ),
+                ],
+            })
+        })
+        .collect()
+}
+
+/// Split a chunk nbt into (other_nbt, sections_dump)
+pub fn split_chunk(mut nbt: Nbt) -> (Nbt, SectionsDump) {
+    let sections_dump = {
+        let sections_idx = nbt
+            .root_tag
+            .child_tags
+            .iter()
+            .position(|(field, _)| field == "sections")
+            .unwrap();
+        let sections = nbt.root_tag.child_tags.swap_remove(sections_idx).1;
+        let sections = sections.extract_list().unwrap();
+        dump_sections(sections)
+    };
+
+    // TODO: extract block/sky light
+    if let Some(is_light_on_idx) = nbt
+        .root_tag
+        .child_tags
+        .iter()
+        .position(|(field, _)| field == "isLightOn")
+    {
+        nbt.root_tag.child_tags[is_light_on_idx].1 = NbtTag::Byte(i8::from(false));
+    } else {
+        panic!("Should contain 'isLightOn', got: {:#?}", nbt);
+        // nbt.root_tag.put_bool("isLightOn", false);
+    }
+
+    (nbt, sections_dump)
+}
+
+/// Restore a chunk nbt from (other_nbt, sections_dump)
+pub fn restore_chunk(mut other: Nbt, dump: SectionsDump) -> Nbt {
+    other.root_tag.put_list("sections", load_sections(dump));
+    other
 }
