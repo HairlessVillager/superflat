@@ -23,7 +23,7 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [x] `superflat flatten`: Deconstruct save files into a flattened format.
 - [x] `superflat unflatten`: Reconstruct save files from the flattened format.
 - [x] Complete Rust refactor
-- [ ] Basic parallel computing
+- [x] Basic parallel computing
 - [ ] Introduction of streaming computation.
 - [ ] In-depth performance profiling and extreme optimization.
 - [ ] Comprehensive user documentation.

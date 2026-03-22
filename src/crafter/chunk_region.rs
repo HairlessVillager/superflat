@@ -1,6 +1,8 @@
 use std::io::Cursor;
 
 use pumpkin_nbt::{from_bytes, to_bytes};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use tokio::task;
 
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
@@ -39,31 +41,32 @@ impl Crafter for ChunkRegionCrafter {
                 storage
                     .put(&format!("{}/timestamp-header", key), timestamp_header)
                     .await;
-                for (chunk_x, chunk_z, nbt) in chunks {
-                    let (other, dump) = {
-                        let nbt = load_nbt(Cursor::new(&nbt), true);
-                        if nbt.get_string("Status").unwrap() != "minecraft:full" {
-                            continue;
-                        }
-                        // dbg!(chunk_x, chunk_z);
-                        let (other, sections) = split_chunk(nbt);
-                        let other_dump = dump_nbt(sort_nbt(other), true);
-                        let mut sections_dump = Vec::with_capacity(200 * 1024); // TODO: use .with_capacity
-                        to_bytes(&sections, &mut sections_dump).unwrap();
-                        (other_dump, sections_dump)
-                    };
-                    storage
-                        .put(
-                            &format!("{}/other/c.{}.{}.nbt", key, chunk_x, chunk_z),
-                            &other,
-                        )
-                        .await;
-                    storage
-                        .put(
-                            &format!("{}/sections/c.{}.{}.dump", key, chunk_x, chunk_z),
-                            &dump,
-                        )
-                        .await;
+
+                let result = task::spawn_blocking(|| {
+                    chunks
+                        .into_par_iter()
+                        .filter_map(|(chunk_x, chunk_z, nbt)| {
+                            let nbt = load_nbt(Cursor::new(&nbt), true);
+                            if nbt.get_string("Status").unwrap() != "minecraft:full" {
+                                return None;
+                            }
+                            // dbg!(chunk_x, chunk_z);
+                            let (other, sections) = split_chunk(nbt);
+                            let other_dump = dump_nbt(sort_nbt(other), true);
+                            let mut sections_dump = Vec::with_capacity(200 * 1024);
+                            to_bytes(&sections, &mut sections_dump).unwrap();
+                            Some((chunk_x, chunk_z, other_dump, sections_dump))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await
+                .unwrap();
+
+                for (chunk_x, chunk_z, other, dump) in result {
+                    let other_key = format!("{}/other/c.{}.{}.nbt", key, chunk_x, chunk_z);
+                    storage.put(&other_key, &other).await;
+                    let dump_key = format!("{}/sections/c.{}.{}.dump", key, chunk_x, chunk_z);
+                    storage.put(&dump_key, &dump).await;
                 }
             }
         }
@@ -81,26 +84,32 @@ impl Crafter for ChunkRegionCrafter {
 
                 let chunk_pattern = format!("{}/other/c.*.*.nbt", region_key);
 
-                let mut chunks = Vec::new();
+                let mut tasks = Vec::with_capacity(1024);
                 for chunk_key in storage.glob(&chunk_pattern).await {
                     let chunk_filename = chunk_key.split('/').next_back().unwrap_or("");
                     let (chunk_x, chunk_z) = parse_xz(chunk_filename);
-
                     let nbt_data = storage.get(&chunk_key).await;
-
                     let dump_key =
                         format!("{}/sections/c.{}.{}.dump", region_key, chunk_x, chunk_z);
-
                     let dump_data = storage.get(&dump_key).await;
-
-                    let nbt = {
-                        let other = load_nbt(Cursor::new(&nbt_data), true);
-                        let sections_dump: SectionsDump =
-                            from_bytes(Cursor::new(&dump_data)).unwrap();
-                        dump_nbt(restore_chunk(other, sections_dump), true)
-                    };
-                    chunks.push((chunk_x, chunk_z, nbt.to_vec()));
+                    tasks.push((chunk_x, chunk_z, nbt_data, dump_data))
                 }
+
+                let chunks = task::spawn_blocking(|| {
+                    tasks
+                        .into_par_iter()
+                        .map(|(chunk_x, chunk_z, nbt_data, dump_data)| {
+                            let other = load_nbt(Cursor::new(&nbt_data), true);
+                            let sections_dump: SectionsDump =
+                                from_bytes(Cursor::new(&dump_data)).unwrap();
+                            let nbt = dump_nbt(restore_chunk(other, sections_dump), true);
+                            (chunk_x, chunk_z, nbt)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await
+                .unwrap();
+
                 let mca_data = write_region(region_x, region_z, &timestamp_header, &chunks);
                 save.put(region_key, &mca_data).await;
             }

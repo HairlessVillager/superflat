@@ -23,7 +23,7 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - [x] `superflat flatten`: 存档平坦化（解构）
 - [x] `superflat unflatten`: 存档还原（重构）
 - [x] Rust 完全重构
-- [ ] 基本的并行计算
+- [x] 基本的并行计算
 - [ ] 引入流式计算
 - [ ] 深度性能分析与极致性能优化
 - [ ] 完善用户文档

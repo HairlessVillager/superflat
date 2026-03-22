@@ -56,7 +56,7 @@ pub fn write_region(
     region_x: i32,
     region_z: i32,
     timestamp_header: &[u8],
-    chunks: &[(i32, i32, Vec<u8>)],
+    chunks: &[(i32, i32, impl AsRef<[u8]>)],
 ) -> Vec<u8> {
     let mut locations = vec![0u8; SECTOR_SIZE];
     let mut chunk_data = Vec::new();
@@ -68,7 +68,7 @@ pub fn write_region(
         let index = (local_x + local_z * 32) as usize;
 
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(nbt).unwrap();
+        encoder.write_all(nbt.as_ref()).unwrap();
         let compressed = encoder.finish().unwrap(); // TODO: par here
 
         let content_length = compressed.len() + 1; // + 1 for the compression type byte
