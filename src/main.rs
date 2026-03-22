@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use superflat_rs::{checkout, commit, flatten, unflatten};
+use superflat::{checkout, commit, flatten, unflatten};
 
 /// Superflat - A bridge between Git and Minecraft save
 #[derive(Parser)]
