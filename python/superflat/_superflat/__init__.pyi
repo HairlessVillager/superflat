@@ -1,3 +1,0 @@
-from superflat._superflat import pumpkin as pumpkin
-
-def sum_as_string(a: int, b: int) -> str: ...
