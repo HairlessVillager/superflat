@@ -60,6 +60,7 @@ impl Crafter for GzipNbtCrafter {
     async fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
         for pattern in GZIP_NBT_GLOB_PATTERNS {
             for key in storage.glob(pattern).await {
+                log::info!("Process gzip nbt file {key}");
                 let data = storage.get(&key).await;
                 let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
                 encoder.write_all(&data).unwrap();

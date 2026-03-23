@@ -88,6 +88,7 @@ impl Crafter for ChunkRegionCrafter {
     async fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
         for pattern in UNFLATTEN_PATTERNS {
             for ts_key in storage.glob(pattern).await {
+                log::info!("Process chunk region file (timestamp header) {ts_key}");
                 let Some(region_key) = ts_key.strip_suffix("/timestamp-header") else {
                     continue;
                 };
