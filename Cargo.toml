@@ -28,3 +28,7 @@ futures = "0.3.32"
 [[bin]]
 name = "sf"
 path = "src/main.rs"
+
+[target.x86_64-unknown-linux-gnu]
+linker = "/usr/bin/clang"
+rustflags = ["-Clink-arg=-fuse-ld=lld", "-Clink-arg=-Wl,--no-rosegment"]
