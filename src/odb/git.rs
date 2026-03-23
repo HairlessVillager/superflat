@@ -1,5 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use tokio::process::Command;
+
 use crate::odb::{OdbReader, OdbWriter};
 
 pub struct LocalGitOdb {
@@ -27,8 +29,8 @@ impl LocalGitOdb {
         }
     }
 
-    fn git(&self) -> tokio::process::Command {
-        let mut cmd = tokio::process::Command::new("git");
+    fn git(&self) -> Command {
+        let mut cmd = Command::new("git");
         cmd.arg("--git-dir").arg(&self.git_dir);
         cmd
     }
@@ -49,8 +51,7 @@ impl LocalGitOdb {
     ) -> String {
         let tree_sha = build_tree(&self.git_dir, &self.pending, "").await;
 
-        let mut cmd = tokio::process::Command::new("git");
-        cmd.arg("--git-dir").arg(&self.git_dir);
+        let mut cmd = self.git();
         cmd.arg("commit-tree").arg(&tree_sha);
         for parent in parents {
             cmd.arg("-p").arg(&format!("{}^0", parent.as_ref()));
@@ -61,10 +62,15 @@ impl LocalGitOdb {
         let commit = String::from_utf8(output.stdout).unwrap().trim().to_string();
 
         if let Some(r#ref) = r#ref {
-            let mut cmd = tokio::process::Command::new("git");
-            cmd.arg("--git-dir").arg(&self.git_dir);
-            cmd.arg("update-ref").arg(r#ref).arg(&commit);
-            cmd.spawn().unwrap().wait().await.unwrap();
+            self.git()
+                .arg("update-ref")
+                .arg(r#ref)
+                .arg(&commit)
+                .spawn()
+                .unwrap()
+                .wait()
+                .await
+                .unwrap();
         }
 
         commit
@@ -109,7 +115,7 @@ async fn build_tree(git_dir: &PathBuf, entries: &HashMap<String, String>, prefix
         mktree_input.push_str(&format!("100644 blob {}\t{}\n", sha1, name));
     }
 
-    let mut child = tokio::process::Command::new("git")
+    let mut child = Command::new("git")
         .args(["--git-dir", git_dir.to_str().unwrap()])
         .args(["mktree"])
         .stdin(std::process::Stdio::piped())
@@ -133,7 +139,7 @@ impl OdbReader for LocalGitOdb {
             panic!("No blob exists");
         };
         self.git()
-            .arg("show")
+            .arg("show") // TODO: replace with gix
             .arg(format!("{}:{}", commit, key))
             .output()
             .await
@@ -166,7 +172,7 @@ impl OdbWriter for LocalGitOdb {
         use tokio::io::AsyncWriteExt;
         let mut child = self
             .git()
-            .args(["hash-object", "-w", "--stdin"])
+            .args(["hash-object", "-w", "--stdin"]) // TODO: replace with gix
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .spawn()
