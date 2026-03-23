@@ -5,9 +5,9 @@ pub use fs::LocalFsOdb;
 pub use git::LocalGitOdb;
 
 pub trait OdbReader {
-    async fn get(&self, key: &str) -> Vec<u8>;
-    async fn glob(&self, pattern: &str) -> Vec<String>;
+    fn get(&self, key: &str) -> impl std::future::Future<Output = Vec<u8>> + Send;
+    fn glob(&self, pattern: &str) -> impl std::future::Future<Output = Vec<String>> + Send;
 }
 pub trait OdbWriter: OdbReader {
-    async fn put(&mut self, key: &str, value: &[u8]);
+    fn put(&mut self, key: &str, value: &[u8]) -> impl std::future::Future<Output = ()> + Send;
 }
