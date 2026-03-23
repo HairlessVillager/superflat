@@ -2,7 +2,7 @@ use anyhow::Result;
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom::Start as SeekStart, Write};
 
 use crate::utils::palette::{BiomePalette, BlockPalette};
 
@@ -11,20 +11,24 @@ const SECTOR_SIZE: usize = 4096;
 /// Parse a .mca region file into its timestamp header and chunks.
 /// Returns None if the file is empty or has no chunks.
 #[must_use]
-pub fn read_region(
-    data: &'_ [u8],
+pub fn read_region<B: Read + Seek>(
+    mut buf: B,
     region_x: i32,
     region_z: i32,
-) -> Option<(&'_ [u8], Vec<(i32, i32, Vec<u8>)>)> {
+) -> Option<([u8; 4096], Vec<(i32, i32, Vec<u8>)>)> {
     // TODO: Streaming output here.
     // A .mca file in 16MiB size can generate tons of bytes after decompression.
-    if data.len() < 8192 {
-        return None;
-    }
-    let locations = &data[0..4096];
-    let timestamps = &data[4096..8192];
-    let mut chunks = Vec::new();
 
+    let mut locations = [0u8; 4096];
+    if let Err(err) = buf.read_exact(&mut locations)
+        && err.kind() == std::io::ErrorKind::UnexpectedEof
+    {
+        return None; // empty file
+    }
+    let mut timestamps = [0u8; 4096];
+    buf.read_exact(&mut timestamps).unwrap();
+
+    let mut chunks = Vec::new();
     for i in 0..1024usize {
         let loc = &locations[i * 4..(i + 1) * 4];
         let offset = u32::from_be_bytes([0, loc[0], loc[1], loc[2]]) as usize;
@@ -34,7 +38,10 @@ pub fn read_region(
         }
         let byte_offset = offset * SECTOR_SIZE;
         let byte_size = size * SECTOR_SIZE;
-        let raw = &data[byte_offset..byte_offset + byte_size];
+        buf.seek(SeekStart(byte_offset as u64)).unwrap();
+        let mut raw = Vec::with_capacity(byte_size);
+        buf.read_exact(&mut raw).unwrap();
+
         let data_length = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
         let compression_type = raw[4];
         let compressed_len = data_length - 1;
@@ -54,16 +61,17 @@ pub fn read_region(
 }
 
 /// Reconstruct a .mca region file from a timestamp header and chunks.
-pub fn write_region(
+pub fn write_region<B: Write + Seek>(
     region_x: i32,
     region_z: i32,
-    timestamp_header: &[u8],
+    timestamp_header: &[u8; 4096],
     chunks: &[(i32, i32, impl AsRef<[u8]>)],
-) -> Vec<u8> {
-    let mut locations = vec![0u8; SECTOR_SIZE];
-    let mut chunk_data = Vec::new();
-    let mut current_sector = 2usize;
+    mut buf: B,
+) {
+    buf.seek(SeekStart(4096)).unwrap();
+    buf.write(timestamp_header).unwrap();
 
+    let mut current_sector = 2usize;
     for (chunk_x, chunk_z, nbt) in chunks {
         let local_x = chunk_x - (region_x * 32);
         let local_z = chunk_z - (region_z * 32);
@@ -80,24 +88,31 @@ pub fn write_region(
         payload.extend_from_slice(&compressed);
 
         let sectors_needed = payload.len().div_ceil(SECTOR_SIZE);
+        if sectors_needed > 255 {
+            todo!("Write big chunk (> 1020KiB) to .mcc file")
+        }
         let padding = sectors_needed * SECTOR_SIZE - payload.len();
 
         let loc_offset = index * 4;
         let sector_bytes = (current_sector as u32).to_be_bytes();
-        locations[loc_offset] = sector_bytes[1];
-        locations[loc_offset + 1] = sector_bytes[2];
-        locations[loc_offset + 2] = sector_bytes[3];
-        locations[loc_offset + 3] = sectors_needed as u8;
 
-        chunk_data.extend_from_slice(&payload); // TODO: mutex result then append to it
-        chunk_data.extend(std::iter::repeat_n(0u8, padding));
+        buf.seek(SeekStart(loc_offset as u64)).unwrap();
+        buf.write(&[
+            sector_bytes[1],
+            sector_bytes[2],
+            sector_bytes[3],
+            sectors_needed as u8,
+        ])
+        .unwrap();
+
+        buf.seek(SeekStart((sectors_needed * SECTOR_SIZE) as u64))
+            .unwrap();
+        buf.write(&payload).unwrap();
+        buf.write(&std::iter::repeat_n(0u8, padding).collect::<Vec<u8>>())
+            .unwrap();
+
         current_sector += sectors_needed;
     }
-
-    let mut result = locations;
-    result.extend_from_slice(timestamp_header); // TODO: remove coping
-    result.extend_from_slice(&chunk_data);
-    result
 }
 
 /// Parse (region_x, region_z) from a filename like "r.-1.2.mca".

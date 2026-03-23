@@ -124,7 +124,7 @@ async fn main() {
                 let (region_x, region_z) =
                     parse_xz(region_path.file_name().unwrap().to_str().unwrap());
                 let (_, xz_nbts) =
-                    read_region(&fs::read(region_path).unwrap(), region_x, region_z).unwrap();
+                    read_region(fs::File::open(region_path).unwrap(), region_x, region_z).unwrap();
                 let (_, _, nbt) = xz_nbts
                     .iter()
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)

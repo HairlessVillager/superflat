@@ -36,12 +36,13 @@ impl Crafter for ChunkRegionCrafter {
                 let data = save.get(&key).await;
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename);
-                let Some((timestamp_header, chunks)) = read_region(&data, region_x, region_z)
+                let Some((timestamp_header, chunks)) =
+                    read_region(Cursor::new(data), region_x, region_z)
                 else {
                     continue;
                 };
                 storage
-                    .put(&format!("{}/timestamp-header", key), timestamp_header)
+                    .put(&format!("{}/timestamp-header", key), &timestamp_header)
                     .await;
 
                 let key_for_task = key.clone();
@@ -124,8 +125,15 @@ impl Crafter for ChunkRegionCrafter {
                 .await
                 .unwrap();
 
-                let mca_data = write_region(region_x, region_z, &timestamp_header, &chunks);
-                save.put(region_key, &mca_data).await;
+                let mut mca_buf = Vec::with_capacity(8 * 1024 * 1024); // 8MiB
+                write_region(
+                    region_x,
+                    region_z,
+                    &timestamp_header[..4096].try_into().unwrap(),
+                    &chunks,
+                    Cursor::new(&mut mca_buf),
+                );
+                save.put(region_key, &mca_buf).await;
             }
         }
     }
