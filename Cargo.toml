@@ -20,6 +20,7 @@ bytes = { version = "1.11.1", features = ["serde"] }
 log = "0.4.29"
 env_logger = "0.11.9"
 clap-verbosity-flag = "3.0.4"
+gix = "0.81.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"

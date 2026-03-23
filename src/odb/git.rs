@@ -5,7 +5,7 @@ use tokio::process::Command;
 use crate::odb::{OdbReader, OdbWriter};
 
 pub struct LocalGitOdb {
-    git_dir: PathBuf,
+    repo: gix::Repository,
     /// Current commit used for read operations (get/glob).
     commit: Option<String>,
     /// Accumulated blobs not yet committed: path → sha1.
@@ -15,7 +15,7 @@ pub struct LocalGitOdb {
 impl LocalGitOdb {
     pub fn new(git_dir: PathBuf) -> Self {
         Self {
-            git_dir,
+            repo: gix::open(git_dir).unwrap(),
             commit: None,
             pending: HashMap::new(),
         }
@@ -23,15 +23,15 @@ impl LocalGitOdb {
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
         Self {
-            git_dir,
-            commit: Some(commit),
+            repo: gix::open(git_dir).unwrap(),
+            commit: Some(commit).filter(|s| !s.is_empty()),
             pending: HashMap::new(),
         }
     }
 
     fn git(&self) -> Command {
         let mut cmd = Command::new("git");
-        cmd.arg("--git-dir").arg(&self.git_dir);
+        cmd.arg("--git-dir").arg(self.repo.git_dir());
         cmd
     }
 
@@ -49,7 +49,7 @@ impl LocalGitOdb {
         message: &str,
         r#ref: Option<String>,
     ) -> String {
-        let tree_sha = build_tree(&self.git_dir, &self.pending, "").await;
+        let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "").await;
 
         let mut cmd = self.git();
         cmd.arg("commit-tree").arg(&tree_sha);
@@ -79,7 +79,7 @@ impl LocalGitOdb {
 
 /// Recursively build tree objects for `entries` rooted at `prefix`.
 /// Returns the sha1 of the root tree.
-async fn build_tree(git_dir: &PathBuf, entries: &HashMap<String, String>, prefix: &str) -> String {
+async fn build_tree(git_dir: &std::path::Path, entries: &HashMap<String, String>, prefix: &str) -> String {
     use tokio::io::AsyncWriteExt;
 
     let mut blobs: Vec<(String, String)> = Vec::new();
@@ -135,16 +135,19 @@ async fn build_tree(git_dir: &PathBuf, entries: &HashMap<String, String>, prefix
 
 impl OdbReader for LocalGitOdb {
     async fn get(&self, key: &str) -> Vec<u8> {
-        let Some(commit) = &self.commit else {
-            panic!("No blob exists");
+        let commit_sha = self.commit.as_deref().expect("No commit set");
+        let commit_id: gix::ObjectId = commit_sha.parse().unwrap();
+
+        let tree_id = {
+            let commit = self.repo.find_commit(commit_id).unwrap();
+            commit.tree_id().unwrap().detach()
         };
-        self.git()
-            .arg("show") // TODO: replace with gix
-            .arg(format!("{}:{}", commit, key))
-            .output()
-            .await
-            .unwrap()
-            .stdout
+        let blob_id = {
+            let tree = self.repo.find_tree(tree_id).unwrap();
+            let entry = tree.lookup_entry_by_path(key).unwrap().unwrap();
+            entry.object_id()
+        };
+        self.repo.find_blob(blob_id).unwrap().data.to_vec()
     }
 
     async fn glob(&self, pattern: &str) -> Vec<String> {
@@ -169,23 +172,7 @@ impl OdbReader for LocalGitOdb {
 
 impl OdbWriter for LocalGitOdb {
     async fn put(&mut self, key: &str, value: &[u8]) {
-        use tokio::io::AsyncWriteExt;
-        let mut child = self
-            .git()
-            .args(["hash-object", "-w", "--stdin"]) // TODO: replace with gix
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(value)
-            .await
-            .unwrap();
-        let output = child.wait_with_output().await.unwrap();
-        let sha1 = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        let sha1 = self.repo.write_blob(value).unwrap().to_hex().to_string();
         self.pending.insert(key.to_string(), sha1);
     }
 }
