@@ -32,6 +32,7 @@ impl Crafter for ChunkRegionCrafter {
     async fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
         for pattern in FLATTEN_PATTERNS {
             for key in save.glob(pattern).await {
+                log::info!("Process chunk region file {key}");
                 let data = save.get(&key).await;
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename);
@@ -43,7 +44,8 @@ impl Crafter for ChunkRegionCrafter {
                     .put(&format!("{}/timestamp-header", key), timestamp_header)
                     .await;
 
-                let result = task::spawn_blocking(|| {
+                let key_for_task = key.clone();
+                let result = task::spawn_blocking(move || {
                     chunks
                         .into_par_iter()
                         .map(|(chunk_x, chunk_z, nbt)| {
@@ -51,10 +53,13 @@ impl Crafter for ChunkRegionCrafter {
                             if nbt.get_string("Status").unwrap() != "minecraft:full" {
                                 return Ok(None);
                             }
-                            // dbg!(chunk_x, chunk_z);
-                            let (other, sections) = split_chunk(nbt).with_context(|| {
-                                format!("Failed to process chunk ({}, {})", chunk_x, chunk_z)
-                            })?;
+                            let (other, sections, warnings) =
+                                split_chunk(nbt).with_context(|| {
+                                    format!("Failed to process chunk ({chunk_x}, {chunk_z}) at file {key_for_task}")
+                                })?;
+                            for w in warnings {
+                                log::warn!("At chunk ({chunk_x}, {chunk_z}) at file {key_for_task}: {w}");
+                            }
 
                             let other_dump = dump_nbt(sort_nbt(other), true);
                             let mut sections_dump = Vec::with_capacity(200 * 1024);

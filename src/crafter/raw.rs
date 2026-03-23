@@ -9,6 +9,7 @@ impl Crafter for RawCrafter {
     async fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
         for pattern in RAW_GLOB_PATTERNS {
             for key in save.glob(pattern).await {
+                log::info!("Process raw file {key}");
                 let data = save.get(&key).await;
                 storage.put(&key, &data).await;
             }

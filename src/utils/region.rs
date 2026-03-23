@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use serde::{Deserialize, Serialize};
@@ -10,6 +10,7 @@ const SECTOR_SIZE: usize = 4096;
 
 /// Parse a .mca region file into its timestamp header and chunks.
 /// Returns None if the file is empty or has no chunks.
+#[must_use]
 pub fn read_region(
     data: &'_ [u8],
     region_x: i32,
@@ -100,6 +101,7 @@ pub fn write_region(
 }
 
 /// Parse (region_x, region_z) from a filename like "r.-1.2.mca".
+#[must_use]
 pub fn parse_xz(filename: &str) -> (i32, i32) {
     let parts: Vec<&str> = filename.split('.').collect();
     let x: i32 = parts[1].parse().unwrap();
@@ -119,25 +121,26 @@ pub struct SectionsDump {
     sections: Vec<Section>,
 }
 
-fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
+fn dump_sections(sections: &[NbtTag]) -> (SectionsDump, Vec<String>) {
+    let mut warnings = Vec::new();
     let sections = sections
         .iter()
         .enumerate()
-        .map(|(idx, section)| {
+        .filter_map(|(idx, section)| {
             let section = section.extract_compound().unwrap();
             let y = section.get_byte("Y").unwrap();
             let biome_dump = {
-                let biome = section.get_compound("biomes").with_context(|| {
-                    format!(
-                        "Expect sections.{} contains 'biomes', but all fields got: {:?}",
-                        idx,
+                let Some(biome) = section.get_compound("biomes") else {
+                    warnings.push(format!(
+                        "Expect sections.{idx} (y={y}) contains 'biomes', but all fields got: {:?}",
                         section
                             .child_tags
                             .iter()
                             .map(|(field, _)| field)
                             .collect::<Vec<_>>()
-                    )
-                })?;
+                    ));
+                    return None;
+                };
                 BiomePalette::from_disk_nbt(biome)
                     .iter()
                     .copied()
@@ -151,14 +154,15 @@ fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
                     .collect::<Vec<_>>()
             };
             // TODO: extract block/sky light
-            Ok(Section {
+            Some(Ok(Section {
                 y,
                 biome: biome_dump,
                 block_state: block_dump,
-            })
+            }))
         })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(SectionsDump { sections })
+        .collect::<Result<Vec<_>>>()
+        .unwrap();
+    (SectionsDump { sections }, warnings)
 }
 
 fn load_sections(dump: SectionsDump) -> Vec<NbtTag> {
@@ -186,9 +190,9 @@ fn load_sections(dump: SectionsDump) -> Vec<NbtTag> {
         .collect()
 }
 
-/// Split a chunk nbt into (other_nbt, sections_dump)
-pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
-    let sections_dump = {
+/// Split a chunk nbt into (other_nbt, sections_dump, warnings)
+pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump, Vec<String>)> {
+    let (sections_dump, warnings) = {
         let sections_idx = nbt
             .root_tag
             .child_tags
@@ -197,7 +201,7 @@ pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
             .unwrap();
         let sections = nbt.root_tag.child_tags.swap_remove(sections_idx).1;
         let sections = sections.extract_list().unwrap();
-        dump_sections(sections)?
+        dump_sections(sections)
     };
 
     // TODO: extract block/sky light
@@ -213,7 +217,7 @@ pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
         // nbt.root_tag.put_bool("isLightOn", false);
     }
 
-    Ok((nbt, sections_dump))
+    Ok((nbt, sections_dump, warnings))
 }
 
 /// Restore a chunk nbt from (other_nbt, sections_dump)

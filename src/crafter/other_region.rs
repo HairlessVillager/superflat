@@ -33,6 +33,7 @@ impl Crafter for OtherRegionCrafter {
     async fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
         for pattern in FLATTEN_PATTERNS {
             for key in save.glob(pattern).await {
+                log::info!("Process other region file {key}");
                 let data = save.get(&key).await;
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename);

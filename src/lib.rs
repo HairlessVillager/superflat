@@ -7,7 +7,7 @@ use crate::{
 
 mod crafter;
 mod odb;
-mod utils;
+pub mod utils;
 
 pub async fn flatten(save_dir: PathBuf, repo_dir: PathBuf) {
     let save = LocalFsOdb::from_dir(save_dir);
