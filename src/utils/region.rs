@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use serde::{Deserialize, Serialize};
@@ -118,16 +119,25 @@ pub struct SectionsDump {
     sections: Vec<Section>,
 }
 
-fn dump_sections(sections: &[NbtTag]) -> SectionsDump {
+fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
     let sections = sections
         .iter()
-        .map(|section| {
+        .enumerate()
+        .map(|(idx, section)| {
             let section = section.extract_compound().unwrap();
             let y = section.get_byte("Y").unwrap();
             let biome_dump = {
-                let biome = section.get_compound("biomes").expect(
-                    format!("Should section contain 'biomes', got: {:#?}", section).as_str(),
-                );
+                let biome = section.get_compound("biomes").with_context(|| {
+                    format!(
+                        "Expect sections.{} contains 'biomes', but all fields got: {:?}",
+                        idx,
+                        section
+                            .child_tags
+                            .iter()
+                            .map(|(field, _)| field)
+                            .collect::<Vec<_>>()
+                    )
+                })?;
                 BiomePalette::from_disk_nbt(biome)
                     .iter()
                     .copied()
@@ -141,14 +151,14 @@ fn dump_sections(sections: &[NbtTag]) -> SectionsDump {
                     .collect::<Vec<_>>()
             };
             // TODO: extract block/sky light
-            Section {
+            Ok(Section {
                 y,
                 biome: biome_dump,
                 block_state: block_dump,
-            }
+            })
         })
-        .collect::<Vec<_>>();
-    SectionsDump { sections }
+        .collect::<Result<Vec<_>>>()?;
+    Ok(SectionsDump { sections })
 }
 
 fn load_sections(dump: SectionsDump) -> Vec<NbtTag> {
@@ -177,7 +187,7 @@ fn load_sections(dump: SectionsDump) -> Vec<NbtTag> {
 }
 
 /// Split a chunk nbt into (other_nbt, sections_dump)
-pub fn split_chunk(mut nbt: Nbt) -> (Nbt, SectionsDump) {
+pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
     let sections_dump = {
         let sections_idx = nbt
             .root_tag
@@ -187,7 +197,7 @@ pub fn split_chunk(mut nbt: Nbt) -> (Nbt, SectionsDump) {
             .unwrap();
         let sections = nbt.root_tag.child_tags.swap_remove(sections_idx).1;
         let sections = sections.extract_list().unwrap();
-        dump_sections(sections)
+        dump_sections(sections)?
     };
 
     // TODO: extract block/sky light
@@ -203,7 +213,7 @@ pub fn split_chunk(mut nbt: Nbt) -> (Nbt, SectionsDump) {
         // nbt.root_tag.put_bool("isLightOn", false);
     }
 
-    (nbt, sections_dump)
+    Ok((nbt, sections_dump))
 }
 
 /// Restore a chunk nbt from (other_nbt, sections_dump)

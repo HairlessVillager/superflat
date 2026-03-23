@@ -1,5 +1,6 @@
 use std::io::Cursor;
 
+use anyhow::{Context, Result};
 use pumpkin_nbt::{from_bytes, to_bytes};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio::task;
@@ -45,18 +46,25 @@ impl Crafter for ChunkRegionCrafter {
                 let result = task::spawn_blocking(|| {
                     chunks
                         .into_par_iter()
-                        .filter_map(|(chunk_x, chunk_z, nbt)| {
+                        .map(|(chunk_x, chunk_z, nbt)| {
                             let nbt = load_nbt(Cursor::new(&nbt), true);
                             if nbt.get_string("Status").unwrap() != "minecraft:full" {
-                                return None;
+                                return Ok(None);
                             }
                             // dbg!(chunk_x, chunk_z);
-                            let (other, sections) = split_chunk(nbt);
+                            let (other, sections) = split_chunk(nbt).with_context(|| {
+                                format!("Failed to process chunk ({}, {})", chunk_x, chunk_z)
+                            })?;
+
                             let other_dump = dump_nbt(sort_nbt(other), true);
                             let mut sections_dump = Vec::with_capacity(200 * 1024);
                             to_bytes(&sections, &mut sections_dump).unwrap();
-                            Some((chunk_x, chunk_z, other_dump, sections_dump))
+                            Ok(Some((chunk_x, chunk_z, other_dump, sections_dump)))
                         })
+                        .collect::<Result<Vec<_>>>()
+                        .unwrap()
+                        .into_iter()
+                        .flatten()
                         .collect::<Vec<_>>()
                 })
                 .await
