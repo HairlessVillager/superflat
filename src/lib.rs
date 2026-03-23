@@ -29,7 +29,13 @@ pub async fn unflatten(save_dir: PathBuf, repo_dir: PathBuf) {
     OtherRegionCrafter.unflatten(&mut save, &repo).await;
 }
 
-pub async fn commit(save_dir: PathBuf, git_dir: PathBuf, parents: Vec<String>, message: &str) {
+pub async fn commit(
+    save_dir: PathBuf,
+    git_dir: PathBuf,
+    parents: Vec<String>,
+    message: &str,
+    r#ref: Option<String>,
+) {
     let save = LocalFsOdb::from_dir(save_dir);
     let mut git = if let Some(from) = parents.first() {
         LocalGitOdb::from_commit(git_dir, from.clone())
@@ -42,7 +48,7 @@ pub async fn commit(save_dir: PathBuf, git_dir: PathBuf, parents: Vec<String>, m
     ChunkRegionCrafter.flatten(&save, &mut git).await;
     OtherRegionCrafter.flatten(&save, &mut git).await;
 
-    git.commit(parents.as_slice(), message).await;
+    git.commit(parents.as_slice(), message, r#ref).await;
 }
 
 pub async fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String) {

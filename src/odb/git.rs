@@ -29,7 +29,7 @@ impl LocalGitOdb {
 
     fn git(&self) -> tokio::process::Command {
         let mut cmd = tokio::process::Command::new("git");
-        cmd.args(["--git-dir", self.git_dir.to_str().unwrap().into()]);
+        cmd.arg("--git-dir").arg(&self.git_dir);
         cmd
     }
 
@@ -41,22 +41,33 @@ impl LocalGitOdb {
     /// their underlying commit objects.
     ///
     /// Returns the sha1 of the new commit.
-    pub async fn commit(self, parents: &[impl AsRef<str>], message: &str) -> String {
-        let Self {
-            git_dir, pending, ..
-        } = self;
-        let tree_sha = build_tree(&git_dir, &pending, "").await;
+    pub async fn commit(
+        self,
+        parents: &[impl AsRef<str>],
+        message: &str,
+        r#ref: Option<String>,
+    ) -> String {
+        let tree_sha = build_tree(&self.git_dir, &self.pending, "").await;
 
         let mut cmd = tokio::process::Command::new("git");
-        cmd.args(["--git-dir", git_dir.to_str().unwrap()]);
+        cmd.arg("--git-dir").arg(&self.git_dir);
         cmd.arg("commit-tree").arg(&tree_sha);
         for parent in parents {
-            cmd.args(["-p", &format!("{}^0", parent.as_ref())]);
+            cmd.arg("-p").arg(&format!("{}^0", parent.as_ref()));
         }
-        cmd.args(["-m", message]);
+        cmd.arg("-m").arg(message);
 
         let output = cmd.output().await.unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
+        let commit = String::from_utf8(output.stdout).unwrap().trim().to_string();
+
+        if let Some(r#ref) = r#ref {
+            let mut cmd = tokio::process::Command::new("git");
+            cmd.arg("--git-dir").arg(&self.git_dir);
+            cmd.arg("update-ref").arg(r#ref).arg(&commit);
+            cmd.spawn().unwrap().wait().await.unwrap();
+        }
+
+        commit
     }
 }
 
@@ -206,7 +217,7 @@ mod tests {
 
         let data = b"hello git odb".to_vec();
         odb.put("src/hello.txt", &data).await;
-        let commit_sha = odb.commit(&[] as &[&str], "initial").await;
+        let commit_sha = odb.commit(&[] as &[&str], "initial", None).await;
         assert_eq!(commit_sha.len(), 40);
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
@@ -222,7 +233,7 @@ mod tests {
         odb.put("a/x.rs", &b"fn x(){}".to_vec()).await;
         odb.put("a/y.rs", &b"fn y(){}".to_vec()).await;
         odb.put("b/z.md", &b"# Z".to_vec()).await;
-        let commit_sha = odb.commit(&[] as &[&str], "add files").await;
+        let commit_sha = odb.commit(&[] as &[&str], "add files", None).await;
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
         let mut matches = odb.glob("a/*.rs").await;
@@ -236,12 +247,12 @@ mod tests {
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         odb.put("a.txt", &b"v1".to_vec()).await;
-        let first = odb.commit(&[] as &[&str], "first").await;
+        let first = odb.commit(&[] as &[&str], "first", None).await;
 
         // Second commit only puts b.txt — a.txt is NOT inherited
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone());
         odb.put("b.txt", &b"v2".to_vec()).await;
-        let second = odb.commit(&[&first], "second").await;
+        let second = odb.commit(&[&first], "second", None).await;
 
         // second commit's tree contains only b.txt
         let files: Vec<String> = String::from_utf8(

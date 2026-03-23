@@ -6,6 +6,7 @@ use superflat::{checkout, commit, flatten, unflatten};
 
 /// Superflat - A bridge between Git and Minecraft save
 #[derive(Parser)]
+#[command(version, about, long_about = None)]
 struct Cli {
     #[command(flatten)]
     verbosity: Verbosity<InfoLevel>,
@@ -36,11 +37,17 @@ enum CliSubcommand {
         /// Path to the bare Git repository
         git_dir: PathBuf,
         /// Commit ID of the first source. Leave empty to create a initial commit.
+        #[arg(long)]
         from: Option<String>,
         /// Commit IDs of other sources.
+        #[arg(long)]
         merge: Vec<String>,
         /// Commit message
-        commit_message: String,
+        #[arg(short, long)]
+        message: String,
+        /// Ref name
+        #[arg(short, long, default_value_t = String::from("refs/heads/main"))]
+        r#ref: String,
     },
     /// Restore save from commit
     Checkout {
@@ -49,7 +56,8 @@ enum CliSubcommand {
         /// Path to the bare Git repository
         git_dir: PathBuf,
         /// Commit ID to checkout
-        commit_id: String,
+        #[arg(short, long)]
+        commit: String,
     },
     /// Utility tools for debug
     Utils {
@@ -87,20 +95,21 @@ async fn main() {
             git_dir,
             from,
             merge,
-            commit_message,
+            message,
+            r#ref,
         } => {
             let mut parents = Vec::new();
             if let Some(from) = from {
                 parents.push(from);
             }
             parents.extend(merge);
-            commit(save_dir, git_dir, parents, &commit_message).await;
+            commit(save_dir, git_dir, parents, &message, Some(r#ref)).await;
         }
         CliSubcommand::Checkout {
             save_dir,
             git_dir,
-            commit_id,
-        } => checkout(save_dir, git_dir, commit_id).await,
+            commit,
+        } => checkout(save_dir, git_dir, commit).await,
 
         CliSubcommand::Utils { action } => match action {
             UtilsSubcommand::Chunk {
