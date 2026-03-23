@@ -1,5 +1,5 @@
 mod fs;
-mod git;
+pub mod git;
 
 pub use fs::LocalFsOdb;
 pub use git::LocalGitOdb;

@@ -6,7 +6,7 @@ use crate::{
 };
 
 mod crafter;
-mod odb;
+pub mod odb;
 pub mod utils;
 
 pub async fn flatten(save_dir: PathBuf, repo_dir: PathBuf) {
