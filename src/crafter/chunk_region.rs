@@ -67,10 +67,23 @@ impl Crafter for ChunkRegionCrafter {
                     .flatten()
                     .collect::<Vec<_>>();
 
-                for (chunk_x, chunk_z, other, dump) in result {
-                    storage.put(&format!("{key}/other/c.{chunk_x}.{chunk_z}.nbt"), &other);
-                    storage.put(&format!("{key}/sections/c.{chunk_x}.{chunk_z}.dump"), &dump);
-                }
+                storage.put_par(
+                    result
+                        .iter()
+                        .flat_map(|(chunk_x, chunk_z, other, dump)| {
+                            [
+                                (
+                                    format!("{key}/other/c.{chunk_x}.{chunk_z}.nbt"),
+                                    other.as_ref(),
+                                ),
+                                (
+                                    format!("{key}/sections/c.{chunk_x}.{chunk_z}.dump"),
+                                    dump.as_slice(),
+                                ),
+                            ]
+                        })
+                        .collect::<Vec<_>>(),
+                );
             }
         }
     }

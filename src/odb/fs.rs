@@ -1,4 +1,7 @@
+use std::fs;
 use std::path::PathBuf;
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
 
@@ -14,7 +17,7 @@ impl LocalFsOdb {
 
 impl OdbReader for LocalFsOdb {
     fn get(&self, key: &str) -> Vec<u8> {
-        std::fs::read(self.root_dir.join(key)).unwrap()
+        fs::read(self.root_dir.join(key)).unwrap()
     }
 
     fn glob(&self, pattern: &str) -> Vec<String> {
@@ -33,12 +36,22 @@ impl OdbReader for LocalFsOdb {
 }
 
 impl OdbWriter for LocalFsOdb {
-    fn put(&mut self, key: &str, value: &[u8]) {
+    fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
         let path = self.root_dir.join(key);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            fs::create_dir_all(parent).unwrap();
         }
-        std::fs::write(path, value).unwrap();
+        fs::write(path, value).unwrap();
+    }
+
+    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
+        entries.into_par_iter().for_each(|(key, value)| {
+            let path = self.root_dir.join(&key);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap(); // TODO: create dir before par write
+            }
+            fs::write(path, value).unwrap();
+        });
     }
 }
 

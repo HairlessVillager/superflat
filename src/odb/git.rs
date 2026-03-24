@@ -168,19 +168,19 @@ impl OdbReader for LocalGitOdb {
 }
 
 impl OdbWriter for LocalGitOdb {
-    fn put(&mut self, key: &str, value: &[u8]) {
+    fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
         let sha1 = self.repo.write_blob(value).unwrap().to_hex().to_string();
         self.pending.insert(key.to_string(), sha1);
     }
 
-    fn put_many(&mut self, entries: Vec<(String, Vec<u8>)>) {
+    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
         let git_dir = self.repo.git_dir().to_path_buf();
         let results: Vec<(String, String)> = entries
             .into_par_iter()
             .map(|(key, value)| {
                 let repo = gix::open(&git_dir).unwrap();
                 let sha1 = repo
-                    .write_blob(value.as_slice())
+                    .write_blob(value.as_ref())
                     .unwrap()
                     .to_hex()
                     .to_string();
