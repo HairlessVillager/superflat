@@ -105,7 +105,7 @@ pub fn write_region<B: Write + Seek>(
         ])
         .unwrap();
 
-        buf.seek(SeekStart((sectors_needed * SECTOR_SIZE) as u64))
+        buf.seek(SeekStart((current_sector * SECTOR_SIZE) as u64))
             .unwrap();
         buf.write(&payload).unwrap();
         buf.write(&std::iter::repeat_n(0u8, padding).collect::<Vec<u8>>())

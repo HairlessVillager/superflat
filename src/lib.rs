@@ -9,27 +9,27 @@ mod crafter;
 pub mod odb;
 pub mod utils;
 
-pub async fn flatten(save_dir: PathBuf, repo_dir: PathBuf) {
+pub fn flatten(save_dir: PathBuf, repo_dir: PathBuf) {
     let save = LocalFsOdb::from_dir(save_dir);
     let mut repo = LocalFsOdb::from_dir(repo_dir);
 
-    RawCrafter.flatten(&save, &mut repo).await;
-    GzipNbtCrafter.flatten(&save, &mut repo).await;
-    ChunkRegionCrafter.flatten(&save, &mut repo).await;
-    OtherRegionCrafter.flatten(&save, &mut repo).await;
+    RawCrafter.flatten(&save, &mut repo);
+    GzipNbtCrafter.flatten(&save, &mut repo);
+    ChunkRegionCrafter.flatten(&save, &mut repo);
+    OtherRegionCrafter.flatten(&save, &mut repo);
 }
 
-pub async fn unflatten(save_dir: PathBuf, repo_dir: PathBuf) {
+pub fn unflatten(save_dir: PathBuf, repo_dir: PathBuf) {
     let mut save = LocalFsOdb::from_dir(save_dir);
     let repo = LocalFsOdb::from_dir(repo_dir);
 
-    RawCrafter.unflatten(&mut save, &repo).await;
-    GzipNbtCrafter.unflatten(&mut save, &repo).await;
-    ChunkRegionCrafter.unflatten(&mut save, &repo).await;
-    OtherRegionCrafter.unflatten(&mut save, &repo).await;
+    RawCrafter.unflatten(&mut save, &repo);
+    GzipNbtCrafter.unflatten(&mut save, &repo);
+    ChunkRegionCrafter.unflatten(&mut save, &repo);
+    OtherRegionCrafter.unflatten(&mut save, &repo);
 }
 
-pub async fn commit(
+pub fn commit(
     save_dir: PathBuf,
     git_dir: PathBuf,
     parents: Vec<String>,
@@ -43,20 +43,21 @@ pub async fn commit(
         LocalGitOdb::new(git_dir)
     };
 
-    RawCrafter.flatten(&save, &mut git).await;
-    GzipNbtCrafter.flatten(&save, &mut git).await;
-    ChunkRegionCrafter.flatten(&save, &mut git).await;
-    OtherRegionCrafter.flatten(&save, &mut git).await;
+    RawCrafter.flatten(&save, &mut git);
+    GzipNbtCrafter.flatten(&save, &mut git);
+    ChunkRegionCrafter.flatten(&save, &mut git);
+    OtherRegionCrafter.flatten(&save, &mut git);
 
-    git.commit(parents.as_slice(), message, r#ref).await;
+    let commit = git.commit(parents.as_slice(), message, r#ref.clone());
+    log::info!("{:?} -> {commit}", r#ref);
 }
 
-pub async fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String) {
+pub fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String) {
     let mut save = LocalFsOdb::from_dir(save_dir);
     let git = LocalGitOdb::from_commit(git_dir, commit);
 
-    RawCrafter.unflatten(&mut save, &git).await;
-    GzipNbtCrafter.unflatten(&mut save, &git).await;
-    ChunkRegionCrafter.unflatten(&mut save, &git).await;
-    OtherRegionCrafter.unflatten(&mut save, &git).await;
+    RawCrafter.unflatten(&mut save, &git);
+    GzipNbtCrafter.unflatten(&mut save, &git);
+    ChunkRegionCrafter.unflatten(&mut save, &git);
+    OtherRegionCrafter.unflatten(&mut save, &git);
 }

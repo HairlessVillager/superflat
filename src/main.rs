@@ -79,8 +79,7 @@ enum UtilsSubcommand {
     },
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cli = Cli::parse();
     env_logger::Builder::new()
         .filter_level(cli.verbosity.log_level_filter())
@@ -88,8 +87,8 @@ async fn main() {
 
     log::info!("Welcome to superflat!");
     match cli.action {
-        CliSubcommand::Flatten { save_dir, repo_dir } => flatten(save_dir, repo_dir).await,
-        CliSubcommand::Unflatten { save_dir, repo_dir } => unflatten(save_dir, repo_dir).await,
+        CliSubcommand::Flatten { save_dir, repo_dir } => flatten(save_dir, repo_dir),
+        CliSubcommand::Unflatten { save_dir, repo_dir } => unflatten(save_dir, repo_dir),
         CliSubcommand::Commit {
             save_dir,
             git_dir,
@@ -103,13 +102,13 @@ async fn main() {
                 parents.push(from);
             }
             parents.extend(merge);
-            commit(save_dir, git_dir, parents, &message, Some(r#ref)).await;
+            commit(save_dir, git_dir, parents, &message, Some(r#ref));
         }
         CliSubcommand::Checkout {
             save_dir,
             git_dir,
             commit,
-        } => checkout(save_dir, git_dir, commit).await,
+        } => checkout(save_dir, git_dir, commit),
 
         CliSubcommand::Utils { action } => match action {
             UtilsSubcommand::Chunk {

@@ -44,28 +44,28 @@ const GZIP_NBT_GLOB_PATTERNS: &[&str] = &[
 pub struct GzipNbtCrafter;
 
 impl Crafter for GzipNbtCrafter {
-    async fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
+    fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
         for pattern in GZIP_NBT_GLOB_PATTERNS {
-            for key in save.glob(pattern).await {
+            for key in save.glob(pattern) {
                 log::info!("Process gzip nbt file {key}");
-                let compressed = save.get(&key).await;
+                let compressed = save.get(&key);
                 let mut decoder = GzDecoder::new(compressed.as_slice());
                 let mut decompressed = Vec::new();
-                decoder.read_to_end(&mut decompressed).unwrap(); // TODO: par here
-                storage.put(&key, &decompressed).await;
+                decoder.read_to_end(&mut decompressed).unwrap();
+                storage.put(&key, &decompressed);
             }
         }
     }
 
-    async fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
+    fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
         for pattern in GZIP_NBT_GLOB_PATTERNS {
-            for key in storage.glob(pattern).await {
+            for key in storage.glob(pattern) {
                 log::info!("Process gzip nbt file {key}");
-                let data = storage.get(&key).await;
+                let data = storage.get(&key);
                 let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
                 encoder.write_all(&data).unwrap();
-                let compressed = encoder.finish().unwrap(); // TODO: par here
-                save.put(&key, &compressed).await;
+                let compressed = encoder.finish().unwrap();
+                save.put(&key, &compressed);
             }
         }
     }

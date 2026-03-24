@@ -430,7 +430,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tinytemplate",
- "tokio",
  "walkdir",
 ]
 
@@ -2959,7 +2958,6 @@ dependencies = [
  "criterion",
  "env_logger",
  "flate2",
- "futures",
  "gix",
  "glob",
  "log",
@@ -2971,7 +2969,6 @@ dependencies = [
  "rayon",
  "serde",
  "tempfile",
- "tokio",
 ]
 
 [[package]]

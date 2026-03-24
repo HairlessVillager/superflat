@@ -1,6 +1,6 @@
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::{collections::HashMap, path::PathBuf};
-
-use tokio::process::Command;
 
 use crate::odb::{OdbReader, OdbWriter};
 
@@ -43,13 +43,13 @@ impl LocalGitOdb {
     /// their underlying commit objects.
     ///
     /// Returns the sha1 of the new commit.
-    pub async fn commit(
+    pub fn commit(
         self,
         parents: &[impl AsRef<str>],
         message: &str,
         r#ref: Option<String>,
     ) -> String {
-        let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "").await;
+        let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "");
 
         let mut cmd = self.git();
         cmd.arg("commit-tree").arg(&tree_sha);
@@ -58,7 +58,7 @@ impl LocalGitOdb {
         }
         cmd.arg("-m").arg(message);
 
-        let output = cmd.output().await.unwrap();
+        let output = cmd.output().unwrap();
         let commit = String::from_utf8(output.stdout).unwrap().trim().to_string();
 
         if let Some(r#ref) = r#ref {
@@ -66,10 +66,7 @@ impl LocalGitOdb {
                 .arg("update-ref")
                 .arg(r#ref)
                 .arg(&commit)
-                .spawn()
-                .unwrap()
-                .wait()
-                .await
+                .status()
                 .unwrap();
         }
 
@@ -79,9 +76,11 @@ impl LocalGitOdb {
 
 /// Recursively build tree objects for `entries` rooted at `prefix`.
 /// Returns the sha1 of the root tree.
-async fn build_tree(git_dir: &std::path::Path, entries: &HashMap<String, String>, prefix: &str) -> String {
-    use tokio::io::AsyncWriteExt;
-
+fn build_tree(
+    git_dir: &std::path::Path,
+    entries: &HashMap<String, String>,
+    prefix: &str,
+) -> String {
     let mut blobs: Vec<(String, String)> = Vec::new();
     let mut dirs: std::collections::BTreeMap<String, HashMap<String, String>> =
         std::collections::BTreeMap::new();
@@ -90,7 +89,7 @@ async fn build_tree(git_dir: &std::path::Path, entries: &HashMap<String, String>
         let rel = if prefix.is_empty() {
             path.as_str()
         } else {
-            path.strip_prefix(&format!("{}/", prefix)).unwrap_or(path)
+            path.strip_prefix(&format!("{prefix}/")).unwrap_or(path)
         };
         if let Some((dir, _rest)) = rel.split_once('/') {
             dirs.entry(dir.to_string())
@@ -106,20 +105,20 @@ async fn build_tree(git_dir: &std::path::Path, entries: &HashMap<String, String>
         let sub_prefix = if prefix.is_empty() {
             name.clone()
         } else {
-            format!("{}/{}", prefix, name)
+            format!("{prefix}/{name}")
         };
-        let sub_sha = Box::pin(build_tree(git_dir, sub_entries, &sub_prefix)).await;
-        mktree_input.push_str(&format!("040000 tree {}\t{}\n", sub_sha, name));
+        let sub_sha = build_tree(git_dir, sub_entries, &sub_prefix);
+        mktree_input.push_str(&format!("040000 tree {sub_sha}\t{name}\n"));
     }
     for (name, sha1) in &blobs {
-        mktree_input.push_str(&format!("100644 blob {}\t{}\n", sha1, name));
+        mktree_input.push_str(&format!("100644 blob {sha1}\t{name}\n"));
     }
 
     let mut child = Command::new("git")
         .args(["--git-dir", git_dir.to_str().unwrap()])
         .args(["mktree"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
         .spawn()
         .unwrap();
     child
@@ -127,14 +126,13 @@ async fn build_tree(git_dir: &std::path::Path, entries: &HashMap<String, String>
         .as_mut()
         .unwrap()
         .write_all(mktree_input.as_bytes())
-        .await
         .unwrap();
-    let output = child.wait_with_output().await.unwrap();
+    let output = child.wait_with_output().unwrap();
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 impl OdbReader for LocalGitOdb {
-    async fn get(&self, key: &str) -> Vec<u8> {
+    fn get(&self, key: &str) -> Vec<u8> {
         let commit_sha = self.commit.as_deref().expect("No commit set");
         let commit_id: gix::ObjectId = commit_sha.parse().unwrap();
 
@@ -150,13 +148,12 @@ impl OdbReader for LocalGitOdb {
         self.repo.find_blob(blob_id).unwrap().data.to_vec()
     }
 
-    async fn glob(&self, pattern: &str) -> Vec<String> {
+    fn glob(&self, pattern: &str) -> Vec<String> {
         if let Some(commit) = &self.commit {
             let output = self
                 .git()
                 .args(["ls-tree", "-r", "--name-only", &commit])
                 .output()
-                .await
                 .unwrap();
             let pat = glob::Pattern::new(pattern).unwrap();
             String::from_utf8_lossy(&output.stdout)
@@ -165,22 +162,42 @@ impl OdbReader for LocalGitOdb {
                 .map(|s| s.to_string())
                 .collect()
         } else {
-            return Vec::new();
+            Vec::new()
         }
     }
 }
 
 impl OdbWriter for LocalGitOdb {
-    async fn put(&mut self, key: &str, value: &[u8]) {
+    fn put(&mut self, key: &str, value: &[u8]) {
         let sha1 = self.repo.write_blob(value).unwrap().to_hex().to_string();
         self.pending.insert(key.to_string(), sha1);
     }
+
+    fn put_many(&mut self, entries: Vec<(String, Vec<u8>)>) {
+        let git_dir = self.repo.git_dir().to_path_buf();
+        let results: Vec<(String, String)> = entries
+            .into_par_iter()
+            .map(|(key, value)| {
+                let repo = gix::open(&git_dir).unwrap();
+                let sha1 = repo
+                    .write_blob(value.as_slice())
+                    .unwrap()
+                    .to_hex()
+                    .to_string();
+                (key, sha1)
+            })
+            .collect();
+        for (key, sha1) in results {
+            self.pending.insert(key, sha1);
+        }
+    }
 }
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
 
     /// Initialise a bare git repo in a tempdir and return its path.
     fn init_bare_repo() -> tempfile::TempDir {
@@ -203,49 +220,49 @@ mod tests {
         dir
     }
 
-    #[tokio::test]
-    async fn git_put_commit_get_roundtrip() {
+    #[test]
+    fn git_put_commit_get_roundtrip() {
         let repo = init_bare_repo();
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         let data = b"hello git odb".to_vec();
-        odb.put("src/hello.txt", &data).await;
-        let commit_sha = odb.commit(&[] as &[&str], "initial", None).await;
+        odb.put("src/hello.txt", &data);
+        let commit_sha = odb.commit(&[] as &[&str], "initial", None);
         assert_eq!(commit_sha.len(), 40);
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
-        let got = odb.get("src/hello.txt").await;
+        let got = odb.get("src/hello.txt");
         assert_eq!(got, data);
     }
 
-    #[tokio::test]
-    async fn git_glob_after_commit() {
+    #[test]
+    fn git_glob_after_commit() {
         let repo = init_bare_repo();
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
-        odb.put("a/x.rs", &b"fn x(){}".to_vec()).await;
-        odb.put("a/y.rs", &b"fn y(){}".to_vec()).await;
-        odb.put("b/z.md", &b"# Z".to_vec()).await;
-        let commit_sha = odb.commit(&[] as &[&str], "add files", None).await;
+        odb.put("a/x.rs", &b"fn x(){}".to_vec());
+        odb.put("a/y.rs", &b"fn y(){}".to_vec());
+        odb.put("b/z.md", &b"# Z".to_vec());
+        let commit_sha = odb.commit(&[] as &[&str], "add files", None);
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
-        let mut matches = odb.glob("a/*.rs").await;
+        let mut matches = odb.glob("a/*.rs");
         matches.sort();
         assert_eq!(matches, vec!["a/x.rs", "a/y.rs"]);
     }
 
-    #[tokio::test]
-    async fn git_commit_with_parent() {
+    #[test]
+    fn git_commit_with_parent() {
         let repo = init_bare_repo();
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
-        odb.put("a.txt", &b"v1".to_vec()).await;
-        let first = odb.commit(&[] as &[&str], "first", None).await;
+        odb.put("a.txt", &b"v1".to_vec());
+        let first = odb.commit(&[] as &[&str], "first", None);
 
         // Second commit only puts b.txt — a.txt is NOT inherited
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone());
-        odb.put("b.txt", &b"v2".to_vec()).await;
-        let second = odb.commit(&[&first], "second", None).await;
+        odb.put("b.txt", &b"v2".to_vec());
+        let second = odb.commit(&[&first], "second", None);
 
         // second commit's tree contains only b.txt
         let files: Vec<String> = String::from_utf8(
@@ -266,7 +283,7 @@ mod tests {
         let parent = String::from_utf8(
             Command::new("git")
                 .args(["--git-dir", repo.path().to_str().unwrap()])
-                .args(["rev-parse", &format!("{}^1", second)])
+                .args(["rev-parse", &format!("{second}^1")])
                 .output()
                 .unwrap()
                 .stdout,

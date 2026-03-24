@@ -11,6 +11,6 @@ pub use other_region::OtherRegionCrafter;
 pub use raw::RawCrafter;
 
 pub trait Crafter {
-    async fn flatten(self, save_dir: &impl OdbReader, storage: &mut impl OdbWriter);
-    async fn unflatten(self, save_dir: &mut impl OdbWriter, storage: &impl OdbReader);
+    fn flatten(self, save_dir: &impl OdbReader, storage: &mut impl OdbWriter);
+    fn unflatten(self, save_dir: &mut impl OdbWriter, storage: &impl OdbReader);
 }

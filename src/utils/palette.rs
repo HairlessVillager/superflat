@@ -285,7 +285,7 @@ impl BlockPalette {
                 let block = {
                     let block_name = entry.get_string("Name").unwrap();
                     Block::from_name(block_name)
-                        .expect(format!("unknown block name: {}", block_name).as_str())
+                        .expect(format!("unknown block name: {block_name}").as_str())
                 };
                 if let Some(props) = entry.get_compound("Properties") {
                     let props_map = props

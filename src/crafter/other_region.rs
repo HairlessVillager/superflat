@@ -30,11 +30,11 @@ const UNFLATTEN_PATTERNS: &[&str] = &[
 pub struct OtherRegionCrafter;
 
 impl Crafter for OtherRegionCrafter {
-    async fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
+    fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
         for pattern in FLATTEN_PATTERNS {
-            for key in save.glob(pattern).await {
+            for key in save.glob(pattern) {
                 log::info!("Process other region file {key}");
-                let data = save.get(&key).await;
+                let data = save.get(&key);
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename);
                 let Some((timestamp_header, chunks)) =
@@ -42,40 +42,35 @@ impl Crafter for OtherRegionCrafter {
                 else {
                     continue;
                 };
-                storage
-                    .put(&format!("{}/timestamp-header", key), &timestamp_header)
-                    .await;
+                storage.put(&format!("{key}/timestamp-header"), &timestamp_header);
                 for (chunk_x, chunk_z, nbt) in chunks {
                     let nbt = {
                         let raw = load_nbt(Cursor::new(&nbt), true);
                         let sorted = sort_nbt(raw);
-                        let bytes = dump_nbt(sorted, true);
-                        bytes
+                        dump_nbt(sorted, true)
                     };
-                    storage
-                        .put(&format!("{}/c.{}.{}.nbt", key, chunk_x, chunk_z), &nbt)
-                        .await;
+                    storage.put(&format!("{key}/c.{chunk_x}.{chunk_z}.nbt"), &nbt);
                 }
             }
         }
     }
 
-    async fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
+    fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
         for pattern in UNFLATTEN_PATTERNS {
-            for ts_key in storage.glob(pattern).await {
+            for ts_key in storage.glob(pattern) {
                 log::info!("Process other region file (timestamp header) {ts_key}");
                 let Some(region_key) = ts_key.strip_suffix("/timestamp-header") else {
                     continue;
                 };
                 let filename = region_key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename);
-                let timestamp_header = storage.get(&ts_key).await;
-                let chunk_pattern = format!("{}/c.*.*.nbt", region_key);
+                let timestamp_header = storage.get(&ts_key);
+                let chunk_pattern = format!("{region_key}/c.*.*.nbt");
                 let mut chunks = Vec::new();
-                for chunk_key in storage.glob(&chunk_pattern).await {
+                for chunk_key in storage.glob(&chunk_pattern) {
                     let chunk_filename = chunk_key.split('/').next_back().unwrap_or("");
                     let (chunk_x, chunk_z) = parse_xz(chunk_filename);
-                    let nbt = storage.get(&chunk_key).await;
+                    let nbt = storage.get(&chunk_key);
                     chunks.push((chunk_x, chunk_z, nbt));
                 }
                 let mut mca_buf = Vec::with_capacity(200 * 1024); // 200KiB
@@ -86,7 +81,7 @@ impl Crafter for OtherRegionCrafter {
                     &chunks,
                     Cursor::new(&mut mca_buf),
                 );
-                save.put(region_key, &mca_buf).await;
+                save.put(region_key, &mca_buf);
             }
         }
     }

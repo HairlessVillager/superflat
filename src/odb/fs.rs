@@ -13,11 +13,11 @@ impl LocalFsOdb {
 }
 
 impl OdbReader for LocalFsOdb {
-    async fn get(&self, key: &str) -> Vec<u8> {
-        tokio::fs::read(self.root_dir.join(key)).await.unwrap()
+    fn get(&self, key: &str) -> Vec<u8> {
+        std::fs::read(self.root_dir.join(key)).unwrap()
     }
 
-    async fn glob(&self, pattern: &str) -> Vec<String> {
+    fn glob(&self, pattern: &str) -> Vec<String> {
         let full_pattern = self.root_dir.join(pattern);
         let root = self.root_dir.clone();
         glob::glob(full_pattern.to_str().unwrap())
@@ -33,12 +33,12 @@ impl OdbReader for LocalFsOdb {
 }
 
 impl OdbWriter for LocalFsOdb {
-    async fn put(&mut self, key: &str, value: &[u8]) {
+    fn put(&mut self, key: &str, value: &[u8]) {
         let path = self.root_dir.join(key);
         if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await.unwrap();
+            std::fs::create_dir_all(parent).unwrap();
         }
-        tokio::fs::write(path, value).await.unwrap();
+        std::fs::write(path, value).unwrap();
     }
 }
 
@@ -46,24 +46,24 @@ impl OdbWriter for LocalFsOdb {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn fs_put_get_roundtrip() {
+    #[test]
+    fn fs_put_get_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
         let data = b"hello superflat".to_vec();
-        odb.put("foo/bar.bin", &data).await;
-        let got = odb.get("foo/bar.bin").await;
+        odb.put("foo/bar.bin", &data);
+        let got = odb.get("foo/bar.bin");
         assert_eq!(got, data);
     }
 
-    #[tokio::test]
-    async fn fs_glob_returns_matching_keys() {
+    #[test]
+    fn fs_glob_returns_matching_keys() {
         let dir = tempfile::tempdir().unwrap();
         let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
-        odb.put("a/x.txt", &b"1".to_vec()).await;
-        odb.put("a/y.txt", &b"2".to_vec()).await;
-        odb.put("b/z.bin", &b"3".to_vec()).await;
-        let mut matches = odb.glob("a/*.txt").await;
+        odb.put("a/x.txt", &b"1".to_vec());
+        odb.put("a/y.txt", &b"2".to_vec());
+        odb.put("b/z.bin", &b"3".to_vec());
+        let mut matches = odb.glob("a/*.txt");
         matches.sort();
         assert_eq!(matches, vec!["a/x.txt", "a/y.txt"]);
     }

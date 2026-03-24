@@ -36,35 +36,33 @@ fn make_blob() -> (String, Vec<u8>) {
 }
 
 fn bench_writer(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
     let (key, data) = make_blob();
 
     c.bench_function("put_200KB_blob", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.iter(|| {
             let repo = init_bare_repo();
             let mut odb = LocalGitOdb::new(repo.path().to_path_buf());
-            odb.put(&key, &data).await;
-            odb.commit(&[] as &[&str], "bench", None).await;
+            odb.put(&key, &data);
+            odb.commit(&[] as &[&str], "bench", None);
         });
     });
 }
 
 fn bench_reader(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
     let (key, data) = make_blob();
 
     // Commit once, reuse across iterations.
     let repo = init_bare_repo();
-    let commit_sha = rt.block_on(async {
+    let commit_sha = {
         let mut odb = LocalGitOdb::new(repo.path().to_path_buf());
-        odb.put(&key, &data).await;
-        odb.commit(&[] as &[&str], "bench-data", None).await
-    });
+        odb.put(&key, &data);
+        odb.commit(&[] as &[&str], "bench-data", None)
+    };
 
     c.bench_function("get_200KB_blob", |b| {
-        b.to_async(&rt).iter(|| async {
+        b.iter(|| {
             let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha.clone());
-            black_box(odb.get(&key).await);
+            black_box(odb.get(&key));
         });
     });
 }
