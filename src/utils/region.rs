@@ -39,7 +39,7 @@ pub fn read_region<B: Read + Seek>(
         let byte_offset = offset * SECTOR_SIZE;
         let byte_size = size * SECTOR_SIZE;
         buf.seek(SeekStart(byte_offset as u64)).unwrap();
-        let mut raw = Vec::with_capacity(byte_size);
+        let mut raw = vec![0u8; byte_size];
         buf.read_exact(&mut raw).unwrap();
 
         let data_length = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
