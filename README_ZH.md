@@ -8,10 +8,6 @@
 > [!IMPORTANT]
 > **版本支持**：目前主要针对 **Minecraft 1.21.11 Java Edition**。其他版本的兼容性仍在评估中。
 
-> [!IMPORTANT]
-> **空间占用**：存档平坦化后，中间产物（平坦化目录）的体积会膨胀约 20 倍。
-> _原因：当前版本主要为概念验证（PoC），尚未实现流式计算。我们计划在下一版本中通过流式处理修复此问题。_
-
 Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Java 版存档转换为 **Git 友好** 的格式。通过利用 Git 成熟的版本控制与差分压缩能力，Superflat 实现了：
 
 1.  **极高的空间效率**：存储一份快照的增量开销极小（典型值：单次快照仅占存档原始 Zip 体积的 **2%**）。
@@ -24,7 +20,8 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - [x] `superflat unflatten`: 存档还原（重构）
 - [x] Rust 完全重构
 - [x] 基本的并行计算
-- [ ] 引入流式计算
+- [x] `superflat commit`：流式平坦化并提交到 Git
+- [x] `superflat checkout`：从 Git 检出并流式还原存档
 - [ ] 深度性能分析与极致性能优化
 - [ ] 完善用户文档
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
@@ -76,20 +73,13 @@ git --git-dir $GIT_DIR config gc.auto 0
 
 ### 3. 执行备份
 
-首先，将存档转换为平坦化格式：
+如果不是首次备份，请使用 `git rev-parse refs/heads/main` 获取分支指向的 Commit ID `$COMMIT`：
 
 ```sh
-sf flatten $SAVE_DIR $REPO_DIR
+sf commit $SAVE_DIR $GIT_DIR -f $COMMIT -m "你的备份注释"
 ```
 
-接着，将数据提交至 Git 仓库：
-
-```sh
-git --git-dir $GIT_DIR --work-tree $REPO_DIR add .
-git --git-dir $GIT_DIR --work-tree $REPO_DIR commit -m "你的备份注释"
-```
-
-_此时备份已完成。你可以删除 `$REPO_DIR` 以释放空间，但在下次还原或备份前需重新生成。_
+如果是首次备份，则可以忽略这个参数。
 
 ### 4. 优化存储 (Repack)
 
@@ -114,13 +104,9 @@ git --git-dir $GIT_DIR repack -a -d --depth 4095 --window 256 -f
     ```sh
     git --git-dir $GIT_DIR log --oneline
     ```
-2.  **切换到指定提交 (Commit ID)**：
+2.  **还原存档**：
     ```sh
-    git --git-dir $GIT_DIR --work-tree $REPO_DIR reset --hard <commit-id>
-    ```
-3.  **还原存档**：
-    ```sh
-    sf unflatten $SAVE_DIR $REPO_DIR
+    sf checkout $SAVE_DIR $REPO_DIR -c $COMMIT
     ```
 
 ## 实现原理

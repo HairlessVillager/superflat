@@ -8,10 +8,6 @@
 > [!IMPORTANT]
 > **Version Support**: Currently targets **Minecraft 1.21.11 Java Edition**. Compatibility with other versions is still being evaluated.
 
-> [!IMPORTANT]
-> **Storage Footprint**: After flattening a save, the intermediate product (flattened directory) will expand to approximately **20 times** its original size.
-> _Reason: The current version is a Proof of Concept (PoC) and has not yet implemented streaming computation. we plan to resolve this through streaming in the next release._
-
 Superflat is a Minecraft save format conversion tool designed to convert Minecraft Java Edition saves into a **Git-friendly** format. By leveraging Git’s mature version control and delta compression capabilities, Superflat achieves:
 
 1.  **Extreme Space Efficiency**: The incremental overhead of storing a snapshot is minimal (typically only **2%** of the original Zip volume of the save).
@@ -24,7 +20,8 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [x] `superflat unflatten`: Reconstruct save files from the flattened format.
 - [x] Complete Rust refactor
 - [x] Basic parallel computing
-- [ ] Introduction of streaming computation.
+- [x] `superflat commit`: Stream-flatten and commit to Git.
+- [x] `superflat checkout`: Checkout from Git and stream-restore the save.
 - [ ] In-depth performance profiling and extreme optimization.
 - [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
@@ -76,20 +73,13 @@ git --git-dir $GIT_DIR config gc.auto 0
 
 ### 3. Execute Backup
 
-First, convert the save to the flattened format:
+If this is not your first backup, use `git rev-parse refs/heads/main` to get the commit ID `$COMMIT` that the branch points to:
 
 ```sh
-sf flatten $SAVE_DIR $REPO_DIR
+sf commit $SAVE_DIR $GIT_DIR -f $COMMIT -m "Your backup note"
 ```
 
-Next, commit the data to the Git repository:
-
-```sh
-git --git-dir $GIT_DIR --work-tree $REPO_DIR add .
-git --git-dir $GIT_DIR --work-tree $REPO_DIR commit -m "Your backup note"
-```
-
-_The backup is now complete. You can delete `$REPO_DIR` to free up space, but it must be regenerated before the next restoration or backup._
+For the first backup, you can omit the `-f` parameter.
 
 ### 4. Optimize Storage (Repack)
 
@@ -114,13 +104,9 @@ git --git-dir $GIT_DIR repack -a -d --depth 4095 --window 256 -f
     ```sh
     git --git-dir $GIT_DIR log --oneline
     ```
-2.  **Switch to a specific Commit ID**:
+2.  **Restore the Save**:
     ```sh
-    git --git-dir $GIT_DIR --work-tree $REPO_DIR reset --hard <commit-id>
-    ```
-3.  **Restore the Save**:
-    ```sh
-    sf unflatten $SAVE_DIR $REPO_DIR
+    sf checkout $SAVE_DIR $REPO_DIR -c $COMMIT
     ```
 
 ## How It Works
