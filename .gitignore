@@ -1,4 +1,8 @@
 /target
+
+# Profile files
 flamegraph.svg
 perf.data
 perf.data.old
+out.perf
+profile.json.gz
