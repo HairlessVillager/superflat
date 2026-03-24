@@ -127,7 +127,7 @@ impl Crafter for ChunkRegionCrafter {
                     region_x,
                     region_z,
                     &timestamp_header[..4096].try_into().unwrap(),
-                    &chunks,
+                    chunks,
                     Cursor::new(&mut mca_buf),
                 );
                 save.put(region_key, &mca_buf);

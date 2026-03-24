@@ -1,6 +1,7 @@
 use anyhow::Result;
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom::Start as SeekStart, Write};
 
@@ -65,21 +66,26 @@ pub fn write_region<B: Write + Seek>(
     region_x: i32,
     region_z: i32,
     timestamp_header: &[u8; 4096],
-    chunks: &[(i32, i32, impl AsRef<[u8]>)],
+    chunks: impl IntoParallelIterator<Item = (i32, i32, impl AsRef<[u8]>)>,
     mut buf: B,
 ) {
     buf.seek(SeekStart(4096)).unwrap();
     buf.write(timestamp_header).unwrap();
 
     let mut current_sector = 2usize;
-    for (chunk_x, chunk_z, nbt) in chunks {
+    let chunks = chunks
+        .into_par_iter()
+        .map(|(chunk_x, chunk_z, nbt)| {
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(nbt.as_ref()).unwrap();
+            let compressed = encoder.finish().unwrap();
+            (chunk_x, chunk_z, compressed)
+        })
+        .collect::<Vec<_>>();
+    for (chunk_x, chunk_z, compressed) in chunks {
         let local_x = chunk_x - (region_x * 32);
         let local_z = chunk_z - (region_z * 32);
         let index = (local_x + local_z * 32) as usize;
-
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(nbt.as_ref()).unwrap();
-        let compressed = encoder.finish().unwrap(); // TODO: par here
 
         let content_length = compressed.len() + 1; // + 1 for the compression type byte
         let mut payload = Vec::with_capacity(4 + 1 + compressed.len());
