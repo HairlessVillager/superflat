@@ -99,17 +99,33 @@ impl Crafter for ChunkRegionCrafter {
                 let (region_x, region_z) = parse_xz(filename);
                 let timestamp_header = storage.get(&ts_key);
 
-                let chunk_pattern = format!("{region_key}/other/c.*.*.nbt");
+                let other_pattern = format!("{region_key}/other/c.*.*.nbt");
 
-                let mut tasks = Vec::with_capacity(1024);
-                for chunk_key in storage.glob(&chunk_pattern) {
-                    let chunk_filename = chunk_key.split('/').next_back().unwrap_or("");
-                    let (chunk_x, chunk_z) = parse_xz(chunk_filename);
-                    let nbt_data = storage.get(&chunk_key);
-                    let dump_key = format!("{region_key}/sections/c.{chunk_x}.{chunk_z}.dump");
-                    let dump_data = storage.get(&dump_key);
-                    tasks.push((chunk_x, chunk_z, nbt_data, dump_data))
-                }
+                let other_keys: Vec<String> = storage.glob(&other_pattern);
+                let coords: Vec<(i32, i32)> = other_keys
+                    .iter()
+                    .map(|k| parse_xz(k.split('/').next_back().unwrap_or("")))
+                    .collect();
+                let dump_keys: Vec<String> = coords
+                    .iter()
+                    .map(|(cx, cz)| format!("{region_key}/sections/c.{cx}.{cz}.dump"))
+                    .collect();
+
+                let all_keys: Vec<&str> = other_keys
+                    .iter()
+                    .map(|s| s.as_str())
+                    .chain(dump_keys.iter().map(|s| s.as_str()))
+                    .collect();
+                let mut all_data = storage.get_par(&all_keys);
+                let dump_data = all_data.split_off(other_keys.len());
+                let nbt_data = all_data;
+
+                let tasks: Vec<(i32, i32, Vec<u8>, Vec<u8>)> = coords
+                    .into_iter()
+                    .zip(nbt_data)
+                    .zip(dump_data)
+                    .map(|(((cx, cz), nbt), dump)| (cx, cz, nbt, dump))
+                    .collect();
 
                 let chunks = tasks
                     .into_par_iter()

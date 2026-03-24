@@ -20,6 +20,10 @@ impl OdbReader for LocalFsOdb {
         fs::read(self.root_dir.join(key)).unwrap()
     }
 
+    fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
+        keys.into_par_iter().map(|key| self.get(key)).collect()
+    }
+
     fn glob(&self, pattern: &str) -> Vec<String> {
         let full_pattern = self.root_dir.join(pattern);
         let root = self.root_dir.clone();

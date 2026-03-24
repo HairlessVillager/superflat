@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::{collections::HashMap, path::PathBuf};
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
 
@@ -10,6 +13,8 @@ pub struct LocalGitOdb {
     commit: Option<String>,
     /// Accumulated blobs not yet committed: path → sha1.
     pending: HashMap<String, String>,
+    /// Blob path → oid, populated once per commit.
+    path_to_oid: HashMap<String, gix::ObjectId>,
 }
 
 impl LocalGitOdb {
@@ -18,14 +23,23 @@ impl LocalGitOdb {
             repo: gix::open(git_dir).unwrap(),
             commit: None,
             pending: HashMap::new(),
+            path_to_oid: HashMap::new(),
         }
     }
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
+        let commit = Some(commit).filter(|s| !s.is_empty());
+        let repo = gix::open(git_dir).unwrap();
+        let path_to_oid = if let Some(ref sha) = commit {
+            build_path_to_oid(&repo, sha)
+        } else {
+            HashMap::new()
+        };
         Self {
-            repo: gix::open(git_dir).unwrap(),
-            commit: Some(commit).filter(|s| !s.is_empty()),
+            repo,
+            commit,
             pending: HashMap::new(),
+            path_to_oid,
         }
     }
 
@@ -131,21 +145,41 @@ fn build_tree(
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
+/// Build a path → oid map for a commit using `git ls-tree -r`.
+fn build_path_to_oid(repo: &gix::Repository, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
+    let output = Command::new("git")
+        .arg("--git-dir")
+        .arg(repo.git_dir())
+        .args(["ls-tree", "-r", "--", commit_sha])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let oid_str = line.get(12..52)?;
+            let path = line.get(53..)?.trim();
+            let oid: gix::ObjectId = oid_str.parse().ok()?;
+            Some((path.to_string(), oid))
+        })
+        .collect()
+}
+
 impl OdbReader for LocalGitOdb {
     fn get(&self, key: &str) -> Vec<u8> {
-        let commit_sha = self.commit.as_deref().expect("No commit set");
-        let commit_id: gix::ObjectId = commit_sha.parse().unwrap();
+        let oid = self.path_to_oid.get(key).expect("key not found");
+        self.repo.find_blob(*oid).unwrap().data.to_vec()
+    }
 
-        let tree_id = {
-            let commit = self.repo.find_commit(commit_id).unwrap();
-            commit.tree_id().unwrap().detach()
-        };
-        let blob_id = {
-            let tree = self.repo.find_tree(tree_id).unwrap();
-            let entry = tree.lookup_entry_by_path(key).unwrap().unwrap();
-            entry.object_id()
-        };
-        self.repo.find_blob(blob_id).unwrap().data.to_vec()
+    fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
+        let git_dir = self.repo.git_dir().to_path_buf();
+        let path_to_oid = self.path_to_oid.clone();
+        keys.into_par_iter()
+            .map(move |key| {
+                let oid = path_to_oid.get(*key).expect("key not found");
+                let repo = gix::open(&git_dir).unwrap();
+                repo.find_blob(*oid).unwrap().data.to_vec()
+            })
+            .collect()
     }
 
     fn glob(&self, pattern: &str) -> Vec<String> {
@@ -192,8 +226,6 @@ impl OdbWriter for LocalGitOdb {
         }
     }
 }
-
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[cfg(test)]
 mod tests {
