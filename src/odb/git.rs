@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::str::ParallelString;
 
 use crate::odb::{OdbReader, OdbWriter};
 
@@ -146,7 +147,10 @@ fn build_tree(
 }
 
 /// Build a path → oid map for a commit using `git ls-tree -r`.
-fn build_path_to_oid(repo: &gix::ThreadSafeRepository, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
+fn build_path_to_oid(
+    repo: &gix::ThreadSafeRepository,
+    commit_sha: &str,
+) -> HashMap<String, gix::ObjectId> {
     let output = Command::new("git")
         .arg("--git-dir")
         .arg(repo.git_dir())
@@ -167,7 +171,12 @@ fn build_path_to_oid(repo: &gix::ThreadSafeRepository, commit_sha: &str) -> Hash
 impl OdbReader for LocalGitOdb {
     fn get(&self, key: &str) -> Vec<u8> {
         let oid = self.path_to_oid.get(key).expect("key not found");
-        self.repo.to_thread_local().find_blob(*oid).unwrap().data.to_vec()
+        self.repo
+            .to_thread_local()
+            .find_blob(*oid)
+            .unwrap()
+            .data
+            .to_vec()
     }
 
     fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
@@ -176,7 +185,11 @@ impl OdbReader for LocalGitOdb {
         keys.into_par_iter()
             .map(|key| {
                 let oid = path_to_oid.get(*key).expect("key not found");
-                repo.to_thread_local().find_blob(*oid).unwrap().data.to_vec()
+                repo.to_thread_local()
+                    .find_blob(*oid)
+                    .unwrap()
+                    .data
+                    .to_vec()
             })
             .collect()
     }
@@ -202,7 +215,13 @@ impl OdbReader for LocalGitOdb {
 
 impl OdbWriter for LocalGitOdb {
     fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
-        let sha1 = self.repo.to_thread_local().write_blob(value).unwrap().to_hex().to_string();
+        let sha1 = self
+            .repo
+            .to_thread_local()
+            .write_blob(value)
+            .unwrap()
+            .to_hex()
+            .to_string();
         self.pending.insert(key.to_string(), sha1);
     }
 
