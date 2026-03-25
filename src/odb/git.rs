@@ -203,7 +203,7 @@ impl OdbReader for LocalGitOdb {
                 .unwrap();
             let pat = glob::Pattern::new(pattern).unwrap();
             String::from_utf8_lossy(&output.stdout)
-                .lines()
+                .par_lines() // TODO: more bench on this
                 .filter(|line| pat.matches(line))
                 .map(|s| s.to_string())
                 .collect()
