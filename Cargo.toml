@@ -33,6 +33,10 @@ path = "src/main.rs"
 name = "git_odb"
 harness = false
 
+[[bench]]
+name = "unflatten"
+harness = false
+
 [profile.profiling]
 inherits = "release"
 debug = true
