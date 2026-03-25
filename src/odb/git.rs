@@ -8,7 +8,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::odb::{OdbReader, OdbWriter};
 
 pub struct LocalGitOdb {
-    repo: gix::Repository,
+    repo: gix::ThreadSafeRepository,
     /// Current commit used for read operations (get/glob).
     commit: Option<String>,
     /// Accumulated blobs not yet committed: path → sha1.
@@ -20,7 +20,7 @@ pub struct LocalGitOdb {
 impl LocalGitOdb {
     pub fn new(git_dir: PathBuf) -> Self {
         Self {
-            repo: gix::open(git_dir).unwrap(),
+            repo: gix::open(git_dir).unwrap().into(),
             commit: None,
             pending: HashMap::new(),
             path_to_oid: HashMap::new(),
@@ -29,7 +29,7 @@ impl LocalGitOdb {
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
         let commit = Some(commit).filter(|s| !s.is_empty());
-        let repo = gix::open(git_dir).unwrap();
+        let repo: gix::ThreadSafeRepository = gix::open(git_dir).unwrap().into();
         let path_to_oid = if let Some(ref sha) = commit {
             build_path_to_oid(&repo, sha)
         } else {
@@ -146,7 +146,7 @@ fn build_tree(
 }
 
 /// Build a path → oid map for a commit using `git ls-tree -r`.
-fn build_path_to_oid(repo: &gix::Repository, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
+fn build_path_to_oid(repo: &gix::ThreadSafeRepository, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
     let output = Command::new("git")
         .arg("--git-dir")
         .arg(repo.git_dir())
@@ -167,17 +167,16 @@ fn build_path_to_oid(repo: &gix::Repository, commit_sha: &str) -> HashMap<String
 impl OdbReader for LocalGitOdb {
     fn get(&self, key: &str) -> Vec<u8> {
         let oid = self.path_to_oid.get(key).expect("key not found");
-        self.repo.find_blob(*oid).unwrap().data.to_vec()
+        self.repo.to_thread_local().find_blob(*oid).unwrap().data.to_vec()
     }
 
     fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
-        let git_dir = self.repo.git_dir().to_path_buf();
-        let path_to_oid = self.path_to_oid.clone();
+        let repo = self.repo.clone();
+        let path_to_oid = &self.path_to_oid;
         keys.into_par_iter()
-            .map(move |key| {
+            .map(|key| {
                 let oid = path_to_oid.get(*key).expect("key not found");
-                let repo = gix::open(&git_dir).unwrap();
-                repo.find_blob(*oid).unwrap().data.to_vec()
+                repo.to_thread_local().find_blob(*oid).unwrap().data.to_vec()
             })
             .collect()
     }
@@ -203,16 +202,16 @@ impl OdbReader for LocalGitOdb {
 
 impl OdbWriter for LocalGitOdb {
     fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
-        let sha1 = self.repo.write_blob(value).unwrap().to_hex().to_string();
+        let sha1 = self.repo.to_thread_local().write_blob(value).unwrap().to_hex().to_string();
         self.pending.insert(key.to_string(), sha1);
     }
 
     fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
-        let git_dir = self.repo.git_dir().to_path_buf();
+        let ts_repo = self.repo.clone();
         let results: Vec<(String, String)> = entries
             .into_par_iter()
             .map(|(key, value)| {
-                let repo = gix::open(&git_dir).unwrap();
+                let repo = ts_repo.to_thread_local();
                 let sha1 = repo
                     .write_blob(value.as_ref())
                     .unwrap()
