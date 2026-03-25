@@ -3,15 +3,12 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use rayon::str::ParallelString;
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
 
 pub struct LocalGitOdb {
     repo: gix::ThreadSafeRepository,
-    /// Current commit used for read operations (get/glob).
-    commit: Option<String>,
     /// Accumulated blobs not yet committed: path → sha1.
     pending: HashMap<String, String>,
     /// Blob path → oid, populated once per commit.
@@ -22,23 +19,20 @@ impl LocalGitOdb {
     pub fn new(git_dir: PathBuf) -> Self {
         Self {
             repo: gix::open(git_dir).unwrap().into(),
-            commit: None,
             pending: HashMap::new(),
             path_to_oid: HashMap::new(),
         }
     }
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
-        let commit = Some(commit).filter(|s| !s.is_empty());
         let repo: gix::ThreadSafeRepository = gix::open(git_dir).unwrap().into();
-        let path_to_oid = if let Some(ref sha) = commit {
-            build_path_to_oid(&repo, sha)
-        } else {
+        let path_to_oid = if commit.is_empty() {
             HashMap::new()
+        } else {
+            build_path_to_oid(&repo, &commit)
         };
         Self {
             repo,
-            commit,
             pending: HashMap::new(),
             path_to_oid,
         }
@@ -195,21 +189,13 @@ impl OdbReader for LocalGitOdb {
     }
 
     fn glob(&self, pattern: &str) -> Vec<String> {
-        if let Some(commit) = &self.commit {
-            let output = self
-                .git()
-                .args(["ls-tree", "-r", "--name-only", &commit])
-                .output()
-                .unwrap();
-            let pat = glob::Pattern::new(pattern).unwrap();
-            String::from_utf8_lossy(&output.stdout)
-                .par_lines() // TODO: more bench on this
-                .filter(|line| pat.matches(line))
-                .map(|s| s.to_string())
-                .collect()
-        } else {
-            Vec::new()
-        }
+        let pat = glob::Pattern::new(pattern).unwrap();
+        self.path_to_oid
+            .par_iter()
+            .map(|(p, _)| p)
+            .filter(|p| pat.matches(p.as_str()))
+            .cloned()
+            .collect()
     }
 }
 
