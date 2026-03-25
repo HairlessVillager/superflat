@@ -17,45 +17,63 @@ pub fn read_region<B: Read + Seek>(
     region_x: i32,
     region_z: i32,
 ) -> Option<([u8; 4096], Vec<(i32, i32, Vec<u8>)>)> {
-    // TODO: Streaming output here.
-    // A .mca file in 16MiB size can generate tons of bytes after decompression.
-
     let mut locations = [0u8; 4096];
-    if let Err(err) = buf.read_exact(&mut locations)
-        && err.kind() == std::io::ErrorKind::UnexpectedEof
-    {
-        return None; // empty file
+    if let Err(err) = buf.read_exact(&mut locations) {
+        if err.kind() == std::io::ErrorKind::UnexpectedEof {
+            return None;
+        }
     }
+
     let mut timestamps = [0u8; 4096];
     buf.read_exact(&mut timestamps).unwrap();
 
-    let mut chunks = Vec::new();
+    let mut compressed_chunks = Vec::new();
+
     for i in 0..1024usize {
         let loc = &locations[i * 4..(i + 1) * 4];
         let offset = u32::from_be_bytes([0, loc[0], loc[1], loc[2]]) as usize;
         let size = loc[3] as usize;
+
         if offset == 0 && size == 0 {
             continue;
         }
+
         let byte_offset = offset * SECTOR_SIZE;
-        let byte_size = size * SECTOR_SIZE;
         buf.seek(SeekStart(byte_offset as u64)).unwrap();
-        let mut raw = vec![0u8; byte_size];
-        buf.read_exact(&mut raw).unwrap();
 
-        let data_length = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
-        let compression_type = raw[4];
-        let compressed_len = data_length - 1;
-        let compressed = &raw[5..5 + compressed_len];
+        let mut header = [0u8; 5];
+        buf.read_exact(&mut header).unwrap();
 
-        if compression_type == 2 {
-            let mut decoder = ZlibDecoder::new(compressed);
-            let mut nbt = Vec::new();
-            decoder.read_to_end(&mut nbt).unwrap(); // TODO: par here
-            let local_x = (i % 32) as i32;
-            let local_z = (i / 32) as i32;
-            chunks.push((region_x * 32 + local_x, region_z * 32 + local_z, nbt));
-        }
+        let data_length = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize;
+        let compression_type = header[4];
+
+        let compressed_len = data_length.saturating_sub(1);
+        let mut compressed_data = vec![0u8; compressed_len];
+        buf.read_exact(&mut compressed_data).unwrap();
+
+        compressed_chunks.push((i, compression_type, compressed_data));
+    }
+
+    let chunks: Vec<(i32, i32, Vec<u8>)> = compressed_chunks
+        .into_par_iter()
+        .filter_map(|(i, compression_type, compressed)| {
+            if compression_type == 2 {
+                let mut decoder = ZlibDecoder::new(&compressed[..]);
+                let mut nbt = Vec::new();
+                if decoder.read_to_end(&mut nbt).is_ok() {
+                    let local_x = (i % 32) as i32;
+                    let local_z = (i / 32) as i32;
+                    return Some((region_x * 32 + local_x, region_z * 32 + local_z, nbt));
+                }
+            } else {
+                todo!("Support compression type {compression_type}")
+            }
+            None
+        })
+        .collect();
+
+    if chunks.is_empty() {
+        return None;
     }
 
     Some((timestamps, chunks))
