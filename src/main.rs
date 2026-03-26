@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use superflat::{checkout, commit, flatten, unflatten};
+use superflat::{checkout, commit, flatten, unflatten, utils::git_cmd::git_cmd};
 
 /// Superflat - A bridge between Git and Minecraft save
 #[derive(Parser)]
@@ -42,12 +42,15 @@ enum CliSubcommand {
         /// Commit IDs of other sources.
         #[arg(long)]
         merge: Vec<String>,
-        /// Commit message
+        /// Commit message.
         #[arg(short, long)]
         message: String,
         /// Ref name, for branch 'main', it's 'refs/heads/main'
         #[arg(short, long)]
         r#ref: String,
+        /// Automatically repack loose objects.
+        #[arg(long, default_value_t = false)]
+        repack: bool,
     },
     /// Restore save from commit
     Checkout {
@@ -96,13 +99,33 @@ fn main() {
             merge,
             message,
             r#ref,
+            repack,
         } => {
             let mut parents = Vec::new();
             if let Some(from) = from {
                 parents.push(from);
             }
             parents.extend(merge);
-            commit(save_dir, git_dir, parents, &message, Some(r#ref));
+            commit(save_dir, git_dir.to_owned(), parents, &message, Some(r#ref));
+
+            if repack {
+                log::info!("Repacking");
+                let _repack_out = git_cmd(git_dir.to_owned())
+                    .args(["repack", "--depth", "4095", "--window", "2", "-a", "-d"])
+                    .output()
+                    .unwrap();
+            } else {
+                log::warn!("--repack is not enabled, Git repository can get bloated")
+            }
+            log::info!("Counting objects");
+            let count_out = git_cmd(git_dir.to_owned())
+                .args(["count-objects", "-vH"])
+                .output()
+                .unwrap()
+                .stdout;
+            for line in String::from_utf8(count_out).unwrap().lines() {
+                log::info!("git-count-objects: {line}")
+            }
         }
         CliSubcommand::Checkout {
             save_dir,

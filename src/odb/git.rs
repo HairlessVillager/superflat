@@ -19,7 +19,12 @@ pub struct LocalGitOdb {
 impl LocalGitOdb {
     pub fn new(git_dir: PathBuf) -> Self {
         Self {
-            repo: gix::open(git_dir).unwrap().into(),
+            repo: gix::open(git_dir.to_owned())
+                .expect(&format!(
+                    "Try 'git init --bare {}'",
+                    git_dir.to_str().unwrap()
+                ))
+                .into(),
             pending: HashMap::new(),
             path_to_oid: HashMap::new(),
         }
