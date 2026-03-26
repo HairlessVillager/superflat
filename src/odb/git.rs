@@ -109,14 +109,22 @@ fn build_tree(
         }
     }
 
+    let mut dir_shas: Vec<(String, String)> = dirs
+        .into_par_iter()
+        .map(|(name, sub_entries)| {
+            let sub_prefix = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let sub_sha = build_tree(git_dir, &sub_entries, &sub_prefix);
+            (name, sub_sha)
+        })
+        .collect();
+    dir_shas.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
     let mut mktree_input = String::new();
-    for (name, sub_entries) in &dirs {
-        let sub_prefix = if prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{prefix}/{name}")
-        };
-        let sub_sha = build_tree(git_dir, sub_entries, &sub_prefix);
+    for (name, sub_sha) in &dir_shas {
         mktree_input.push_str(&format!("040000 tree {sub_sha}\t{name}\n"));
     }
     for (name, sha1) in &blobs {
