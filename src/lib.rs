@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::{
     crafter::{ChunkRegionCrafter, Crafter, GzipNbtCrafter, OtherRegionCrafter, RawCrafter},
     odb::{LocalFsOdb, LocalGitOdb},
+    utils::git_cmd::git_cmd,
 };
 
 mod crafter;
@@ -38,9 +39,9 @@ pub fn commit(
 ) {
     let save = LocalFsOdb::from_dir(save_dir);
     let mut git = if let Some(from) = parents.first() {
-        LocalGitOdb::from_commit(git_dir, from.clone())
+        LocalGitOdb::from_commit(git_dir.to_owned(), from.clone())
     } else {
-        LocalGitOdb::new(git_dir)
+        LocalGitOdb::new(git_dir.to_owned())
     };
 
     RawCrafter.flatten(&save, &mut git);
@@ -48,8 +49,19 @@ pub fn commit(
     ChunkRegionCrafter.flatten(&save, &mut git);
     OtherRegionCrafter.flatten(&save, &mut git);
 
-    let commit = git.commit(parents.as_slice(), message, r#ref.clone());
-    log::info!("{:?} -> {commit}", r#ref);
+    let commit = git.commit(parents.as_slice(), message);
+
+    if let Some(r#ref) = r#ref {
+        git_cmd(git_dir)
+            .arg("update-ref")
+            .arg(r#ref.to_owned())
+            .arg(&commit)
+            .status()
+            .unwrap();
+        log::info!("{:?} -> {commit}", r#ref);
+    } else {
+        log::warn!("Dangling {commit}");
+    }
 }
 
 pub fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String) {

@@ -45,8 +45,8 @@ enum CliSubcommand {
         /// Commit message
         #[arg(short, long)]
         message: String,
-        /// Ref name
-        #[arg(short, long, default_value_t = String::from("refs/heads/main"))]
+        /// Ref name, for branch 'main', it's 'refs/heads/main'
+        #[arg(short, long)]
         r#ref: String,
     },
     /// Restore save from commit

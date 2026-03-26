@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
+use crate::utils::git_cmd::git_cmd;
 
 pub struct LocalGitOdb {
     repo: gix::ThreadSafeRepository,
@@ -39,9 +40,7 @@ impl LocalGitOdb {
     }
 
     fn git(&self) -> Command {
-        let mut cmd = Command::new("git");
-        cmd.arg("--git-dir").arg(self.repo.git_dir());
-        cmd
+        git_cmd(self.repo.git_dir())
     }
 
     /// Create a commit from all pending blobs, consuming self.
@@ -52,12 +51,7 @@ impl LocalGitOdb {
     /// their underlying commit objects.
     ///
     /// Returns the sha1 of the new commit.
-    pub fn commit(
-        self,
-        parents: &[impl AsRef<str>],
-        message: &str,
-        r#ref: Option<String>,
-    ) -> String {
+    pub fn commit(self, parents: &[impl AsRef<str>], message: &str) -> String {
         let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "");
 
         let mut cmd = self.git();
@@ -69,16 +63,6 @@ impl LocalGitOdb {
 
         let output = cmd.output().unwrap();
         let commit = String::from_utf8(output.stdout).unwrap().trim().to_string();
-
-        if let Some(r#ref) = r#ref {
-            self.git()
-                .arg("update-ref")
-                .arg(r#ref)
-                .arg(&commit)
-                .status()
-                .unwrap();
-        }
-
         commit
     }
 }
@@ -271,7 +255,7 @@ mod tests {
 
         let data = b"hello git odb".to_vec();
         odb.put("src/hello.txt", &data);
-        let commit_sha = odb.commit(&[] as &[&str], "initial", None);
+        let commit_sha = odb.commit(&[] as &[&str], "initial");
         assert_eq!(commit_sha.len(), 40);
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
@@ -287,7 +271,7 @@ mod tests {
         odb.put("a/x.rs", &b"fn x(){}".to_vec());
         odb.put("a/y.rs", &b"fn y(){}".to_vec());
         odb.put("b/z.md", &b"# Z".to_vec());
-        let commit_sha = odb.commit(&[] as &[&str], "add files", None);
+        let commit_sha = odb.commit(&[] as &[&str], "add files");
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
         let mut matches = odb.glob("a/*.rs");
@@ -301,12 +285,12 @@ mod tests {
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         odb.put("a.txt", &b"v1".to_vec());
-        let first = odb.commit(&[] as &[&str], "first", None);
+        let first = odb.commit(&[] as &[&str], "first");
 
         // Second commit only puts b.txt — a.txt is NOT inherited
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone());
         odb.put("b.txt", &b"v2".to_vec());
-        let second = odb.commit(&[&first], "second", None);
+        let second = odb.commit(&[&first], "second");
 
         // second commit's tree contains only b.txt
         let files: Vec<String> = String::from_utf8(
