@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use superflat::{checkout, commit, flatten, unflatten, utils::git_cmd::git_cmd};
+use superflat::{
+    checkout, commit, flatten, unflatten,
+    utils::git_cmd::{git_cmd, git_repo_exists},
+};
 
 /// Superflat - A bridge between Git and Minecraft save
 #[derive(Parser)]
@@ -35,19 +38,17 @@ enum CliSubcommand {
         /// Path to your save
         save_dir: PathBuf,
         /// Path to the bare Git repository
+        #[arg(value_parser = git_repo_exists)]
         git_dir: PathBuf,
-        /// Commit ID of the first source. Leave empty to create a initial commit.
+        /// Commit to this branch.
+        #[arg(short, long)]
+        branch: String,
+        /// Commit as initial commit.
         #[arg(long)]
-        from: Option<String>,
-        /// Commit IDs of other sources.
-        #[arg(long)]
-        merge: Vec<String>,
+        init: bool,
         /// Commit message.
         #[arg(short, long)]
         message: String,
-        /// Ref name, for branch 'main', it's 'refs/heads/main'
-        #[arg(short, long)]
-        r#ref: String,
         /// Automatically repack loose objects.
         #[arg(long, default_value_t = false)]
         repack: bool,
@@ -95,17 +96,31 @@ fn main() {
         CliSubcommand::Commit {
             save_dir,
             git_dir,
-            from,
-            merge,
+            branch,
+            init,
             message,
-            r#ref,
             repack,
         } => {
-            let mut parents = Vec::new();
-            if let Some(from) = from {
-                parents.push(from);
-            }
-            parents.extend(merge);
+            let parents = {
+                let out = git_cmd(git_dir.to_owned())
+                    .args(["rev-parse", &format!("{branch}^{{commit}}")])
+                    .output()
+                    .unwrap();
+                let branch_exists = out.status.code().unwrap() == 0;
+                match (branch_exists, init) {
+                    (true, false) => {
+                        vec![String::from_utf8(out.stdout).unwrap().trim().to_owned()]
+                    }
+                    (false, true) => vec![],
+                    (true, true) => panic!("Branch '{branch}' exists, remove --init"),
+                    (false, false) => panic!(
+                        "Invalid branch name '{branch}'. Self-check via 'git --git-dir {} rev-parse {branch}^{{commit}}'",
+                        git_dir.to_str().unwrap()
+                    ),
+                }
+            };
+            let r#ref = format!("refs/heads/{}", &branch);
+
             commit(save_dir, git_dir.to_owned(), parents, &message, Some(r#ref));
 
             if repack {
@@ -117,6 +132,7 @@ fn main() {
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated")
             }
+
             log::info!("Counting objects");
             let count_out = git_cmd(git_dir.to_owned())
                 .args(["count-objects", "-vH"])
