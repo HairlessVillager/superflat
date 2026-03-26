@@ -157,7 +157,7 @@ pub struct Section {
 
 #[derive(Serialize, Deserialize)]
 pub struct SectionsDump {
-    sections: Vec<Section>,
+    pub sections: Vec<Section>,
 }
 
 fn dump_sections(sections: &[NbtTag]) -> (SectionsDump, Vec<String>) {

@@ -81,6 +81,23 @@ enum UtilsSubcommand {
         /// Chunk Z
         chunk_z: i32,
     },
+    /// Dump section block or biome data to stdout
+    Section {
+        /// Path to region file
+        region_path: PathBuf,
+        /// Chunk X
+        chunk_x: i32,
+        /// Chunk Z
+        chunk_z: i32,
+        /// Section Y index
+        section_y: i8,
+        /// Dump block state IDs (4096 x u16 LE)
+        #[arg(long, group = "data_type", required = true)]
+        block: bool,
+        /// Dump biome IDs (64 x u8)
+        #[arg(long, group = "data_type", required = true)]
+        biome: bool,
+    },
 }
 
 fn main() {
@@ -168,6 +185,46 @@ fn main() {
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
                     .unwrap();
                 io::stdout().write_all(nbt).unwrap();
+            }
+            UtilsSubcommand::Section {
+                region_path,
+                chunk_x,
+                chunk_z,
+                section_y,
+                block,
+                biome: _,
+            } => {
+                use std::fs;
+                use std::io::{self, Cursor, Write};
+                use superflat::utils::nbt::load_nbt;
+                use superflat::utils::region::{parse_xz, read_region, split_chunk};
+
+                let (region_x, region_z) =
+                    parse_xz(region_path.file_name().unwrap().to_str().unwrap());
+                let (_, xz_nbts) =
+                    read_region(fs::File::open(region_path).unwrap(), region_x, region_z).unwrap();
+                let (_, _, nbt_bytes) = xz_nbts
+                    .iter()
+                    .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
+                    .expect("chunk not found");
+                let nbt = load_nbt(Cursor::new(nbt_bytes), true);
+                let (_, sections_dump, _) = split_chunk(nbt).unwrap();
+                let section = sections_dump
+                    .sections
+                    .iter()
+                    .find(|s| s.y == section_y)
+                    .expect("section not found");
+                let mut stdout = io::stdout().lock();
+                if block {
+                    let bytes: Vec<u8> = section
+                        .block_state
+                        .iter()
+                        .flat_map(|&v| v.to_le_bytes())
+                        .collect();
+                    stdout.write_all(&bytes).unwrap();
+                } else {
+                    stdout.write_all(&section.biome).unwrap();
+                }
             }
         },
     }
