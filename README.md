@@ -23,6 +23,7 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [x] `superflat commit`: Stream-flatten and commit to Git.
 - [x] `superflat checkout`: Checkout from Git and stream-restore the save.
 - [ ] In-depth performance profiling and extreme optimization.
+    - [x] `ChunkRegionCrafter` parallelization
 - [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
 - [ ] Reduce dependency on Pumpkin for the Sections Dump feature.
@@ -64,7 +65,7 @@ You need to define the following three paths:
 
 ### 2. Initialize Git Repository
 
-For the first backup, create a bare Git repository and disable auto-GC to manually control performance overhead:
+For the first backup, create a bare Git repository and disable auto-GC for smaller repository size later:
 
 ```sh
 git init --initial-branch main --bare $GIT_DIR
@@ -73,30 +74,34 @@ git --git-dir $GIT_DIR config gc.auto 0
 
 ### 3. Execute Backup
 
-If this is not your first backup, use `git rev-parse refs/heads/main` to get the commit ID `$COMMIT` that the branch points to:
+Use the following command to backup and create a commit:
 
 ```sh
-sf commit $SAVE_DIR $GIT_DIR -f $COMMIT -m "Your backup note"
+sf commit $SAVE_DIR $GIT_DIR --repack -b main --init -m "Your backup note"
 ```
 
-For the first backup, you can omit the `-f` parameter.
+CLI reference:
 
-### 4. Optimize Storage (Repack)
+```text
+Flatten save and commit to Git
 
-It is recommended to check and compress the repository volume after commits:
+Usage: sf commit [OPTIONS] --branch <BRANCH> --message <MESSAGE> <SAVE_DIR> <GIT_DIR>
 
-```sh
-# Check current status
-git --git-dir $GIT_DIR count-objects -vH
+Arguments:
+  <SAVE_DIR>  Path to your save
+  <GIT_DIR>   Path to the bare Git repository
 
-# Perform compression
-git --git-dir $GIT_DIR repack -a -d --depth 4095 --window 1
-
-# Perform deep compression (excellent results but time-consuming)
-git --git-dir $GIT_DIR repack -a -d --depth 4095 --window 256 -f
+Options:
+  -b, --branch <BRANCH>    Commit to this branch
+  -v, --verbose...         Increase logging verbosity
+      --init               Commit as initial commit
+  -q, --quiet...           Decrease logging verbosity
+  -m, --message <MESSAGE>  Commit message
+      --repack             Automatically repack loose objects
+  -h, --help               Print help
 ```
 
-### 5. Restore Backup
+### 4. Restore Backup
 
 **Note:** If `$REPO_DIR` is not empty, please back up its contents manually (e.g., as a `.zip`) before restoring.
 

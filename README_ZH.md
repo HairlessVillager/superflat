@@ -23,6 +23,7 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - [x] `superflat commit`：流式平坦化并提交到 Git
 - [x] `superflat checkout`：从 Git 检出并流式还原存档
 - [ ] 深度性能分析与极致性能优化
+    - [x] `ChunkRegionCrafter` 并行化
 - [ ] 完善用户文档
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
 - [ ] 精简 Sections Dump 功能对 Pumpkin 的依赖
@@ -64,7 +65,7 @@ cargo install --path . --bin sf
 
 ### 2. 初始化 Git 仓库
 
-若是首次备份，请创建一个 Git 裸仓库并禁用自动垃圾回收（以手动控制性能开销）：
+若是首次备份，请创建一个 Git 裸仓库并禁用自动垃圾回收（以便后面实现更小的仓库体积）：
 
 ```sh
 git init --initial-branch main --bare $GIT_DIR
@@ -73,30 +74,34 @@ git --git-dir $GIT_DIR config gc.auto 0
 
 ### 3. 执行备份
 
-如果不是首次备份，请使用 `git rev-parse refs/heads/main` 获取分支指向的 Commit ID `$COMMIT`：
+使用下面的命令备份并创建一个 Commit：
 
 ```sh
-sf commit $SAVE_DIR $GIT_DIR -f $COMMIT -m "你的备份注释"
+sf commit $SAVE_DIR $GIT_DIR --repack -b main --init -m "你的备份注释"
 ```
 
-如果是首次备份，则可以忽略这个参数。
+命令行解析：
 
-### 4. 优化存储 (Repack)
+```text
+Flatten save and commit to Git
 
-建议每提交一次后都通过以下命令查看并压缩仓库体积：
+Usage: sf commit [OPTIONS] --branch <BRANCH> --message <MESSAGE> <SAVE_DIR> <GIT_DIR>
 
-```sh
-# 查看当前状态
-git --git-dir $GIT_DIR count-objects -vH
+Arguments:
+  <SAVE_DIR>  Path to your save
+  <GIT_DIR>   Path to the bare Git repository
 
-# 执行压缩
-git --git-dir $GIT_DIR repack -a -d --depth 4095 --window 1
-
-# 执行深度压缩（效果很好但非常耗时）
-git --git-dir $GIT_DIR repack -a -d --depth 4095 --window 256 -f
+Options:
+  -b, --branch <BRANCH>    Commit to this branch
+  -v, --verbose...         Increase logging verbosity
+      --init               Commit as initial commit
+  -q, --quiet...           Decrease logging verbosity
+  -m, --message <MESSAGE>  Commit message
+      --repack             Automatically repack loose objects
+  -h, --help               Print help
 ```
 
-### 5. 恢复备份
+### 4. 恢复备份
 
 **注意：** 如果 `$REPO_DIR` 非空，恢复前请务必手动备份（如使用 `.zip`）。
 
