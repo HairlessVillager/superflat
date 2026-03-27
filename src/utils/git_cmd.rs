@@ -43,6 +43,6 @@ pub fn git_repack_all(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) {
             "-a",
             "-d",
         ])
-        .output()
+        .output() // TODO: use .status()
         .unwrap();
 }

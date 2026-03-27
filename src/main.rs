@@ -25,6 +25,9 @@ enum CliSubcommand {
         save_dir: PathBuf,
         /// Path to the flatten Git repository
         repo_dir: PathBuf,
+        /// Minecraft version (e.g. 1.21.11)
+        #[arg(long)]
+        mc_version: String,
     },
     /// Restore save from repo dir
     Unflatten {
@@ -32,6 +35,9 @@ enum CliSubcommand {
         save_dir: PathBuf,
         /// Path to the flatten Git repository
         repo_dir: PathBuf,
+        /// Minecraft version (e.g. 1.21.11)
+        #[arg(long)]
+        mc_version: String,
     },
     /// Flatten save and commit to Git
     Commit {
@@ -52,6 +58,9 @@ enum CliSubcommand {
         /// Automatically repack loose objects.
         #[arg(long, default_value_t = false)]
         repack: bool,
+        /// Minecraft version (e.g. 1.21.11)
+        #[arg(long)]
+        mc_version: String,
     },
     /// Restore save from commit
     Checkout {
@@ -62,6 +71,9 @@ enum CliSubcommand {
         /// Commit ID to checkout
         #[arg(short, long)]
         commit: String,
+        /// Minecraft version (e.g. 1.21.11)
+        #[arg(long)]
+        mc_version: String,
     },
     /// Utility tools for debug
     Utils {
@@ -108,8 +120,16 @@ fn main() {
 
     log::info!("Welcome to superflat!");
     match cli.action {
-        CliSubcommand::Flatten { save_dir, repo_dir } => flatten(save_dir, repo_dir),
-        CliSubcommand::Unflatten { save_dir, repo_dir } => unflatten(save_dir, repo_dir),
+        CliSubcommand::Flatten {
+            save_dir,
+            repo_dir,
+            mc_version,
+        } => flatten(save_dir, repo_dir, &mc_version),
+        CliSubcommand::Unflatten {
+            save_dir,
+            repo_dir,
+            mc_version,
+        } => unflatten(save_dir, repo_dir, &mc_version),
         CliSubcommand::Commit {
             save_dir,
             git_dir,
@@ -117,6 +137,7 @@ fn main() {
             init,
             message,
             repack,
+            mc_version,
         } => {
             let parents = {
                 let out = git_cmd(&git_dir)
@@ -138,13 +159,20 @@ fn main() {
             };
             let r#ref = format!("refs/heads/{}", &branch);
 
-            commit(save_dir, git_dir.to_owned(), parents, &message, Some(r#ref));
+            commit(
+                save_dir,
+                git_dir.to_owned(),
+                parents,
+                &message,
+                Some(r#ref),
+                &mc_version,
+            );
 
             if repack {
                 git_count_objects(&git_dir);
                 git_repack_all(&git_dir, 4095, 2);
             } else {
-                log::warn!("--repack is not enabled, Git repository can get bloated")
+                log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
 
             git_count_objects(git_dir.to_owned());
@@ -153,7 +181,8 @@ fn main() {
             save_dir,
             git_dir,
             commit,
-        } => checkout(save_dir, git_dir, commit),
+            mc_version,
+        } => checkout(save_dir, git_dir, commit, &mc_version),
 
         CliSubcommand::Utils { action } => match action {
             UtilsSubcommand::Chunk {

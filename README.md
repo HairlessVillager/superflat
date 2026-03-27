@@ -31,7 +31,7 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
     - [ ] More optimization...
 - [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
-- [ ] Reduce dependency on Pumpkin for the Sections Dump feature.
+- [x] Reduce dependency on Pumpkin for the Sections Dump feature.
 - [ ] Write auto compile GitHub Workflos.
 - [ ] Expand support for legacy versions (pre-1.21.11).
 - [ ] Chunk de-duplication based on Pumpkin terrain generation algorithms (storing only modifications).

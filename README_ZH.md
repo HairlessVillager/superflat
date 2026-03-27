@@ -31,7 +31,7 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
     - [ ] 更多的性能优化
 - [ ] 完善用户文档
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
-- [ ] 精简 Sections Dump 功能对 Pumpkin 的依赖
+- [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
 - [ ] 构建自动编译 GitHub 工作流
 - [ ] 扩展历史版本支持 (1.21.11 之前)
 - [ ] 基于 Pumpkin 地形生成算法的区块去冗余（仅存储修改量）

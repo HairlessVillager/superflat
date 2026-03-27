@@ -27,9 +27,20 @@
 
 use std::{hash::Hash, iter::repeat_n};
 
-use pumpkin_data::{Block, chunk::Biome};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::encompassing_bits;
+
+use super::mc_data::{
+    biome_id_from_name, biome_name_from_id, block_name_and_props_from_state_id,
+    block_state_id_from_name_and_props,
+};
+
+fn encompassing_bits(n: usize) -> u8 {
+    if n <= 1 {
+        0
+    } else {
+        (usize::BITS - (n - 1).leading_zeros()) as u8
+    }
+}
 
 /// 3d array indexed by y,z,x
 type AbstractCube<T, const DIM: usize> = [[[T; DIM]; DIM]; DIM];
@@ -235,7 +246,7 @@ impl BiomePalette {
             .map(|entry| {
                 let s = entry.extract_string().unwrap();
                 let key = s.strip_prefix("minecraft:").unwrap_or(s);
-                Biome::from_name(key).unwrap().id // TODO: remove depends on pumpkin-data
+                biome_id_from_name(key)
             })
             .collect::<Vec<_>>();
 
@@ -252,10 +263,7 @@ impl BiomePalette {
             palette
                 .into_iter()
                 .map(|registry_id| {
-                    NbtTag::String(format!(
-                        "minecraft:{}",
-                        Biome::from_id(registry_id).unwrap().registry_id
-                    ))
+                    NbtTag::String(format!("minecraft:{}", biome_name_from_id(registry_id)))
                 })
                 .collect(),
         );
@@ -282,20 +290,17 @@ impl BlockPalette {
             .into_iter()
             .map(|entry| {
                 let entry = entry.extract_compound().unwrap();
-                let block = {
-                    let block_name = entry.get_string("Name").unwrap();
-                    Block::from_name(block_name)
-                        .expect(format!("unknown block name: {block_name}").as_str()) // TODO: remove depends on pumpkin-data
-                };
+                let block_name = entry.get_string("Name").unwrap();
+                let name = block_name.strip_prefix("minecraft:").unwrap_or(block_name);
                 if let Some(props) = entry.get_compound("Properties") {
                     let props_map = props
                         .child_tags
                         .iter()
                         .map(|(key, value)| (key.as_str(), value.extract_string().unwrap()))
                         .collect::<Vec<_>>();
-                    block.from_properties(&props_map).to_state_id(block) // TODO: remove depends on pumpkin-data
+                    block_state_id_from_name_and_props(name, &props_map)
                 } else {
-                    return block.default_state.id;
+                    block_state_id_from_name_and_props(name, &[])
                 }
             })
             .collect::<Vec<_>>();
@@ -328,23 +333,24 @@ impl BlockPalette {
     }
 
     fn block_state_id_to_palette_entry(registry_id: u16) -> NbtCompound {
-        let block = Block::from_state_id(registry_id);
+        let (name, props) = block_name_and_props_from_state_id(registry_id);
 
-        let child_tags = if let Some(props) = block.properties(registry_id) {
-            let props = props
-                .to_props()
+        let child_tags = if props.is_empty() {
+            vec![("Name".into(), NbtTag::String(format!("minecraft:{name}")))]
+        } else {
+            let props_nbt = props
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), NbtTag::String(v.to_string())))
                 .collect::<Vec<_>>();
             vec![
-                ("Name".into(), NbtTag::String(block.name.into())),
+                ("Name".into(), NbtTag::String(format!("minecraft:{name}"))),
                 (
                     "Properties".into(),
-                    NbtTag::Compound(NbtCompound { child_tags: props }),
+                    NbtTag::Compound(NbtCompound {
+                        child_tags: props_nbt,
+                    }),
                 ),
             ]
-        } else {
-            vec![("Name".into(), NbtTag::String(block.name.into()))]
         };
 
         NbtCompound { child_tags }
