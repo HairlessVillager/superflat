@@ -39,6 +39,7 @@ static BOOL_VALUES: LazyLock<Vec<String>> =
 
 pub fn init_mc_data(version: &str) {
     MC_DATA.get_or_init(|| {
+        log::info!("Fetching Minecraft version list");
         let versions =
             versions_by_minecraft_version().expect("failed to load minecraft version list");
         let version = versions
@@ -48,6 +49,7 @@ pub fn init_mc_data(version: &str) {
                 versions.keys()
             ))
             .clone();
+        log::info!("Fetching Minecraft version data");
         let api = Api::new(version).unwrap();
         McData {
             blocks_by_name: api

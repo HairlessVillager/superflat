@@ -33,7 +33,7 @@ pub fn git_count_objects(git_dir: impl AsRef<OsStr>) {
 
 pub fn git_repack_all(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) {
     log::info!("Repacking");
-    let _repack_out = git_cmd(git_dir)
+    let status = git_cmd(git_dir)
         .args([
             "repack",
             "--depth",
@@ -43,6 +43,7 @@ pub fn git_repack_all(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) {
             "-a",
             "-d",
         ])
-        .output() // TODO: use .status()
+        .status()
         .unwrap();
+    assert!(status.success());
 }
