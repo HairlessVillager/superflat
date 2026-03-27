@@ -3,6 +3,9 @@
 # Superflat
 
 > [!IMPORTANT]
+> **Contributor License Agreement**: Before open a Pull Request, please read [CLA](#CLA).
+
+> [!IMPORTANT]
 > **Development Warning**: This project is currently in an aggressive development phase. The Command Line Interface (CLI) and storage formats are not yet stable.
 
 > [!IMPORTANT]
@@ -151,3 +154,15 @@ We verified the tool's effectiveness using 13 consecutive backups of a survival 
 Since this project depends on the GPLv3-licensed Pumpkin project, it is also released under the GPLv3 license:
 
 - [GNU General Public License v3.0](./LICENSE)
+
+## CLA
+
+```markdown
+Relicensing Disclosure & Contributor Agreement
+
+By submitting a Pull Request (PR) to this project, you agree to the following terms:
+
+1. License Grant: You grant the project maintainer(s) (HairlessVillager) a perpetual, worldwide, non-exclusive, sublicensable, and irrevocable license to change the project's open-source license from GPLv3 to MIT or any other license (including, but not limited to, other permissive licenses or proprietary licenses) in the future.
+2. Ownership Representation: You represent and warrant that you own the copyright to the code being contributed or have the explicit legal authority from the copyright owner to grant this license.
+3. Future Bound: Once merged, your contributions will be subject to the project’s current license and any future licenses adopted by the project maintainer(s) in accordance with this agreement.
+```
