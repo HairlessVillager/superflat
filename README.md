@@ -5,17 +5,11 @@
 > [!IMPORTANT]
 > **Contributor License Agreement**: Before open a Pull Request, please read [CLA](#CLA).
 
-> [!IMPORTANT]
-> **Development Warning**: This project is currently in an aggressive development phase. The Command Line Interface (CLI) and storage formats are not yet stable.
-
-> [!IMPORTANT]
-> **Version Support**: Currently targets **Minecraft 1.21.11 Java Edition**. Compatibility with other versions is still being evaluated.
-
 Superflat is a Minecraft save format conversion tool designed to convert Minecraft Java Edition saves into a **Git-friendly** format. By leveraging Git’s mature version control and delta compression capabilities, Superflat achieves:
 
 1.  **Extreme Space Efficiency**: The incremental overhead of storing a snapshot is minimal (typically only **2%** of the original Zip volume of the save).
-2.  **Ultra-fast Backup**: Supports rapid snapshotting (Superflat processing speed ~30MiB/s, Git write speed ~20MiB/s).
-3.  **Rapid Rollback**: Supports millisecond-level snapshot checkouts (Superflat restoration speed ~45MiB/s).
+2.  **Fast Backup**: Supports rapid snapshotting (Superflat processing speed ~30MiB/s, Git write speed ~20MiB/s).
+3.  **Fast Rollback**: Supports millisecond-level snapshot checkouts (Superflat restoration speed ~45MiB/s).
 
 ## Roadmap
 
@@ -32,8 +26,8 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
 - [x] Reduce dependency on Pumpkin for the Sections Dump feature.
-- [ ] Write auto compile GitHub Workflos.
-- [ ] Expand support for legacy versions (pre-1.21.11).
+- [ ] Write auto compile GitHub Workflows.
+- [x] Expand support for legacy versions (pre-1.21.11).
 - [ ] Chunk de-duplication based on Pumpkin terrain generation algorithms (storing only modifications).
 
 ## Credits
@@ -53,7 +47,6 @@ Ensure you have [Git](https://git-scm.com/install/) and [rustup](https://rustup.
 ```sh
 git clone https://github.com/HairlessVillager/superflat.git
 cd superflat
-# Note: Compiling dependencies pumpkin-data and pumpkin-world is slow (approx. 2-3 minutes)
 cargo install --path . --bin sf
 ```
 
@@ -61,12 +54,14 @@ cargo install --path . --bin sf
 
 This section demonstrates a standard workflow:
 
-### 1. Prepare Paths
+### 1. Prepare
 
-You need to define the following three paths:
+You need to define the following two paths:
 
 1.  **Save Path (`$SAVE_DIR`)**: The specific world directory under `.minecraft/saves/` (containing `level.dat`).
 2.  **Git Repo Path (`$GIT_DIR`)**: A bare Git repository to store the final backup data. Recommended for reliable storage media; reserve at least 3x the space of the original save.
+
+You also need to know the Minecraft version of your save (`$MC_VERSION`), e.g. `1.21.11`.
 
 ### 2. Initialize Git Repository
 
@@ -82,41 +77,45 @@ git --git-dir $GIT_DIR config gc.auto 0
 Use the following command to backup and create a commit:
 
 ```sh
-sf commit $SAVE_DIR $GIT_DIR --repack -b main --init -m "Your backup note"
+sf commit $SAVE_DIR $GIT_DIR --mc-version $MC_VERSION --repack -b main --init -m "Your backup note"
 ```
 
-CLI reference:
+This command reads the save at `$SAVE_DIR`, parses it as Minecraft version `$MC_VERSION`, creates an initial commit on the `main` branch of the bare repository at `$GIT_DIR`, and automatically repacks loose objects.
+
+`sf commit --help`:
 
 ```text
+$ sf commit --help
 Flatten save and commit to Git
 
-Usage: sf commit [OPTIONS] --branch <BRANCH> --message <MESSAGE> <SAVE_DIR> <GIT_DIR>
+Usage: sf commit [OPTIONS] --branch <BRANCH> --message <MESSAGE> --mc-version <MC_VERSION> <SAVE_DIR> <GIT_DIR>
 
 Arguments:
   <SAVE_DIR>  Path to your save
   <GIT_DIR>   Path to the bare Git repository
 
 Options:
-  -b, --branch <BRANCH>    Commit to this branch
-  -v, --verbose...         Increase logging verbosity
-      --init               Commit as initial commit
-  -q, --quiet...           Decrease logging verbosity
-  -m, --message <MESSAGE>  Commit message
-      --repack             Automatically repack loose objects
-  -h, --help               Print help
+  -b, --branch <BRANCH>          Commit to this branch
+  -v, --verbose...               Increase logging verbosity
+      --init                     Commit as initial commit
+  -q, --quiet...                 Decrease logging verbosity
+  -m, --message <MESSAGE>        Commit message
+      --repack                   Automatically repack loose objects
+      --mc-version <MC_VERSION>  Minecraft version (e.g. 1.21.11)
+  -h, --help                     Print help
 ```
 
 ### 4. Restore Backup
 
-**Note:** If `$REPO_DIR` is not empty, please back up its contents manually (e.g., as a `.zip`) before restoring.
+**Note:** If `$SAVE_DIR` is not empty, please back up its contents manually (e.g., as a `.zip`) before restoring.
 
-1.  **Find History**:
+1.  **Find History**: Note the Commit ID (`$COMMIT`) of the version you want to restore.
     ```sh
     git --git-dir $GIT_DIR log --oneline
     ```
 2.  **Restore the Save**:
     ```sh
-    sf checkout $SAVE_DIR $REPO_DIR -c $COMMIT
+    sf checkout $SAVE_DIR $GIT_DIR -c $COMMIT
     ```
 
 ## How It Works

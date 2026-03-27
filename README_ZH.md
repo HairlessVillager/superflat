@@ -5,17 +5,11 @@
 > [!IMPORTANT]
 > **贡献者许可协议**：在向本项目提交 PR 前，请阅读我们的[贡献者许可协议](#贡献者许可协议)。
 
-> [!IMPORTANT]
-> **开发预警**：本项目正处于激进开发阶段，命令行接口（CLI）和存储格式尚未稳定。
-
-> [!IMPORTANT]
-> **版本支持**：目前主要针对 **Minecraft 1.21.11 Java Edition**。其他版本的兼容性仍在评估中。
-
 Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Java 版存档转换为 **Git 友好** 的格式。通过利用 Git 成熟的版本控制与差分压缩能力，Superflat 实现了：
 
 1.  **极高的空间效率**：存储一份快照的增量开销极小（典型值：单次快照仅占存档原始 Zip 体积的 **2%**）。
 2.  **极速备份**：支持快速存储快照（Superflat 处理速度约 30MiB/s，Git 写入速度约 20MiB/s）。
-3.  **快速回滚**：支持快照的毫秒级检出（Superflat 还原速度约 45MiB/s）。
+3.  **快速回滚**：支持快速检出快照（Superflat 还原速度约 45MiB/s）。
 
 ## 路线图 (Roadmap)
 
@@ -29,11 +23,10 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
     - [x] `ChunkRegionCrafter` 并行化
     - [x] `LocalGitOdb` 并行化
     - [ ] 更多的性能优化
-- [ ] 完善用户文档
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
 - [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
 - [ ] 构建自动编译 GitHub 工作流
-- [ ] 扩展历史版本支持 (1.21.11 之前)
+- [x] 扩展历史版本支持 (1.21.11 之前)
 - [ ] 基于 Pumpkin 地形生成算法的区块去冗余（仅存储修改量）
 
 ## 致谢
@@ -53,7 +46,6 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 ```sh
 git clone https://github.com/HairlessVillager/superflat.git
 cd superflat
-# 注意：依赖项 pumpkin-data 和 pumpkin-world 编译较慢，约需 2-3 分钟
 cargo install --path . --bin sf
 ```
 
@@ -61,16 +53,18 @@ cargo install --path . --bin sf
 
 本节演示一个标准的工作流：
 
-### 1. 路径准备
+### 1. 准备
 
-你需要明确以下三个路径：
+你需要明确以下两个路径：
 
 1.  **存档路径 (`$SAVE_DIR`)**：即 `.minecraft/saves/` 下的具体存档目录（包含 `level.dat`）。
 2.  **Git 仓库路径 (`$GIT_DIR`)**：最终存放备份数据的 Git 裸仓库。建议存放在可靠的存储介质上，预留空间建议为原存档的 3 倍以上。
 
+此外你需要记住你的游戏存档的版本号（`$MC_VERSION`），比如 1.21.11 的版本记为 `1.21.11`。
+
 ### 2. 初始化 Git 仓库
 
-若是首次备份，请创建一个 Git 裸仓库并禁用自动垃圾回收（以便后面实现更小的仓库体积）：
+若是首次备份，请创建一个 Git 裸仓库并禁用自动垃圾回收（以便后面手动实现更小的仓库体积）：
 
 ```sh
 git init --initial-branch main --bare $GIT_DIR
@@ -82,41 +76,45 @@ git --git-dir $GIT_DIR config gc.auto 0
 使用下面的命令备份并创建一个 Commit：
 
 ```sh
-sf commit $SAVE_DIR $GIT_DIR --repack -b main --init -m "你的备份注释"
+sf commit $SAVE_DIR $GIT_DIR --mc-version $MC_VERSION --repack -b main --init -m "你的备份注释"
 ```
 
-命令行解析：
+这行命令的意思是：读取 `$SAVE_DIR` 位置的存档，按照 `$MC_VERSION` 的游戏版本解析，作为初始提交提交到 `$GIT_DIR` 位置裸仓库的 `main` 分支上，并自动重打包。
+
+`sf commit --help` 命令行帮助文档：
 
 ```text
+$ sf commit --help
 Flatten save and commit to Git
 
-Usage: sf commit [OPTIONS] --branch <BRANCH> --message <MESSAGE> <SAVE_DIR> <GIT_DIR>
+Usage: sf commit [OPTIONS] --branch <BRANCH> --message <MESSAGE> --mc-version <MC_VERSION> <SAVE_DIR> <GIT_DIR>
 
 Arguments:
   <SAVE_DIR>  Path to your save
   <GIT_DIR>   Path to the bare Git repository
 
 Options:
-  -b, --branch <BRANCH>    Commit to this branch
-  -v, --verbose...         Increase logging verbosity
-      --init               Commit as initial commit
-  -q, --quiet...           Decrease logging verbosity
-  -m, --message <MESSAGE>  Commit message
-      --repack             Automatically repack loose objects
-  -h, --help               Print help
+  -b, --branch <BRANCH>          Commit to this branch
+  -v, --verbose...               Increase logging verbosity
+      --init                     Commit as initial commit
+  -q, --quiet...                 Decrease logging verbosity
+  -m, --message <MESSAGE>        Commit message
+      --repack                   Automatically repack loose objects
+      --mc-version <MC_VERSION>  Minecraft version (e.g. 1.21.11)
+  -h, --help                     Print help
 ```
 
 ### 4. 恢复备份
 
-**注意：** 如果 `$REPO_DIR` 非空，恢复前请务必手动备份（如使用 `.zip`）。
+**注意：** 如果 `$SAVE_DIR` 非空，恢复前请务必手动备份（如使用 `.zip`）。
 
-1.  **查找历史版本**：
+1.  **查找历史版本**：记住要恢复版本的 Commit ID（`$COMMIT`）
     ```sh
     git --git-dir $GIT_DIR log --oneline
     ```
 2.  **还原存档**：
     ```sh
-    sf checkout $SAVE_DIR $REPO_DIR -c $COMMIT
+    sf checkout $SAVE_DIR $GIT_DIR -c $COMMIT
     ```
 
 ## 实现原理
