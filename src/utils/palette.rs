@@ -235,7 +235,7 @@ impl BiomePalette {
             .map(|entry| {
                 let s = entry.extract_string().unwrap();
                 let key = s.strip_prefix("minecraft:").unwrap_or(s);
-                Biome::from_name(key).unwrap().id
+                Biome::from_name(key).unwrap().id // TODO: remove depends on pumpkin-data
             })
             .collect::<Vec<_>>();
 
@@ -285,7 +285,7 @@ impl BlockPalette {
                 let block = {
                     let block_name = entry.get_string("Name").unwrap();
                     Block::from_name(block_name)
-                        .expect(format!("unknown block name: {block_name}").as_str())
+                        .expect(format!("unknown block name: {block_name}").as_str()) // TODO: remove depends on pumpkin-data
                 };
                 if let Some(props) = entry.get_compound("Properties") {
                     let props_map = props
@@ -293,7 +293,7 @@ impl BlockPalette {
                         .iter()
                         .map(|(key, value)| (key.as_str(), value.extract_string().unwrap()))
                         .collect::<Vec<_>>();
-                    block.from_properties(&props_map).to_state_id(block)
+                    block.from_properties(&props_map).to_state_id(block) // TODO: remove depends on pumpkin-data
                 } else {
                     return block.default_state.id;
                 }
