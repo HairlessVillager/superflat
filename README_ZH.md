@@ -24,9 +24,12 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - [x] `superflat checkout`：从 Git 检出并流式还原存档
 - [ ] 深度性能分析与极致性能优化
     - [x] `ChunkRegionCrafter` 并行化
+    - [x] `LocalGitOdb` 并行化
+    - [ ] 更多的性能优化
 - [ ] 完善用户文档
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
 - [ ] 精简 Sections Dump 功能对 Pumpkin 的依赖
+- [ ] 构建自动编译 GitHub 工作流
 - [ ] 扩展历史版本支持 (1.21.11 之前)
 - [ ] 基于 Pumpkin 地形生成算法的区块去冗余（仅存储修改量）
 
@@ -60,8 +63,7 @@ cargo install --path . --bin sf
 你需要明确以下三个路径：
 
 1.  **存档路径 (`$SAVE_DIR`)**：即 `.minecraft/saves/` 下的具体存档目录（包含 `level.dat`）。
-2.  **平坦化仓库路径 (`$REPO_DIR`)**：中间产物存放处。建议存放在固态硬盘（SSD）或 **tmpfs**（内存盘）中。注意：需预留原存档 20 倍的空间。
-3.  **Git 仓库路径 (`$GIT_DIR`)**：最终存放备份数据的 Git 裸仓库。建议存放在可靠的存储介质上，预留空间建议为原存档的 3 倍以上。
+2.  **Git 仓库路径 (`$GIT_DIR`)**：最终存放备份数据的 Git 裸仓库。建议存放在可靠的存储介质上，预留空间建议为原存档的 3 倍以上。
 
 ### 2. 初始化 Git 仓库
 

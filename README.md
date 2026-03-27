@@ -24,9 +24,12 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [x] `superflat checkout`: Checkout from Git and stream-restore the save.
 - [ ] In-depth performance profiling and extreme optimization.
     - [x] `ChunkRegionCrafter` parallelization
+    - [x] `LocalGitOdb` parallelization
+    - [ ] More optimization...
 - [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
 - [ ] Reduce dependency on Pumpkin for the Sections Dump feature.
+- [ ] Write auto compile GitHub Workflos.
 - [ ] Expand support for legacy versions (pre-1.21.11).
 - [ ] Chunk de-duplication based on Pumpkin terrain generation algorithms (storing only modifications).
 
@@ -60,8 +63,7 @@ This section demonstrates a standard workflow:
 You need to define the following three paths:
 
 1.  **Save Path (`$SAVE_DIR`)**: The specific world directory under `.minecraft/saves/` (containing `level.dat`).
-2.  **Flattened Repo Path (`$REPO_DIR`)**: The location for intermediate products. We recommend using an SSD or **tmpfs** (RAM disk). Note: Reserve 20x the space of the original save.
-3.  **Git Repo Path (`$GIT_DIR`)**: A bare Git repository to store the final backup data. Recommended for reliable storage media; reserve at least 3x the space of the original save.
+2.  **Git Repo Path (`$GIT_DIR`)**: A bare Git repository to store the final backup data. Recommended for reliable storage media; reserve at least 3x the space of the original save.
 
 ### 2. Initialize Git Repository
 
