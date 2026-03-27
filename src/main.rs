@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use superflat::{
     checkout, commit, flatten, unflatten,
-    utils::git_cmd::{git_cmd, git_repo_exists},
+    utils::git_cmd::{git_cmd, git_count_objects, git_repack_all, git_repo_exists},
 };
 
 /// Superflat - A bridge between Git and Minecraft save
@@ -119,7 +119,7 @@ fn main() {
             repack,
         } => {
             let parents = {
-                let out = git_cmd(git_dir.to_owned())
+                let out = git_cmd(&git_dir)
                     .args(["rev-parse", &format!("{branch}^{{commit}}")])
                     .output()
                     .unwrap();
@@ -141,24 +141,13 @@ fn main() {
             commit(save_dir, git_dir.to_owned(), parents, &message, Some(r#ref));
 
             if repack {
-                log::info!("Repacking");
-                let _repack_out = git_cmd(git_dir.to_owned())
-                    .args(["repack", "--depth", "4095", "--window", "2", "-a", "-d"])
-                    .output()
-                    .unwrap();
+                git_count_objects(&git_dir);
+                git_repack_all(&git_dir, 4095, 2);
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated")
             }
 
-            log::info!("Counting objects");
-            let count_out = git_cmd(git_dir.to_owned())
-                .args(["count-objects", "-vH"])
-                .output()
-                .unwrap()
-                .stdout;
-            for line in String::from_utf8(count_out).unwrap().lines() {
-                log::info!("git-count-objects: {line}")
-            }
+            git_count_objects(git_dir.to_owned());
         }
         CliSubcommand::Checkout {
             save_dir,
