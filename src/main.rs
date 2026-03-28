@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use superflat::{
     checkout, commit, flatten, unflatten,
-    utils::git_cmd::{git_cmd, git_count_objects, git_repack_all, git_repo_exists},
+    utils::cmd::{git_cmd, git_count_objects, git_repack_ad, git_repo_exists},
 };
 
 /// Superflat - A bridge between Git and Minecraft save
@@ -170,7 +170,7 @@ fn main() {
 
             if repack {
                 git_count_objects(&git_dir);
-                git_repack_all(&git_dir, 4095, 2);
+                git_repack_ad(&git_dir, 4095, 2);
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }

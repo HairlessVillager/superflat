@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::{
     crafter::{ChunkRegionCrafter, Crafter, GzipNbtCrafter, OtherRegionCrafter, RawCrafter},
     odb::{LocalFsOdb, LocalGitOdb},
-    utils::{git_cmd::git_cmd, mc_data::init_mc_data},
+    utils::{cmd::git_cmd, mc_data::init_mc_data},
 };
 
 mod crafter;
