@@ -23,10 +23,9 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
     - [x] `ChunkRegionCrafter` parallelization
     - [x] `LocalGitOdb` parallelization
     - [ ] More optimization...
-- [ ] Comprehensive user documentation.
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
 - [x] Reduce dependency on Pumpkin for the Sections Dump feature.
-- [ ] Write auto compile GitHub Workflows.
+- [x] Write auto compile GitHub Workflows.
 - [x] Expand support for legacy versions (pre-1.21.11).
 - [ ] Chunk de-duplication based on Pumpkin terrain generation algorithms (storing only modifications).
 
@@ -38,11 +37,16 @@ Thanks to Lewis for providing the 4.6GiB real-world test save.
 
 ## Installation
 
-Currently, this project must be compiled from source. Pre-compiled binaries for various platforms will be provided once the Rust refactor is complete.
+Ensure [Git](https://git-scm.com/install/) is installed, as `sf commit` and `sf checkout` depend on Git for streaming backup and restoration.
+
+There are two ways to get the Superflat executable:
+
+- Download pre-compiled binaries from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page.
+- Or compile locally from source.
 
 ### Local Compilation
 
-Ensure you have [Git](https://git-scm.com/install/) and [rustup](https://rustup.rs/).
+Ensure you have [rustup](https://rustup.rs/) installed.
 
 ```sh
 git clone https://github.com/HairlessVillager/superflat.git

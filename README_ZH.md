@@ -25,7 +25,7 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
     - [ ] 更多的性能优化
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
 - [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
-- [ ] 构建自动编译 GitHub 工作流
+- [x] 构建自动编译 GitHub 工作流
 - [x] 扩展历史版本支持 (1.21.11 之前)
 - [ ] 基于 Pumpkin 地形生成算法的区块去冗余（仅存储修改量）
 
@@ -37,11 +37,16 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 
 ## 安装
 
-目前本项目需从源码编译。待 Rust 重构完成后，我们将提供各平台的预编译二进制文件。
+请确保系统中已安装 [Git](https://git-scm.com/install/)，`sf commit` 和 `sf checkout` 依赖 Git 进程提供流式备份与还原。
+
+获取 Superflat 的可执行文件有两种方式：
+
+- 从 [GitHub Release](https://github.com/HairlessVillager/superflat/releases) 页面下载预编译的可执行文件
+- 或者本地编译安装。
 
 ### 本地编译
 
-请确保系统中已安装 [Git](https://git-scm.com/install/) 和 [rustup](https://rustup.rs/)。
+请确保系统中已安装 [rustup](https://rustup.rs/)。
 
 ```sh
 git clone https://github.com/HairlessVillager/superflat.git
