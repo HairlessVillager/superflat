@@ -2,9 +2,6 @@
 
 # Superflat
 
-> [!IMPORTANT]
-> **Contributor License Agreement**: Before open a Pull Request, please read [CLA](#CLA).
-
 Superflat is a Minecraft save format conversion tool designed to convert Minecraft Java Edition saves into a **Git-friendly** format. By leveraging Git’s mature version control and delta compression capabilities, Superflat achieves:
 
 1.  **Extreme Space Efficiency**: The incremental overhead of storing a snapshot is minimal (typically only **2%** of the original Zip volume of the save).
@@ -27,13 +24,19 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [x] Reduce dependency on Pumpkin for the Sections Dump feature.
 - [x] Write auto compile GitHub Workflows.
 - [x] Expand support for legacy versions (pre-1.21.11).
-- [ ] Chunk de-duplication based on Pumpkin terrain generation algorithms (storing only modifications).
+- [ ] Chunk de-duplication based on Minecraft original terrain generation algorithms (storing only modifications).
+- [ ] Change the project license to the Rust community standard MIT/Apache 2.0 dual-license, to better integrate into the Rust ecosystem and allow more developers and organizations to use and contribute without barriers.
+    - [ ] Replace the `pumpkin-nbt` dependency
+    - [ ] Re-implement the Sub-chunk Dump (Sections Dump) feature
+    - [ ] Remove `src/utils/palette.rs` from Git history entirely and force-push
 
 ## Credits
 
-Special thanks to the [Pumpkin-MC Project](https://github.com/Pumpkin-MC) for inspiration and support. This project relies on [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) (licensed under GPL-3.0) for its core Sub-chunk Dump (Sections Dump) functionality.
+Special thanks to the [Pumpkin-MC Project](https://github.com/Pumpkin-MC) for inspiration and support. So far, this project relies on [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) (licensed under GPL-3.0) for its core Sub-chunk Dump (Sections Dump) functionality.
 
-Thanks to Lewis for providing the 4.6GiB real-world test save.
+Thanks to the [`gitoxide` project](https://github.com/GitoxideLabs/gitoxide) (licensed under MIT / Apache-2.0) for providing a highly efficient and modern Git-compatible implementation. This project relies on `gitoxide` for high-performance object reading and writing.
+
+Thanks to Lewis for providing the 4.6GiB real-world test save. In the early stages of development, we lacked a large amount of real experimental data.
 
 ## Installation
 
@@ -171,15 +174,3 @@ We verified the tool's effectiveness using 13 consecutive backups of a survival 
 Since this project depends on the GPLv3-licensed Pumpkin project, it is also released under the GPLv3 license:
 
 - [GNU General Public License v3.0](./LICENSE)
-
-## CLA
-
-```markdown
-Relicensing Disclosure & Contributor Agreement
-
-By submitting a Pull Request (PR) to this project, you agree to the following terms:
-
-1. License Grant: You grant the project maintainer(s) (HairlessVillager) a perpetual, worldwide, non-exclusive, sublicensable, and irrevocable license to change the project's open-source license from GPLv3 to MIT or any other license (including, but not limited to, other permissive licenses or proprietary licenses) in the future.
-2. Ownership Representation: You represent and warrant that you own the copyright to the code being contributed or have the explicit legal authority from the copyright owner to grant this license.
-3. Future Bound: Once merged, your contributions will be subject to the project’s current license and any future licenses adopted by the project maintainer(s) in accordance with this agreement.
-```

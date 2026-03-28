@@ -1999,7 +1999,7 @@ dependencies = [
 [[package]]
 name = "pumpkin-nbt"
 version = "0.1.0-dev+1.21.11"
-source = "git+https://github.com/HairlessVillager/Pumpkin.git?rev=b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470#b8fdf14b2c3a7b5d69462d37e6f3fbdb4f6b2470"
+source = "git+https://github.com/Pumpkin-MC/Pumpkin.git?rev=e10a45b3db3cf1ecc5909bae6cdc3409cf907099#e10a45b3db3cf1ecc5909bae6cdc3409cf907099"
 dependencies = [
  "bytes",
  "cesu8",

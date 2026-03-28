@@ -2,13 +2,10 @@
 
 # Superflat
 
-> [!IMPORTANT]
-> **贡献者许可协议**：在向本项目提交 PR 前，请阅读我们的[贡献者许可协议](#贡献者许可协议)。
-
 Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Java 版存档转换为 **Git 友好** 的格式。通过利用 Git 成熟的版本控制与差分压缩能力，Superflat 实现了：
 
 1.  **极高的空间效率**：存储一份快照的增量开销极小（典型值：单次快照仅占存档原始 Zip 体积的 **2%**）。
-2.  **极速备份**：支持快速存储快照（Superflat 处理速度约 30MiB/s，Git 写入速度约 20MiB/s）。
+2.  **快速备份**：支持快速存储快照（Superflat 处理速度约 30MiB/s，Git 写入速度约 20MiB/s）。
 3.  **快速回滚**：支持快速检出快照（Superflat 还原速度约 45MiB/s）。
 
 ## 路线图 (Roadmap)
@@ -27,13 +24,19 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
 - [x] 构建自动编译 GitHub 工作流
 - [x] 扩展历史版本支持 (1.21.11 之前)
-- [ ] 基于 Pumpkin 地形生成算法的区块去冗余（仅存储修改量）
+- [ ] 基于 Minecraft 原版地形生成算法的区块去冗余（仅存储修改量）
+- [ ] 将项目许可变更为 Rust 社区标准的 MIT/Apache 2.0 双授权，这是为了更好地融入 Rust 生态系统，并让更多的开发者和组织能够无障碍地使用和贡献
+    - [ ] 替换 `pumpkin-nbt` 依赖
+    - [ ] 重新实现子区块转储（Sections Dump）功能
+    - [ ] 从 Git 历史中彻底移除 `src/utils/palette.rs` 文件并强制推送
 
 ## 致谢
 
-特别感谢 [Pumpkin-MC 项目](https://github.com/Pumpkin-MC) 对本项目的启发与支持。本项目依赖 [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin)（基于 GPL-3.0 协议）实现了核心的子区块转储（Sections Dump）功能。
+特别感谢 [Pumpkin-MC 项目](https://github.com/Pumpkin-MC) 对本项目的启发与支持。截至目前，本项目依赖 [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin)（基于 GPL-3.0 协议）实现了核心的子区块转储（Sections Dump）功能。
 
-感谢 lewis 提供的 4.6GiB 真实测试存档。
+感谢 [`gitoxide` 项目](https://github.com/GitoxideLabs/gitoxide) （基于 MIT / Apache-2.0 双许可）提供了非常高效且现代的 Git 兼容实现。本项目依赖 `gitoxide` 实现高性能的对象读取与写入功能。
+
+感谢 lewis 提供的共计 4.6GiB 的存档。在早期开发阶段我们非常缺少大量真实的实验数据。
 
 ## 安装
 
@@ -171,15 +174,3 @@ Git 作为成熟的版本控制工具，其对象排序和 **Delta 压缩算法*
 由于依赖了 GPLv3 开源的 Pumpkin 项目，本项目采用 GPLv3 许可协议开源：
 
 - [GNU General Public License v3.0](./LICENSE)
-
-## 贡献者许可协议
-
-```markdown
-关于重新许可的声明 (Relicensing Disclosure)
-
-通过向本项目提交 Pull Request (PR)，即表示您同意以下条款：
-
-1. 您授予项目维护者（HairlessVillager）一项永久的、全球性的、非排他的许可，允许其在未来将本项目的开源许可证从 GPLv3 更改为 MIT 或其他任何许可证（包括专有许可证）。
-2. 您确认您拥有该代码的版权或有权进行此类授权。
-3. 您的贡献在合并后将受本项目当前及未来变更后的许可证约束。
-```
