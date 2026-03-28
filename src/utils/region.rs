@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -16,16 +16,17 @@ pub fn read_region<B: Read + Seek>(
     mut buf: B,
     region_x: i32,
     region_z: i32,
-) -> Option<([u8; 4096], Vec<(i32, i32, Vec<u8>)>)> {
+) -> Result<Option<([u8; 4096], Vec<(i32, i32, Vec<u8>)>)>> {
     let mut locations = [0u8; 4096];
     if let Err(err) = buf.read_exact(&mut locations) {
         if err.kind() == std::io::ErrorKind::UnexpectedEof {
-            return None;
+            return Ok(None);
         }
     }
 
     let mut timestamps = [0u8; 4096];
-    buf.read_exact(&mut timestamps).unwrap();
+    buf.read_exact(&mut timestamps)
+        .context("Buffer's length < 8192")?;
 
     let mut compressed_chunks = Vec::new();
 
@@ -39,17 +40,21 @@ pub fn read_region<B: Read + Seek>(
         }
 
         let byte_offset = offset * SECTOR_SIZE;
-        buf.seek(SeekStart(byte_offset as u64)).unwrap();
+        buf.seek(SeekStart(byte_offset as u64))
+            .with_context(|| format!("At chunk #{i}: Failed to seek {byte_offset}"))?;
 
         let mut header = [0u8; 5];
-        buf.read_exact(&mut header).unwrap();
+        buf.read_exact(&mut header)
+            .with_context(|| format!("At chunk #{i}: Failed to read chunk header"))?;
 
         let data_length = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize;
         let compression_type = header[4];
 
         let compressed_len = data_length.saturating_sub(1);
         let mut compressed_data = vec![0u8; compressed_len];
-        buf.read_exact(&mut compressed_data).unwrap();
+        buf.read_exact(&mut compressed_data).with_context(|| {
+            format!("At chunk #{i}: Failed to read chunk body (length: {compressed_len})")
+        })?;
 
         compressed_chunks.push((i, compression_type, compressed_data));
     }
@@ -73,10 +78,10 @@ pub fn read_region<B: Read + Seek>(
         .collect();
 
     if chunks.is_empty() {
-        return None;
+        return Ok(None);
     }
 
-    Some((timestamps, chunks))
+    Ok(Some((timestamps, chunks)))
 }
 
 /// Reconstruct a .mca region file from a timestamp header and chunks.
@@ -86,20 +91,26 @@ pub fn write_region<B: Write + Seek>(
     timestamp_header: &[u8; 4096],
     chunks: impl IntoParallelIterator<Item = (i32, i32, impl AsRef<[u8]>)>,
     mut buf: B,
-) {
-    buf.seek(SeekStart(4096)).unwrap();
-    buf.write(timestamp_header).unwrap();
+) -> Result<()> {
+    buf.seek(SeekStart(4096)).context("Failed to seek 4096")?;
+    buf.write(timestamp_header)
+        .context("Failed to write timestamp header")?;
 
     let mut current_sector = 2usize;
     let chunks = chunks
         .into_par_iter()
         .map(|(chunk_x, chunk_z, nbt)| {
-            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(nbt.as_ref()).unwrap();
-            let compressed = encoder.finish().unwrap();
-            (chunk_x, chunk_z, compressed)
+            let mut encoder = ZlibEncoder::new(Vec::with_capacity(8192), Compression::default());
+            encoder.write_all(nbt.as_ref()).with_context(|| {
+                format!("At chunk ({chunk_x}, {chunk_z}): Failed to feed data into encoder")
+            })?;
+            let compressed = encoder.finish().with_context(|| {
+                format!("At chunk ({chunk_x}, {chunk_z}): Failed to finalize compression")
+            })?;
+            Ok((chunk_x, chunk_z, compressed))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
+
     for (chunk_x, chunk_z, compressed) in chunks {
         let local_x = chunk_x - (region_x * 32);
         let local_z = chunk_z - (region_z * 32);
@@ -120,32 +131,46 @@ pub fn write_region<B: Write + Seek>(
         let loc_offset = index * 4;
         let sector_bytes = (current_sector as u32).to_be_bytes();
 
-        buf.seek(SeekStart(loc_offset as u64)).unwrap();
+        buf.seek(SeekStart(loc_offset as u64)).with_context(|| {
+            format!("At chunk ({chunk_x}, {chunk_z}): Failed to seek header@{loc_offset}")
+        })?;
         buf.write(&[
             sector_bytes[1],
             sector_bytes[2],
             sector_bytes[3],
             sectors_needed as u8,
         ])
-        .unwrap();
+        .with_context(|| format!("At chunk ({chunk_x}, {chunk_z}): Failed to write header"))?;
 
         buf.seek(SeekStart((current_sector * SECTOR_SIZE) as u64))
-            .unwrap();
-        buf.write(&payload).unwrap();
+            .with_context(|| {
+                format!(
+                    "At chunk ({chunk_x}, {chunk_z}): Failed to seek chunk@{}",
+                    current_sector * SECTOR_SIZE
+                )
+            })?;
+        buf.write(&payload)
+            .with_context(|| format!("At chunk ({chunk_x}, {chunk_z}): Failed to write payload"))?;
+
         buf.write(&std::iter::repeat_n(0u8, padding).collect::<Vec<u8>>())
-            .unwrap();
+            .with_context(|| format!("At chunk ({chunk_x}, {chunk_z}): Failed to write padding"))?;
 
         current_sector += sectors_needed;
     }
+    Ok(())
 }
 
 /// Parse (region_x, region_z) from a filename like "r.-1.2.mca".
 #[must_use]
-pub fn parse_xz(filename: &str) -> (i32, i32) {
+pub fn parse_xz(filename: &str) -> Result<(i32, i32)> {
     let parts: Vec<&str> = filename.split('.').collect();
-    let x: i32 = parts[1].parse().unwrap();
-    let z: i32 = parts[2].parse().unwrap();
-    (x, z)
+    let x: i32 = parts[1]
+        .parse()
+        .with_context(|| format!("Failed to parse {} as i32", parts[1]))?;
+    let z: i32 = parts[2]
+        .parse()
+        .with_context(|| format!("Failed to parse {} as i32", parts[1]))?;
+    Ok((x, z))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -160,87 +185,111 @@ pub struct SectionsDump {
     pub sections: Vec<Section>,
 }
 
-fn dump_sections(sections: &[NbtTag]) -> (SectionsDump, Vec<String>) {
-    let mut warnings = Vec::new();
+fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
     let sections = sections
         .iter()
         .enumerate()
-        .filter_map(|(idx, section)| {
-            let section = section.extract_compound().unwrap();
-            let y = section.get_byte("Y").unwrap();
+        .map(|(idx, section)| {
+            let section = section.extract_compound().with_context(|| {
+                format!("Expect sections.{idx} is a NBT compund, got: {section:#?}")
+            })?;
+            let y = section.get_byte("Y").with_context(|| {
+                format!("Missing NBT byte 'sections.{idx}.Y', got: {section:#?}")
+            })?;
             let biome_dump = {
                 let Some(biome) = section.get_compound("biomes") else {
-                    warnings.push(format!(
-                        "Expect sections.{idx} (y={y}) contains 'biomes', but all fields got: {:?}",
+                    log::warn!(
+                        "Missing 'sections.{idx}.biomes' (y={y}), all fields got: {:?}",
                         section
                             .child_tags
                             .iter()
                             .map(|(field, _)| field)
                             .collect::<Vec<_>>()
-                    ));
-                    return None;
+                    );
+                    return Ok(None);
                 };
-                BiomePalette::from_disk_nbt(biome)
+                BiomePalette::from_disk_nbt(biome)?
                     .iter()
                     .copied()
                     .collect::<Vec<_>>()
             };
             let block_dump = {
-                let block_states = section.get_compound("block_states").unwrap();
-                BlockPalette::from_disk_nbt(block_states)
+                let Some(block_states) = section.get_compound("block_states") else {
+                    log::warn!(
+                        "Missing 'sections.{idx}.block_states' (y={y}), all fields got: {:?}",
+                        section
+                            .child_tags
+                            .iter()
+                            .map(|(field, _)| field)
+                            .collect::<Vec<_>>()
+                    );
+                    return Ok(None);
+                };
+                BlockPalette::from_disk_nbt(block_states)?
                     .iter()
                     .copied()
                     .collect::<Vec<_>>()
             };
             // TODO: extract block/sky light
-            Some(Ok(Section {
+            Ok(Some(Section {
                 y,
                 biome: biome_dump,
                 block_state: block_dump,
             }))
         })
-        .collect::<Result<Vec<_>>>()
-        .unwrap();
-    (SectionsDump { sections }, warnings)
+        .map(|e: Result<Option<Section>>| e.transpose())
+        .filter_map(|e| e)
+        .collect::<Result<_, _>>()?;
+    Ok(SectionsDump { sections })
 }
 
-fn load_sections(dump: SectionsDump) -> Vec<NbtTag> {
+fn load_sections(dump: SectionsDump) -> Result<Vec<NbtTag>> {
     dump.sections
         .into_iter()
         .map(|section| {
-            NbtTag::Compound(NbtCompound {
-                child_tags: vec![
-                    ("Y".into(), NbtTag::Byte(section.y)),
-                    (
-                        "biomes".into(),
-                        NbtTag::Compound(
-                            BiomePalette::from_iter(section.biome.into_iter()).to_disk_nbt(),
-                        ),
+            let child_tags = vec![
+                ("Y".into(), NbtTag::Byte(section.y)),
+                (
+                    "biomes".into(),
+                    NbtTag::Compound(
+                        BiomePalette::from_iter(section.biome.into_iter()).to_disk_nbt()?,
                     ),
-                    (
-                        "block_states".into(),
-                        NbtTag::Compound(
-                            BlockPalette::from_iter(section.block_state.into_iter()).to_disk_nbt(),
-                        ),
+                ),
+                (
+                    "block_states".into(),
+                    NbtTag::Compound(
+                        BlockPalette::from_iter(section.block_state.into_iter()).to_disk_nbt()?,
                     ),
-                ],
-            })
+                ),
+            ];
+            Ok(NbtTag::Compound(NbtCompound { child_tags }))
         })
-        .collect()
+        .collect::<Result<_>>()
 }
 
 /// Split a chunk nbt into (other_nbt, sections_dump, warnings)
-pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump, Vec<String>)> {
-    let (sections_dump, warnings) = {
+pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
+    let sections_dump = {
         let sections_idx = nbt
             .root_tag
             .child_tags
             .iter()
             .position(|(field, _)| field == "sections")
-            .unwrap();
+            .with_context(|| {
+                format!(
+                    "Missing 'sections', all fields: {:#?}",
+                    nbt.root_tag
+                        .child_tags
+                        .iter()
+                        .map(|(field, _)| field)
+                        .collect::<Vec<_>>()
+                )
+            })?;
         let sections = nbt.root_tag.child_tags.swap_remove(sections_idx).1;
-        let sections = sections.extract_list().unwrap();
-        dump_sections(sections)
+        let sections = sections
+            .extract_list()
+            .with_context(|| format!("Expect sections is a NBT list, got: {sections:#?}"))?;
+        dump_sections(sections)?
     };
 
     // TODO: extract block/sky light
@@ -252,15 +301,22 @@ pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump, Vec<String>)> {
     {
         nbt.root_tag.child_tags[is_light_on_idx].1 = NbtTag::Byte(i8::from(false));
     } else {
-        panic!("Should contain 'isLightOn', got: {:#?}", nbt);
+        anyhow::bail!(
+            "Missing 'isLightOn', all fields: {:#?}",
+            nbt.root_tag
+                .child_tags
+                .iter()
+                .map(|(field, _)| field)
+                .collect::<Vec<_>>()
+        );
         // nbt.root_tag.put_bool("isLightOn", false);
     }
 
-    Ok((nbt, sections_dump, warnings))
+    Ok((nbt, sections_dump))
 }
 
 /// Restore a chunk nbt from (other_nbt, sections_dump)
-pub fn restore_chunk(mut other: Nbt, dump: SectionsDump) -> Nbt {
-    other.root_tag.put_list("sections", load_sections(dump));
-    other
+pub fn restore_chunk(mut other: Nbt, dump: SectionsDump) -> Result<Nbt> {
+    other.root_tag.put_list("sections", load_sections(dump)?);
+    Ok(other)
 }

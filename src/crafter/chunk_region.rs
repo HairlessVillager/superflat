@@ -34,9 +34,13 @@ impl Crafter for ChunkRegionCrafter {
                 log::info!("Process chunk region file {key}");
                 let data = save.get(&key);
                 let filename = key.split('/').next_back().unwrap_or("");
-                let (region_x, region_z) = parse_xz(filename);
+                let (region_x, region_z) = parse_xz(filename)
+                    .with_context(|| format!("Failed to parse (x,z) from {key}"))
+                    .unwrap();
                 let Some((timestamp_header, chunks)) =
                     read_region(Cursor::new(data), region_x, region_z)
+                        .with_context(|| format!("Failed to read region from {key}"))
+                        .unwrap()
                 else {
                     continue;
                 };
@@ -49,13 +53,9 @@ impl Crafter for ChunkRegionCrafter {
                         if nbt.get_string("Status").unwrap() != "minecraft:full" {
                             return Ok(None);
                         }
-                        let (other, sections, warnings) = split_chunk(nbt).with_context(|| {
+                        let (other, sections) = split_chunk(nbt).with_context(|| {
                             format!("Failed to process chunk ({chunk_x}, {chunk_z}) at file {key}")
                         })?;
-                        for w in warnings {
-                            log::warn!("At chunk ({chunk_x}, {chunk_z}) at file {key}: {w}");
-                        }
-
                         let other_dump = dump_nbt(sort_nbt(other), true);
                         let mut sections_dump = Vec::with_capacity(200 * 1024);
                         to_bytes(&sections, &mut sections_dump).unwrap();
@@ -96,7 +96,9 @@ impl Crafter for ChunkRegionCrafter {
                     continue;
                 };
                 let filename = region_key.split('/').next_back().unwrap_or("");
-                let (region_x, region_z) = parse_xz(filename);
+                let (region_x, region_z) = parse_xz(filename)
+                    .with_context(|| format!("Failed to parse (x,z) from {ts_key}"))
+                    .unwrap();
                 let timestamp_header = storage.get(&ts_key);
 
                 let other_pattern = format!("{region_key}/other/c.*.*.nbt");
@@ -104,8 +106,12 @@ impl Crafter for ChunkRegionCrafter {
                 let other_keys: Vec<String> = storage.glob(&other_pattern);
                 let coords: Vec<(i32, i32)> = other_keys
                     .iter()
-                    .map(|k| parse_xz(k.split('/').next_back().unwrap_or("")))
-                    .collect();
+                    .map(|k| {
+                        parse_xz(k.split('/').next_back().unwrap_or(""))
+                            .with_context(|| format!("Failed to parse (x,z) from {k}"))
+                    })
+                    .collect::<Result<_>>()
+                    .unwrap();
                 let dump_keys: Vec<String> = coords
                     .iter()
                     .map(|(cx, cz)| format!("{region_key}/sections/c.{cx}.{cz}.dump"))
@@ -133,7 +139,12 @@ impl Crafter for ChunkRegionCrafter {
                         let other = load_nbt(Cursor::new(&nbt_data), true);
                         let sections_dump: SectionsDump =
                             from_bytes(Cursor::new(&dump_data)).unwrap();
-                        let nbt = dump_nbt(restore_chunk(other, sections_dump), true);
+                        let nbt = dump_nbt(
+                            restore_chunk(other, sections_dump)
+                                .with_context(|| format!("Failed to restore chunk for {ts_key}"))
+                                .unwrap(),
+                            true,
+                        );
                         (chunk_x, chunk_z, nbt)
                     })
                     .collect::<Vec<_>>();
@@ -145,7 +156,9 @@ impl Crafter for ChunkRegionCrafter {
                     &timestamp_header[..4096].try_into().unwrap(),
                     chunks,
                     Cursor::new(&mut mca_buf),
-                );
+                )
+                .with_context(|| format!("Failed to write region for {ts_key}"))
+                .unwrap();
                 save.put(region_key, &mca_buf);
             }
         }

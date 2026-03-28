@@ -20,6 +20,7 @@ use std::{
     sync::{LazyLock, OnceLock},
 };
 
+use anyhow::{Context, Result};
 use minecraft_data_rs::{
     Api,
     api::versions_by_minecraft_version,
@@ -41,30 +42,30 @@ pub fn init_mc_data(version: &str) {
     MC_DATA.get_or_init(|| {
         log::info!("Fetching Minecraft version list");
         let versions =
-            versions_by_minecraft_version().expect("failed to load minecraft version list");
+            versions_by_minecraft_version().expect("Failed to load minecraft version list");
         let version = versions
             .get(version)
             .expect(&format!(
-                "invalid Minecraft version: {version}, expect one of: {:?}",
+                "Invalid Minecraft version: {version}, expect one of: {:?}",
                 versions.keys()
             ))
             .clone();
         log::info!("Fetching Minecraft version data");
-        let api = Api::new(version).unwrap();
+        let api = Api::new(version).expect("Failed to fetch Minecraft ver");
         McData {
             blocks_by_name: api
                 .blocks
                 .blocks_by_name()
-                .expect("failed to load blocks by name"),
+                .expect("Failed to load blocks by name"),
             blocks_by_state_id: api
                 .blocks
                 .blocks_by_state_id()
-                .expect("failed to load blocks by state id"),
+                .expect("Failed to load blocks by state id"),
             biomes_by_name: api
                 .biomes
                 .biomes_by_name()
-                .expect("failed to load biomes by name"),
-            biomes_by_id: api.biomes.biomes().expect("failed to load biomes by id"),
+                .expect("Failed to load biomes by name"),
+            biomes_by_id: api.biomes.biomes().expect("Failed to load biomes by id"),
         }
     });
 }
@@ -72,17 +73,21 @@ pub fn init_mc_data(version: &str) {
 fn mc_data() -> &'static McData {
     MC_DATA
         .get()
-        .expect("mc_data not initialized — call init_mc_data() first")
+        .expect("mc_data not initialized, call init_mc_data() first")
 }
 
-fn compute_state_id(block: &Block, props: &[(&str, &str)]) -> u32 {
+fn compute_state_id(block: &Block, props: &[(&str, &str)]) -> Result<u32> {
     let states = match block.states.as_deref() {
         Some(s) if !s.is_empty() => s,
         _ => {
-            return block.default_state.unwrap();
+            return block
+                .default_state
+                .context("Data missing block.default_state");
         }
     };
-    let min_state_id = block.min_state_id.unwrap();
+    let min_state_id = block
+        .min_state_id
+        .context("Data missing block.min_state_id")?;
     let mut offset = 0u32;
     let mut multiplier = 1u32;
     for state in states.iter().rev() {
@@ -90,33 +95,50 @@ fn compute_state_id(block: &Block, props: &[(&str, &str)]) -> u32 {
             .iter()
             .find(|(k, _)| *k == state.name)
             .map(|(_, v)| *v)
-            .unwrap();
+            .with_context(|| {
+                format!(
+                    "Block state {} is required, all states: {:#?}",
+                    state.name, props
+                )
+            })?;
         let values = if let StateType::Bool = state.state_type {
             &BOOL_VALUES
         } else {
-            state.values.as_ref().unwrap().as_slice()
+            state
+                .values
+                .as_ref()
+                .context("Data missing state.values")?
+                .as_slice()
         };
-        let idx = values.iter().position(|v| v == value).expect(&format!(
-            "invalid value for {}.{}: {}, expect one of {:?}",
-            block.name, state.name, value, values
-        )) as u32;
+        let idx = values.iter().position(|v| v == value).with_context(|| {
+            format!(
+                "Invalid value '{}' for state '{}', expect one of {:?}",
+                value, state.name, values
+            )
+        })? as u32;
         offset += idx * multiplier;
         multiplier *= state.num_values;
     }
-    min_state_id + offset
+    Ok(min_state_id + offset)
 }
 
 fn compute_props_from_state_id(
     block: &'static Block,
     state_id: u32,
-) -> Vec<(&'static str, &'static str)> {
+) -> Result<Vec<(&'static str, &'static str)>> {
     // TODO: maybe use String for better perf
     let states = match block.states.as_deref() {
         Some(s) if !s.is_empty() => s,
-        _ => return vec![],
+        _ => return Ok(vec![]),
     };
-    let min_state_id = block.min_state_id.unwrap();
-    let mut relative = state_id.checked_sub(min_state_id).unwrap();
+    let min_state_id = block
+        .min_state_id
+        .context("Data missing block.min_state_id")?;
+    anyhow::ensure!(
+        state_id >= min_state_id,
+        "Expect state_id(={state_id}) >= min_state_id(={min_state_id})"
+    );
+    let mut relative = state_id - min_state_id;
     let mut result = Vec::with_capacity(states.len());
     for state in states.iter().rev() {
         let idx = (relative % state.num_values) as usize;
@@ -124,55 +146,65 @@ fn compute_props_from_state_id(
         let values = if let StateType::Bool = state.state_type {
             &BOOL_VALUES
         } else {
-            state.values.as_ref().unwrap().as_slice()
+            state
+                .values
+                .as_ref()
+                .context("Data missing state.values")?
+                .as_slice()
         };
-        let value = values.as_ref().get(idx).map(|s| s.as_str()).unwrap();
+        let value = values
+            .as_ref()
+            .get(idx)
+            .map(|s| s.as_str())
+            .with_context(|| format!("idx(={idx}) out of bound, values: {values:#?}"))?;
         result.push((state.name.as_str(), value));
     }
-    result
+    Ok(result)
 }
 
 /// Returns biome registry ID from name (without `"minecraft:"` prefix).
-pub fn biome_id_from_name(name: &str) -> u8 {
-    mc_data()
+pub fn biome_id_from_name(name: &str) -> Result<u8> {
+    let biome = mc_data()
         .biomes_by_name
         .get(name)
-        .expect(&format!("unknown biome name: {name}"))
-        .id as u8
+        .with_context(|| format!("Unknown biome name: {name}"))?;
+    Ok(biome.id as u8)
 }
 
 /// Returns biome name (without `"minecraft:"` prefix) from registry ID.
-pub fn biome_name_from_id(id: u8) -> &'static str {
+pub fn biome_name_from_id(id: u8) -> Result<&'static str> {
     // TODO: maybe use String for better perf
-    mc_data()
+    let biome = mc_data()
         .biomes_by_id
         .get(&(id as u32))
-        .expect(&format!("unknown biome id: {id}"))
-        .name
-        .as_str()
+        .with_context(|| format!("Unknown biome id: {id}"))?;
+    Ok(biome.name.as_str())
 }
 
 /// Returns block state ID from block name (without `"minecraft:"` prefix) and properties.
-pub fn block_state_id_from_name_and_props(name: &str, props: &[(&str, &str)]) -> u16 {
+pub fn block_state_id_from_name_and_props(name: &str, props: &[(&str, &str)]) -> Result<u16> {
     let block = mc_data()
         .blocks_by_name
         .get(name)
-        .expect(&format!("unknown block name: {name}"));
-    if props.is_empty() {
-        block.default_state.unwrap() as u16
+        .with_context(|| format!("Unknown block name: {name}"))?;
+    let default_state = if props.is_empty() {
+        block
+            .default_state
+            .ok_or(anyhow::anyhow!("Data missing block.default_state"))?
     } else {
-        compute_state_id(block, props) as u16
-    }
+        compute_state_id(block, props).with_context(|| format!("block.name: {}", block.name))?
+    };
+    Ok(default_state as u16)
 }
 
 /// Returns block name (without `"minecraft:"` prefix) and properties from state ID.
 pub fn block_name_and_props_from_state_id(
     state_id: u16,
-) -> (String, Vec<(&'static str, &'static str)>) {
+) -> Result<(String, Vec<(&'static str, &'static str)>)> {
     let block: &'static Block = mc_data()
         .blocks_by_state_id
         .get(&(state_id as u32))
-        .expect(&format!("unknown block state id: {state_id}"));
-    let props = compute_props_from_state_id(block, state_id as u32);
-    (block.name.clone(), props)
+        .with_context(|| format!("Unknown block state id: {state_id}"))?;
+    let props = compute_props_from_state_id(block, state_id as u32)?;
+    Ok((block.name.clone(), props))
 }

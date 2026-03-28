@@ -27,6 +27,7 @@
 
 use std::{hash::Hash, iter::repeat_n};
 
+use anyhow::{Context, Result};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 
 use super::mc_data::{
@@ -238,23 +239,30 @@ impl<V: Default + Hash + Eq + Copy, const DIM: usize> Default for PalettedContai
 
 impl BiomePalette {
     #[must_use]
-    pub fn from_disk_nbt(nbt: &NbtCompound) -> Self {
+    pub fn from_disk_nbt(nbt: &NbtCompound) -> Result<Self> {
         let palette = nbt
             .get_list("palette")
-            .unwrap()
+            .with_context(|| format!("Missing NBT list 'palette', got: {nbt:#?}"))?
             .into_iter()
-            .map(|entry| {
-                let s = entry.extract_string().unwrap();
+            .enumerate()
+            .map(|(idx, entry)| {
+                let s = entry.extract_string().with_context(|| {
+                    format!("Expect 'palette.{idx}' is a NBT string, got: {entry:#?}")
+                })?;
                 let key = s.strip_prefix("minecraft:").unwrap_or(s);
                 biome_id_from_name(key)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
 
-        Self::from_palette_and_packed_data(palette, nbt.get_long_array("data"), BIOME_DISK_MIN_BITS)
+        Ok(Self::from_palette_and_packed_data(
+            palette,
+            nbt.get_long_array("data"),
+            BIOME_DISK_MIN_BITS,
+        ))
     }
 
     #[must_use]
-    pub fn to_disk_nbt(&self) -> NbtCompound {
+    pub fn to_disk_nbt(&self) -> Result<NbtCompound> {
         #[expect(clippy::unnecessary_min_or_max)]
         let bits_per_entry = self.bits_per_entry().max(BIOME_DISK_MIN_BITS);
         let (palette, packed_data) = self.to_palette_and_packed_data(bits_per_entry);
@@ -263,12 +271,15 @@ impl BiomePalette {
             palette
                 .into_iter()
                 .map(|registry_id| {
-                    NbtTag::String(format!("minecraft:{}", biome_name_from_id(registry_id)))
+                    Ok(NbtTag::String(format!(
+                        "minecraft:{}",
+                        biome_name_from_id(registry_id)?
+                    )))
                 })
-                .collect(),
+                .collect::<Result<_>>()?,
         );
 
-        NbtCompound {
+        Ok(NbtCompound {
             child_tags: if packed_data.is_empty() {
                 vec![("palette".into(), palette)]
             } else {
@@ -277,50 +288,64 @@ impl BiomePalette {
                     ("palette".into(), palette),
                 ]
             },
-        }
+        })
     }
 }
 
 impl BlockPalette {
     #[must_use]
-    pub fn from_disk_nbt(nbt: &NbtCompound) -> Self {
+    pub fn from_disk_nbt(nbt: &NbtCompound) -> Result<Self> {
         let palette = nbt
             .get_list("palette")
-            .unwrap()
+            .with_context(|| format!("Missing NBT list 'palette', got: {nbt:#?}"))?
             .into_iter()
-            .map(|entry| {
-                let entry = entry.extract_compound().unwrap();
-                let block_name = entry.get_string("Name").unwrap();
+            .enumerate()
+            .map(|(idx, entry)| {
+                let entry = entry.extract_compound().with_context(|| {
+                    format!("Expect 'palette.{idx}' is a NBT compund, got: {entry:#?}")
+                })?;
+                let block_name = entry.get_string("Name").with_context(|| {
+                    format!("Missing NBT string 'palette.{idx}.Name', got: {entry:#?}")
+                })?;
                 let name = block_name.strip_prefix("minecraft:").unwrap_or(block_name);
                 if let Some(props) = entry.get_compound("Properties") {
                     let props_map = props
                         .child_tags
                         .iter()
-                        .map(|(key, value)| (key.as_str(), value.extract_string().unwrap()))
-                        .collect::<Vec<_>>();
+                        .enumerate()
+                        .map(|(idx2, (key, value))| Ok((key.as_str(), value.extract_string().with_context(|| {
+                            format!("Expect 'palette.{idx}.Properties.{idx2}' is a NBT string, got: {value:#?}")
+                        })?)))
+                        .collect::<Result<Vec<_>>>()?;
                     block_state_id_from_name_and_props(name, &props_map)
                 } else {
                     block_state_id_from_name_and_props(name, &[])
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
 
-        Self::from_palette_and_packed_data(palette, nbt.get_long_array("data"), BLOCK_DISK_MIN_BITS)
+        Ok(Self::from_palette_and_packed_data(
+            palette,
+            nbt.get_long_array("data"),
+            BLOCK_DISK_MIN_BITS,
+        ))
     }
 
-    pub fn to_disk_nbt(&self) -> NbtCompound {
+    pub fn to_disk_nbt(&self) -> Result<NbtCompound> {
         let bits_per_entry = self.bits_per_entry().max(BLOCK_DISK_MIN_BITS);
         let (palette, packed_data) = self.to_palette_and_packed_data(bits_per_entry);
 
         let palette = NbtTag::List(
             palette
                 .into_iter()
-                .map(Self::block_state_id_to_palette_entry)
-                .map(NbtTag::Compound)
-                .collect(),
+                .map(|e| {
+                    let palette_entry = Self::block_state_id_to_palette_entry(e)?;
+                    Ok(NbtTag::Compound(palette_entry))
+                })
+                .collect::<Result<_>>()?,
         );
 
-        NbtCompound {
+        Ok(NbtCompound {
             child_tags: if packed_data.is_empty() {
                 vec![("palette".into(), palette)]
             } else {
@@ -329,11 +354,11 @@ impl BlockPalette {
                     ("palette".into(), palette),
                 ]
             },
-        }
+        })
     }
 
-    fn block_state_id_to_palette_entry(registry_id: u16) -> NbtCompound {
-        let (name, props) = block_name_and_props_from_state_id(registry_id);
+    fn block_state_id_to_palette_entry(registry_id: u16) -> Result<NbtCompound> {
+        let (name, props) = block_name_and_props_from_state_id(registry_id)?;
 
         let child_tags = if props.is_empty() {
             vec![("Name".into(), NbtTag::String(format!("minecraft:{name}")))]
@@ -353,7 +378,7 @@ impl BlockPalette {
             ]
         };
 
-        NbtCompound { child_tags }
+        Ok(NbtCompound { child_tags })
     }
 }
 

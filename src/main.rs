@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use superflat::{
@@ -143,17 +144,22 @@ fn main() {
                 let out = git_cmd(&git_dir)
                     .args(["rev-parse", &format!("{branch}^{{commit}}")])
                     .output()
-                    .unwrap();
-                let branch_exists = out.status.code().unwrap() == 0;
+                    .expect("Failed to run git rev-parse");
+                let branch_exists = out.status.success();
                 match (branch_exists, init) {
                     (true, false) => {
-                        vec![String::from_utf8(out.stdout).unwrap().trim().to_owned()]
+                        vec![
+                            String::from_utf8(out.stdout)
+                                .expect("git output is not valid UTF-8")
+                                .trim()
+                                .to_owned(),
+                        ]
                     }
                     (false, true) => vec![],
                     (true, true) => panic!("Branch '{branch}' exists, remove --init"),
                     (false, false) => panic!(
-                        "Invalid branch name '{branch}'. Self-check via 'git --git-dir {} rev-parse {branch}^{{commit}}'",
-                        git_dir.to_str().unwrap()
+                        "Invalid branch name '{branch}'. Self-check via 'git --git-dir {:?} rev-parse {branch}^{{commit}}'",
+                        git_dir.as_os_str()
                     ),
                 }
             };
@@ -194,15 +200,37 @@ fn main() {
                 use std::io::{self, Write};
                 use superflat::utils::region::{parse_xz, read_region};
 
-                let (region_x, region_z) =
-                    parse_xz(region_path.file_name().unwrap().to_str().unwrap());
-                let (_, xz_nbts) =
-                    read_region(fs::File::open(region_path).unwrap(), region_x, region_z).unwrap();
+                let (region_x, region_z) = parse_xz(
+                    region_path
+                        .file_name()
+                        .expect("Invalid region path")
+                        .to_str()
+                        .expect("Region path contains invalid UTF-8"),
+                )
+                .expect("Failed to parse region filename");
+                let (_, xz_nbts) = read_region(
+                    fs::File::open(region_path).expect("Failed to open region file"),
+                    region_x,
+                    region_z,
+                )
+                .expect("Failed to read region file")
+                .expect("Region file is empty");
                 let (_, _, nbt) = xz_nbts
                     .iter()
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
-                    .unwrap();
-                io::stdout().write_all(nbt).unwrap();
+                    .with_context(|| {
+                        format!(
+                            "Missing chunk, all chunk positions: {:#?}",
+                            xz_nbts
+                                .iter()
+                                .map(|(x, z, _)| format!("({x}, {z})"))
+                                .collect::<Vec<_>>()
+                        )
+                    })
+                    .expect("Chunk not found");
+                io::stdout()
+                    .write_all(nbt)
+                    .expect("Failed to write to stdout");
             }
             UtilsSubcommand::Section {
                 region_path,
@@ -217,21 +245,33 @@ fn main() {
                 use superflat::utils::nbt::load_nbt;
                 use superflat::utils::region::{parse_xz, read_region, split_chunk};
 
-                let (region_x, region_z) =
-                    parse_xz(region_path.file_name().unwrap().to_str().unwrap());
-                let (_, xz_nbts) =
-                    read_region(fs::File::open(region_path).unwrap(), region_x, region_z).unwrap();
+                let (region_x, region_z) = parse_xz(
+                    region_path
+                        .file_name()
+                        .expect("Invalid region path")
+                        .to_str()
+                        .expect("Region path contains invalid UTF-8"),
+                )
+                .expect("Failed to parse region filename");
+                let (_, xz_nbts) = read_region(
+                    fs::File::open(region_path).expect("Failed to open region file"),
+                    region_x,
+                    region_z,
+                )
+                .expect("Failed to read region file")
+                .expect("Region file is empty");
                 let (_, _, nbt_bytes) = xz_nbts
                     .iter()
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
                     .expect("chunk not found");
                 let nbt = load_nbt(Cursor::new(nbt_bytes), true);
-                let (_, sections_dump, _) = split_chunk(nbt).unwrap();
+                let (_, sections_dump) =
+                    split_chunk(nbt).expect("Failed to load sections dump from chunk nbt");
                 let section = sections_dump
                     .sections
                     .iter()
                     .find(|s| s.y == section_y)
-                    .expect("section not found");
+                    .expect("Section not found");
                 let mut stdout = io::stdout().lock();
                 if block {
                     let bytes: Vec<u8> = section
@@ -239,9 +279,11 @@ fn main() {
                         .iter()
                         .flat_map(|&v| v.to_le_bytes())
                         .collect();
-                    stdout.write_all(&bytes).unwrap();
+                    stdout.write_all(&bytes).expect("Failed to write to stdout");
                 } else {
-                    stdout.write_all(&section.biome).unwrap();
+                    stdout
+                        .write_all(&section.biome)
+                        .expect("Failed to write to stdout");
                 }
             }
         },
