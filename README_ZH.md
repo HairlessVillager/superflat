@@ -71,6 +71,20 @@ git init --initial-branch main --bare $GIT_DIR
 git --git-dir $GIT_DIR config gc.auto 0
 ```
 
+用下面的命令检查是否设置了 Git 的提交身份：
+
+```sh
+git config user.name
+git config user.email
+```
+
+如果没有输出则需要设置，避免提交时报错，下面的命令设置了全局的 Git 提交身份：
+
+```sh
+git config --global user.name $YOUR_USER_NAME
+git config --global user.email $YOUR_USER_EMAIL
+```
+
 ### 3. 执行备份
 
 使用下面的命令备份并创建一个 Commit：

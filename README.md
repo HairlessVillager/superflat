@@ -72,6 +72,20 @@ git init --initial-branch main --bare $GIT_DIR
 git --git-dir $GIT_DIR config gc.auto 0
 ```
 
+Use these commands to check your Git commit identity:
+
+```sh
+git config user.name
+git config user.email
+```
+
+If nothing is displayed, you must set it to prevent commit errors. Use the commands below to set your global Git identity:
+
+```sh
+git config --global user.name $YOUR_USER_NAME
+git config --global user.email $YOUR_USER_EMAIL
+```
+
 ### 3. Execute Backup
 
 Use the following command to backup and create a commit:
