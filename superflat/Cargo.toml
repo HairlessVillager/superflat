@@ -21,11 +21,6 @@ gix = "0.81.0"
 tempfile = "3.27.0"
 criterion = { version = "0.8.2" }
 
-[profile.profiling]
-inherits = "release"
-debug = true
-strip = false
-
 [[bench]]
 name = "git_odb"
 harness = false

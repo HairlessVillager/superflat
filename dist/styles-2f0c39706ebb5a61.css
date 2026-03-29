@@ -1,0 +1,73 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, html {
+  height: 100%;
+  background: #121212;
+  color: #e0e0e0;
+  font-family: monospace;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #333;
+}
+
+.toolbar input {
+  flex: 1;
+  padding: 6px 10px;
+  background: #2d2d2d;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.toolbar button {
+  padding: 6px 18px;
+  background: #0078d4;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-pick {
+  background: #444;
+}
+
+.btn-pick:hover:not(:disabled) {
+  background: #555;
+}
+
+.toolbar button:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+.console {
+  flex: 1;
+  margin: 0;
+  padding: 12px;
+  background: #121212;
+  color: #c8f7c5;
+  font-family: monospace;
+  font-size: 13px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
