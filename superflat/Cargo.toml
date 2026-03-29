@@ -1,0 +1,35 @@
+[package]
+name = "superflat"
+version = "0.3.0"
+edition = "2024"
+license = "GPL-3.0"
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+
+flate2 = "1.1.9"
+glob = "0.3.3"
+rayon = "1.11.0"
+minecraft-data-rs = { git = "https://github.com/HairlessVillager/minecraft-data-rs.git", rev = "52f23357b2fec4473b7a2dc0110b2f99cb50a4e4" }
+pumpkin-nbt = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", rev = "e10a45b3db3cf1ecc5909bae6cdc3409cf907099" }
+serde = { version = "1.0.228", features = ["derive"] }
+bytes = { version = "1.11.1", features = ["serde"] }
+gix = "0.81.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+criterion = { version = "0.8.2" }
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
+[[bench]]
+name = "git_odb"
+harness = false
+
+[[bench]]
+name = "unflatten"
+harness = false
