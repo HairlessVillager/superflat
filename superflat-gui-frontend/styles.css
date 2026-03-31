@@ -19,10 +19,16 @@ main {
 
 .toolbar {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 12px;
   background: #1e1e1e;
   border-bottom: 1px solid #333;
+}
+
+.toolbar-row {
+  display: flex;
+  gap: 8px;
 }
 
 .toolbar input {

@@ -119,7 +119,68 @@ async fn run_commit(save_dir: String, branch: String, message: String, app: AppH
     let _ = app.emit("commit-done", ());
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+async fn run_checkout(save_dir: String, commit: String, app: AppHandle) {
+    let save_path = PathBuf::from(&save_dir);
+
+    let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_owned(),
+        None => {
+            let _ = app.emit("commit-output", "Error: invalid save directory path");
+            let _ = app.emit("commit-done", ());
+            return;
+        }
+    };
+
+    let git_dir = save_path
+        .join("../..")
+        .join("backups")
+        .join(format!("{}.git", save_name));
+    let git_dir_str = git_dir.to_string_lossy().into_owned();
+
+    let args = vec![
+        "checkout".to_owned(),
+        save_dir.clone(),
+        git_dir_str,
+        "--commit".to_owned(),
+        commit,
+        "--mc-version".to_owned(),
+        "1.21.11".to_owned(),
+    ];
+
+    let mut child = match Command::new("superflat")
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = app.emit("commit-output", format!("Error: {}", e));
+            let _ = app.emit("commit-done", ());
+            return;
+        }
+    };
+
+    if let Some(stdout) = child.stdout.take() {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app.emit("commit-output", line);
+        }
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app.emit("commit-output", format!("stderr: {}", line));
+        }
+    }
+
+    let _ = child.wait().await;
+    let _ = app.emit("commit-done", ());
+}
+
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -129,7 +190,8 @@ pub fn run() {
             pick_directory,
             get_settings,
             save_settings,
-            run_commit
+            run_commit,
+            run_checkout
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

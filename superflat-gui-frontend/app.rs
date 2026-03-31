@@ -11,6 +11,9 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = listen)]
     async fn tauri_listen(event: &str, handler: &Closure<dyn Fn(JsValue)>) -> JsValue;
+
+    #[wasm_bindgen(js_name = setInterval)]
+    fn set_interval(closure: &Closure<dyn Fn()>, millis: u32) -> i32;
 }
 
 #[derive(Serialize)]
@@ -18,6 +21,12 @@ struct RunCommitArgs {
     save_dir: String,
     branch: String,
     message: String,
+}
+
+#[derive(Serialize)]
+struct RunCheckoutArgs {
+    save_dir: String,
+    commit: String,
 }
 
 #[derive(Serialize)]
@@ -55,11 +64,21 @@ fn current_datetime_string() -> String {
 pub fn App() -> impl IntoView {
     let (save_dir, set_save_dir) = signal(String::new());
     let (branch, set_branch) = signal(String::from("main"));
+    let (message, set_message) = signal(String::new());
+    let (commit_id, set_commit_id) = signal(String::new());
+    let (clock, set_clock) = signal(current_datetime_string());
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
     let (is_running, set_is_running) = signal(false);
     let (show_settings, set_show_settings) = signal(false);
     // draft branch edited inside the settings dialog
     let (draft_branch, set_draft_branch) = signal(String::new());
+
+    // Tick clock every second
+    let tick = Closure::<dyn Fn()>::new(move || {
+        set_clock.set(current_datetime_string());
+    });
+    set_interval(&tick, 1000);
+    tick.forget();
 
     // Load persisted settings on mount
     spawn_local(async move {
@@ -106,7 +125,10 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             let save_dir_val = save_dir.get_untracked();
             let branch_val = branch.get_untracked();
-            let message_val = current_datetime_string();
+            let message_val = {
+                let m = message.get_untracked();
+                if m.is_empty() { current_datetime_string() } else { m }
+            };
 
             let set_lines = set_output_lines;
             let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
@@ -148,24 +170,91 @@ pub fn App() -> impl IntoView {
         });
     };
 
+    let run_checkout = move |_| {
+        cleanup_listeners();
+        set_output_lines.set(Vec::new());
+        set_is_running.set(true);
+
+        spawn_local(async move {
+            let save_dir_val = save_dir.get_untracked();
+            let commit_val = commit_id.get_untracked();
+
+            let set_lines = set_output_lines;
+            let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
+                let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
+                    .unwrap_or(JsValue::NULL);
+                if let Some(line) = payload.as_string() {
+                    set_lines.update(|lines| lines.push(line));
+                }
+            });
+
+            let set_running = set_is_running;
+            let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
+                set_running.set(false);
+            });
+
+            let unlisten_output = tauri_listen("commit-output", &on_output).await;
+            let unlisten_done = tauri_listen("commit-done", &on_done).await;
+
+            on_output.forget();
+            on_done.forget();
+
+            if let (Some(u1), Some(u2)) = (
+                unlisten_output.dyn_into::<js_sys::Function>().ok(),
+                unlisten_done.dyn_into::<js_sys::Function>().ok(),
+            ) {
+                UNLISTEN_FNS.with(|fns| {
+                    fns.borrow_mut().push(u1);
+                    fns.borrow_mut().push(u2);
+                });
+            }
+
+            let args = serde_wasm_bindgen::to_value(&RunCheckoutArgs {
+                save_dir: save_dir_val,
+                commit: commit_val,
+            })
+            .unwrap();
+            invoke("run_checkout", args).await;
+        });
+    };
+
     view! {
         <main>
             <div class="toolbar">
-                <input
-                    type="text"
-                    prop:value=move || save_dir.get()
-                    on:input=move |ev| set_save_dir.set(event_target_value(&ev))
-                    placeholder="Path to save directory ($SAVE_DIR)"
-                />
-                <button class="btn-pick" on:click=pick_dir disabled=move || is_running.get()>
-                    "Browse"
-                </button>
-                <button on:click=run_commit disabled=move || is_running.get()>
-                    {move || if is_running.get() { "Running..." } else { "Commit" }}
-                </button>
-                <button class="btn-settings" on:click=open_settings disabled=move || is_running.get()>
-                    "Settings"
-                </button>
+                <div class="toolbar-row">
+                    <input
+                        type="text"
+                        prop:value=move || save_dir.get()
+                        on:input=move |ev| set_save_dir.set(event_target_value(&ev))
+                        placeholder="Path to save directory ($SAVE_DIR)"
+                    />
+                    <button class="btn-pick" on:click=pick_dir disabled=move || is_running.get()>
+                        "Browse"
+                    </button>
+                    <button class="btn-settings" on:click=open_settings disabled=move || is_running.get()>
+                        "Settings"
+                    </button>
+                </div>
+                <div class="toolbar-row">
+                    <input
+                        type="text"
+                        prop:value=move || message.get()
+                        on:input=move |ev| set_message.set(event_target_value(&ev))
+                        placeholder=move || clock.get()
+                    />
+                    <button on:click=run_commit disabled=move || is_running.get()>
+                        {move || if is_running.get() { "Running..." } else { "Commit" }}
+                    </button>
+                    <input
+                        type="text"
+                        prop:value=move || commit_id.get()
+                        on:input=move |ev| set_commit_id.set(event_target_value(&ev))
+                        placeholder="Commit ID"
+                    />
+                    <button on:click=run_checkout disabled=move || is_running.get()>
+                        "Checkout"
+                    </button>
+                </div>
             </div>
 
             <Show when=move || show_settings.get()>
