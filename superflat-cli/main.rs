@@ -69,7 +69,7 @@ enum CliSubcommand {
         save_dir: PathBuf,
         /// Path to the bare Git repository
         git_dir: PathBuf,
-        /// Commit ID to checkout
+        /// Commit-ish to checkout (commit ID or revision expression, e.g. HEAD^1, branch~2)
         #[arg(short, long)]
         commit: String,
         /// Minecraft version (e.g. 1.21.11)
@@ -188,7 +188,14 @@ fn main() {
             git_dir,
             commit,
             mc_version,
-        } => checkout(save_dir, git_dir, commit, &mc_version),
+        } => {
+            if save_dir.exists() {
+                let bak = save_dir.with_extension("bak");
+                log::warn!("save_dir {save_dir:?} already exists, renaming to {bak:?}");
+                std::fs::rename(&save_dir, &bak).unwrap();
+            }
+            checkout(save_dir, git_dir, commit, &mc_version)
+        }
 
         CliSubcommand::Utils { action } => match action {
             UtilsSubcommand::Chunk {

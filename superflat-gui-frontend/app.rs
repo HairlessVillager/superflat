@@ -65,7 +65,7 @@ pub fn App() -> impl IntoView {
     let (save_dir, set_save_dir) = signal(String::new());
     let (branch, set_branch) = signal(String::from("main"));
     let (message, set_message) = signal(String::new());
-    let (commit_id, set_commit_id) = signal(String::new());
+    let (commit_id, set_commit_id) = signal(String::from("main@{10 minutes ago}"));
     let (clock, set_clock) = signal(current_datetime_string());
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
     let (is_running, set_is_running) = signal(false);
@@ -249,7 +249,7 @@ pub fn App() -> impl IntoView {
                         type="text"
                         prop:value=move || commit_id.get()
                         on:input=move |ev| set_commit_id.set(event_target_value(&ev))
-                        placeholder="Commit ID"
+                        placeholder="main@{10 minutes ago}"
                     />
                     <button on:click=run_checkout disabled=move || is_running.get()>
                         "Checkout"
