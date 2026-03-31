@@ -1,7 +1,7 @@
 use leptos::task::spawn_local;
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
 #[wasm_bindgen]
@@ -21,17 +21,36 @@ struct RunCommitArgs {
     save_dir: String,
     branch: String,
     message: String,
+    mc_version: String,
 }
 
 #[derive(Serialize)]
 struct RunCheckoutArgs {
     save_dir: String,
     commit: String,
+    mc_version: String,
 }
 
 #[derive(Serialize)]
 struct SaveSettingsArgs {
     branch: String,
+    mc_version: String,
+    default_commit: String,
+}
+
+#[derive(Deserialize)]
+struct Settings {
+    branch: String,
+    mc_version: String,
+    default_commit: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct Profile {
+    save_dir: String,
+    mc_version: String,
+    branch: String,
+    default_commit: String,
 }
 
 thread_local! {
@@ -64,14 +83,19 @@ fn current_datetime_string() -> String {
 pub fn App() -> impl IntoView {
     let (save_dir, set_save_dir) = signal(String::new());
     let (branch, set_branch) = signal(String::from("main"));
+    let (mc_version, set_mc_version) = signal(String::from("1.21.1"));
     let (message, set_message) = signal(String::new());
     let (commit_id, set_commit_id) = signal(String::from("main@{10 minutes ago}"));
     let (clock, set_clock) = signal(current_datetime_string());
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
     let (is_running, set_is_running) = signal(false);
     let (show_settings, set_show_settings) = signal(false);
-    // draft branch edited inside the settings dialog
+    let (show_profiles, set_show_profiles) = signal(false);
+    let (profiles, set_profiles) = signal(Vec::<Profile>::new());
+    // draft values edited inside the settings dialog
     let (draft_branch, set_draft_branch) = signal(String::new());
+    let (draft_mc_version, set_draft_mc_version) = signal(String::new());
+    let (draft_default_commit, set_draft_default_commit) = signal(String::new());
 
     // Tick clock every second
     let tick = Closure::<dyn Fn()>::new(move || {
@@ -83,9 +107,21 @@ pub fn App() -> impl IntoView {
     // Load persisted settings on mount
     spawn_local(async move {
         let result = invoke("get_settings", JsValue::NULL).await;
-        if let Some(b) = result.as_string() {
-            set_branch.set(b.clone());
-            set_draft_branch.set(b);
+        if let Ok(settings) = serde_wasm_bindgen::from_value::<Settings>(result) {
+            set_branch.set(settings.branch.clone());
+            set_draft_branch.set(settings.branch);
+            set_mc_version.set(settings.mc_version.clone());
+            set_draft_mc_version.set(settings.mc_version);
+            set_commit_id.set(settings.default_commit.clone());
+            set_draft_default_commit.set(settings.default_commit);
+        }
+    });
+
+    // Load profiles on mount
+    spawn_local(async move {
+        let result = invoke("get_profiles", JsValue::NULL).await;
+        if let Ok(p) = serde_wasm_bindgen::from_value::<Vec<Profile>>(result) {
+            set_profiles.set(p);
         }
     });
 
@@ -100,6 +136,8 @@ pub fn App() -> impl IntoView {
 
     let open_settings = move |_| {
         set_draft_branch.set(branch.get_untracked());
+        set_draft_mc_version.set(mc_version.get_untracked());
+        set_draft_default_commit.set(commit_id.get_untracked());
         set_show_settings.set(true);
     };
 
@@ -109,10 +147,14 @@ pub fn App() -> impl IntoView {
 
     let apply_settings = move |_| {
         let b = draft_branch.get_untracked();
+        let v = draft_mc_version.get_untracked();
+        let c = draft_default_commit.get_untracked();
         set_branch.set(b.clone());
+        set_mc_version.set(v.clone());
+        set_commit_id.set(c.clone());
         set_show_settings.set(false);
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs { branch: b }).unwrap();
+            let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs { branch: b, mc_version: v, default_commit: c }).unwrap();
             invoke("save_settings", args).await;
         });
     };
@@ -125,6 +167,8 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             let save_dir_val = save_dir.get_untracked();
             let branch_val = branch.get_untracked();
+            let mc_version_val = mc_version.get_untracked();
+            let default_commit_val = commit_id.get_untracked();
             let message_val = {
                 let m = message.get_untracked();
                 if m.is_empty() { current_datetime_string() } else { m }
@@ -161,12 +205,22 @@ pub fn App() -> impl IntoView {
             }
 
             let args = serde_wasm_bindgen::to_value(&RunCommitArgs {
-                save_dir: save_dir_val,
-                branch: branch_val,
+                save_dir: save_dir_val.clone(),
+                branch: branch_val.clone(),
                 message: message_val,
+                mc_version: mc_version_val.clone(),
             })
             .unwrap();
             invoke("run_commit", args).await;
+
+            let profile_args = serde_wasm_bindgen::to_value(&Profile {
+                save_dir: save_dir_val,
+                mc_version: mc_version_val,
+                branch: branch_val,
+                default_commit: default_commit_val,
+            })
+            .unwrap();
+            invoke("upsert_profile", profile_args).await;
         });
     };
 
@@ -178,6 +232,8 @@ pub fn App() -> impl IntoView {
         spawn_local(async move {
             let save_dir_val = save_dir.get_untracked();
             let commit_val = commit_id.get_untracked();
+            let mc_version_val = mc_version.get_untracked();
+            let branch_val = branch.get_untracked();
 
             let set_lines = set_output_lines;
             let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
@@ -210,11 +266,21 @@ pub fn App() -> impl IntoView {
             }
 
             let args = serde_wasm_bindgen::to_value(&RunCheckoutArgs {
-                save_dir: save_dir_val,
-                commit: commit_val,
+                save_dir: save_dir_val.clone(),
+                commit: commit_val.clone(),
+                mc_version: mc_version_val.clone(),
             })
             .unwrap();
             invoke("run_checkout", args).await;
+
+            let profile_args = serde_wasm_bindgen::to_value(&Profile {
+                save_dir: save_dir_val,
+                mc_version: mc_version_val,
+                branch: branch_val,
+                default_commit: commit_val,
+            })
+            .unwrap();
+            invoke("upsert_profile", profile_args).await;
         });
     };
 
@@ -222,6 +288,9 @@ pub fn App() -> impl IntoView {
         <main>
             <div class="toolbar">
                 <div class="toolbar-row">
+                    <button class="btn-profiles" on:click=move |_| set_show_profiles.set(true) disabled=move || is_running.get()>
+                        "Profiles"
+                    </button>
                     <input
                         type="text"
                         prop:value=move || save_dir.get()
@@ -257,6 +326,51 @@ pub fn App() -> impl IntoView {
                 </div>
             </div>
 
+            <Show when=move || show_profiles.get()>
+                <div class="modal-backdrop" on:click=move |_| set_show_profiles.set(false)>
+                    <div class="modal" on:click=|ev| ev.stop_propagation()>
+                        <h2>"Profiles"</h2>
+                        <Show
+                            when=move || !profiles.get().is_empty()
+                            fallback=|| view! { <p class="profiles-empty">"No profiles yet."</p> }
+                        >
+                            <ul class="profiles-list">
+                                <For
+                                    each=move || profiles.get()
+                                    key=|p| p.save_dir.clone()
+                                    children=move |p| {
+                                        let label = p.save_dir.clone();
+                                        let p2 = p.clone();
+                                        view! {
+                                            <li>
+                                                <button
+                                                    class="btn-profile-entry"
+                                                    on:click=move |_| {
+                                                        set_save_dir.set(p2.save_dir.clone());
+                                                        set_branch.set(p2.branch.clone());
+                                                        set_mc_version.set(p2.mc_version.clone());
+                                                        set_commit_id.set(p2.default_commit.clone());
+                                                        set_show_profiles.set(false);
+                                                    }
+                                                >
+                                                    <span class="profile-save-dir">{label}</span>
+                                                    <span class="profile-meta">
+                                                        {move || format!("{} · {} · {}", p.branch, p.mc_version, p.default_commit)}
+                                                    </span>
+                                                </button>
+                                            </li>
+                                        }
+                                    }
+                                />
+                            </ul>
+                        </Show>
+                        <div class="modal-actions">
+                            <button on:click=move |_| set_show_profiles.set(false)>"Close"</button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
+
             <Show when=move || show_settings.get()>
                 <div class="modal-backdrop" on:click=close_settings>
                     <div class="modal" on:click=|ev| ev.stop_propagation()>
@@ -267,6 +381,24 @@ pub fn App() -> impl IntoView {
                                 type="text"
                                 prop:value=move || draft_branch.get()
                                 on:input=move |ev| set_draft_branch.set(event_target_value(&ev))
+                            />
+                        </label>
+                        <label>
+                            "Minecraft version"
+                            <input
+                                type="text"
+                                prop:value=move || draft_mc_version.get()
+                                on:input=move |ev| set_draft_mc_version.set(event_target_value(&ev))
+                                placeholder="e.g. 1.21.1"
+                            />
+                        </label>
+                        <label>
+                            "Default checkout commit"
+                            <input
+                                type="text"
+                                prop:value=move || draft_default_commit.get()
+                                on:input=move |ev| set_draft_default_commit.set(event_target_value(&ev))
+                                placeholder="e.g. main@{10 minutes ago}"
                             />
                         </label>
                         <div class="modal-actions">
