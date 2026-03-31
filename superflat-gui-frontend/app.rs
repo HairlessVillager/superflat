@@ -14,8 +14,15 @@ extern "C" {
 }
 
 #[derive(Serialize)]
-struct RunLsArgs {
-    path: String,
+struct RunCommitArgs {
+    save_dir: String,
+    branch: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct SaveSettingsArgs {
+    branch: String,
 }
 
 thread_local! {
@@ -31,30 +38,76 @@ fn cleanup_listeners() {
     });
 }
 
+fn current_datetime_string() -> String {
+    let d = js_sys::Date::new_0();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        d.get_full_year(),
+        d.get_month() + 1,
+        d.get_date(),
+        d.get_hours(),
+        d.get_minutes(),
+        d.get_seconds(),
+    )
+}
+
 #[component]
 pub fn App() -> impl IntoView {
-    let (dir_path, set_dir_path) = signal(String::from("/"));
+    let (save_dir, set_save_dir) = signal(String::new());
+    let (branch, set_branch) = signal(String::from("main"));
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
     let (is_running, set_is_running) = signal(false);
+    let (show_settings, set_show_settings) = signal(false);
+    // draft branch edited inside the settings dialog
+    let (draft_branch, set_draft_branch) = signal(String::new());
+
+    // Load persisted settings on mount
+    spawn_local(async move {
+        let result = invoke("get_settings", JsValue::NULL).await;
+        if let Some(b) = result.as_string() {
+            set_branch.set(b.clone());
+            set_draft_branch.set(b);
+        }
+    });
 
     let pick_dir = move |_| {
         spawn_local(async move {
             let result = invoke("pick_directory", JsValue::NULL).await;
             if let Some(path) = result.as_string() {
-                set_dir_path.set(path);
+                set_save_dir.set(path);
             }
         });
     };
 
-    let run_ls = move |_| {
+    let open_settings = move |_| {
+        set_draft_branch.set(branch.get_untracked());
+        set_show_settings.set(true);
+    };
+
+    let close_settings = move |_| {
+        set_show_settings.set(false);
+    };
+
+    let apply_settings = move |_| {
+        let b = draft_branch.get_untracked();
+        set_branch.set(b.clone());
+        set_show_settings.set(false);
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs { branch: b }).unwrap();
+            invoke("save_settings", args).await;
+        });
+    };
+
+    let run_commit = move |_| {
         cleanup_listeners();
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
 
         spawn_local(async move {
-            let path = dir_path.get_untracked();
+            let save_dir_val = save_dir.get_untracked();
+            let branch_val = branch.get_untracked();
+            let message_val = current_datetime_string();
 
-            // listen for output lines
             let set_lines = set_output_lines;
             let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
                 let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
@@ -69,8 +122,8 @@ pub fn App() -> impl IntoView {
                 set_running.set(false);
             });
 
-            let unlisten_output = tauri_listen("ls-output", &on_output).await;
-            let unlisten_done = tauri_listen("ls-done", &on_done).await;
+            let unlisten_output = tauri_listen("commit-output", &on_output).await;
+            let unlisten_done = tauri_listen("commit-done", &on_done).await;
 
             on_output.forget();
             on_done.forget();
@@ -85,8 +138,13 @@ pub fn App() -> impl IntoView {
                 });
             }
 
-            let args = serde_wasm_bindgen::to_value(&RunLsArgs { path }).unwrap();
-            invoke("run_ls", args).await;
+            let args = serde_wasm_bindgen::to_value(&RunCommitArgs {
+                save_dir: save_dir_val,
+                branch: branch_val,
+                message: message_val,
+            })
+            .unwrap();
+            invoke("run_commit", args).await;
         });
     };
 
@@ -95,17 +153,41 @@ pub fn App() -> impl IntoView {
             <div class="toolbar">
                 <input
                     type="text"
-                    prop:value=move || dir_path.get()
-                    on:input=move |ev| set_dir_path.set(event_target_value(&ev))
-                    placeholder="/path/to/directory"
+                    prop:value=move || save_dir.get()
+                    on:input=move |ev| set_save_dir.set(event_target_value(&ev))
+                    placeholder="Path to save directory ($SAVE_DIR)"
                 />
                 <button class="btn-pick" on:click=pick_dir disabled=move || is_running.get()>
                     "Browse"
                 </button>
-                <button on:click=run_ls disabled=move || is_running.get()>
-                    {move || if is_running.get() { "Running..." } else { "Run" }}
+                <button on:click=run_commit disabled=move || is_running.get()>
+                    {move || if is_running.get() { "Running..." } else { "Commit" }}
+                </button>
+                <button class="btn-settings" on:click=open_settings disabled=move || is_running.get()>
+                    "Settings"
                 </button>
             </div>
+
+            <Show when=move || show_settings.get()>
+                <div class="modal-backdrop" on:click=close_settings>
+                    <div class="modal" on:click=|ev| ev.stop_propagation()>
+                        <h2>"Settings"</h2>
+                        <label>
+                            "Default branch"
+                            <input
+                                type="text"
+                                prop:value=move || draft_branch.get()
+                                on:input=move |ev| set_draft_branch.set(event_target_value(&ev))
+                            />
+                        </label>
+                        <div class="modal-actions">
+                            <button on:click=close_settings>"Cancel"</button>
+                            <button class="btn-primary" on:click=apply_settings>"Save"</button>
+                        </div>
+                    </div>
+                </div>
+            </Show>
+
             <pre class="console">
                 {move || output_lines.get().join("\n")}
             </pre>

@@ -8,6 +8,7 @@
     "opener:default",
     "core:event:default",
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "store:default"
   ]
 }
