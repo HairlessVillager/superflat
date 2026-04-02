@@ -4,9 +4,15 @@
     "version": "0.1.0",
     "identifier": "com.hairlessvillager.superflat",
     "build": {
-        "beforeDevCommand": "trunk serve",
+        "beforeDevCommand": {
+            "script": "trunk serve",
+            "cwd": ".."
+        },
         "devUrl": "http://localhost:1420",
-        "beforeBuildCommand": "trunk build",
+        "beforeBuildCommand": {
+            "script": "trunk build --release",
+            "cwd": ".."
+        },
         "frontendDist": "../dist"
     },
     "app": {

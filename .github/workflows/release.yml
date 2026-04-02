@@ -90,9 +90,53 @@ jobs:
                       sf-${{ github.ref_name }}-${{ matrix.target }}.zip
                   if-no-files-found: error
 
+    build-tauri-windows:
+        name: Build Tauri Windows portable executable
+        runs-on: windows-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: wasm32-unknown-unknown
+
+            - name: Cache Rust build artifacts
+              uses: swatinem/rust-cache@v2
+              with:
+                  workspaces: |
+                      . -> target
+
+            - name: Install Trunk
+              run: cargo install trunk --locked
+
+            - name: Install Tauri CLI
+              run: cargo install tauri-cli --version "^2" --locked
+
+            - name: Build portable Windows executable
+              working-directory: superflat-gui-backend
+              run: cargo tauri build --ci --target x86_64-pc-windows-msvc --no-bundle
+
+            - name: Prepare release artifact
+              shell: pwsh
+              run: |
+                  Copy-Item `
+                    target/x86_64-pc-windows-msvc/release/superflat-gui.exe `
+                    superflat-gui-${{ github.ref_name }}-x86_64-pc-windows-msvc.exe
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: superflat-gui-x86_64-pc-windows-msvc
+                  path: superflat-gui-${{ github.ref_name }}-x86_64-pc-windows-msvc.exe
+                  if-no-files-found: error
+
     release:
         name: Create Release
-        needs: build
+        needs:
+            - build
+            - build-tauri-windows
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
