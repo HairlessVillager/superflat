@@ -7,3 +7,4 @@ perf.data
 perf.data.old
 out.perf
 profile.json.gz
+.codex
