@@ -1,5 +1,13 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Mutex,
+    },
+};
 
+use chrono::Local;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_store::StoreExt;
@@ -12,9 +20,98 @@ const PROFILES_FILE: &str = "profiles.json";
 const KEY_BRANCH: &str = "branch";
 const DEFAULT_BRANCH: &str = "main";
 const KEY_MC_VERSION: &str = "mc_version";
-const DEFAULT_MC_VERSION: &str = "1.21.1";
+const DEFAULT_MC_VERSION: &str = "1.21.11";
 const KEY_DEFAULT_COMMIT: &str = "default_commit";
 const DEFAULT_DEFAULT_COMMIT: &str = "main@{10 minutes ago}";
+const KEY_DEBUG: &str = "debug";
+const DEFAULT_DEBUG: bool = false;
+
+struct GuiLogger {
+    level: AtomicU8,
+    app: Mutex<Option<AppHandle>>,
+}
+
+impl GuiLogger {
+    const fn new() -> Self {
+        Self {
+            level: AtomicU8::new(Self::encode_level(LevelFilter::Info)),
+            app: Mutex::new(None),
+        }
+    }
+
+    const fn encode_level(level: LevelFilter) -> u8 {
+        match level {
+            LevelFilter::Off => 0,
+            LevelFilter::Error => 1,
+            LevelFilter::Warn => 2,
+            LevelFilter::Info => 3,
+            LevelFilter::Debug => 4,
+            LevelFilter::Trace => 5,
+        }
+    }
+
+    fn decode_level(value: u8) -> LevelFilter {
+        match value {
+            0 => LevelFilter::Off,
+            1 => LevelFilter::Error,
+            2 => LevelFilter::Warn,
+            3 => LevelFilter::Info,
+            4 => LevelFilter::Debug,
+            _ => LevelFilter::Trace,
+        }
+    }
+
+    fn current_level(&self) -> LevelFilter {
+        Self::decode_level(self.level.load(Ordering::Relaxed))
+    }
+
+    fn configure(&self, app: AppHandle, debug: bool) {
+        self.level.store(
+            Self::encode_level(if debug {
+                LevelFilter::Debug
+            } else {
+                LevelFilter::Info
+            }),
+            Ordering::Relaxed,
+        );
+        *self.app.lock().unwrap() = Some(app);
+        log::set_max_level(self.current_level());
+    }
+}
+
+impl Log for GuiLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= self.current_level()
+    }
+
+    fn log(&self, record: &Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let line = format!(
+            "{} [{}] {}",
+            timestamp,
+            match record.level() {
+                Level::Error => "ERROR",
+                Level::Warn => "WARN",
+                Level::Info => "INFO",
+                Level::Debug => "DEBUG",
+                Level::Trace => "TRACE",
+            },
+            record.args()
+        );
+
+        if let Some(app) = self.app.lock().unwrap().clone() {
+            let _ = app.emit("commit-output", line);
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static GUI_LOGGER: GuiLogger = GuiLogger::new();
 
 #[tauri::command]
 async fn pick_directory(app: AppHandle) -> Option<String> {
@@ -34,6 +131,7 @@ struct Settings {
     branch: String,
     mc_version: String,
     default_commit: String,
+    debug: bool,
 }
 
 #[tauri::command]
@@ -51,20 +149,33 @@ fn get_settings(app: AppHandle) -> Settings {
         .get(KEY_DEFAULT_COMMIT)
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| DEFAULT_DEFAULT_COMMIT.to_owned());
+    let debug = store
+        .get(KEY_DEBUG)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(DEFAULT_DEBUG);
     Settings {
         branch,
         mc_version,
         default_commit,
+        debug,
     }
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, branch: String, mc_version: String, default_commit: String) {
+fn save_settings(
+    app: AppHandle,
+    branch: String,
+    mc_version: String,
+    default_commit: String,
+    debug: bool,
+) {
     let store = app.store(STORE_FILE).expect("failed to open store");
     store.set(KEY_BRANCH, branch);
     store.set(KEY_MC_VERSION, mc_version);
     store.set(KEY_DEFAULT_COMMIT, default_commit);
+    store.set(KEY_DEBUG, debug);
     store.save().expect("failed to save store");
+    GUI_LOGGER.configure(app, debug);
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -110,17 +221,12 @@ async fn run_commit(
     mc_version: String,
     app: AppHandle,
 ) {
-    eprintln!("[run_commit] called save_dir={save_dir}");
-    let _ = app.emit(
-        "commit-output",
-        format!("[run_commit] called save_dir={save_dir}"),
-    );
     let save_path = PathBuf::from(&save_dir);
 
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_owned(),
         None => {
-            let _ = app.emit("commit-output", "Error: invalid save directory path");
+            log::error!("Invalid save directory path");
             let _ = app.emit("commit-done", ());
             return;
         }
@@ -141,52 +247,35 @@ async fn run_commit(
 
     let init = !git_dir.exists();
 
-    let _ = app.emit(
-        "commit-output",
-        format!(
-            "save_dir={} git_dir={} init={} branch={} message={}",
-            save_dir,
-            git_dir.display(),
-            init,
-            branch,
-            message
-        ),
+    log::info!(
+        "Commit params: save_dir={} git_dir={} init={} branch={} message={}",
+        save_dir,
+        git_dir.display(),
+        init,
+        branch,
+        message
     );
 
     // Resolve parent commits via git rev-parse
     let parents = if init {
         if let Err(e) = std::fs::create_dir_all(&git_dir) {
-            let _ = app.emit(
-                "commit-output",
-                format!("Error: failed to create git_dir: {}", e),
-            );
+            log::error!("Failed to create git_dir: {}", e);
             let _ = app.emit("commit-done", ());
             return;
         }
         let git_dir_clone = git_dir.clone();
         let init_result = tokio::task::spawn_blocking(move || {
-            superflat::utils::cmd::git_cmd(&git_dir_clone)
-                .args(["init", "--bare"])
-                .status()
+            let mut cmd = superflat::utils::cmd::git_cmd(&git_dir_clone);
+            cmd.args(["init", "--bare"]);
+            superflat::utils::cmd::exec(cmd);
         })
         .await;
         match init_result {
-            Ok(Ok(status)) if status.success() => vec![],
-            Ok(Ok(status)) => {
-                let _ = app.emit(
-                    "commit-output",
-                    format!("Error: git init --bare failed with {}", status),
-                );
-                let _ = app.emit("commit-done", ());
-                return;
-            }
-            Ok(Err(e)) => {
-                let _ = app.emit("commit-output", format!("Error: {}", e));
-                let _ = app.emit("commit-done", ());
-                return;
+            Ok(()) => {
+                vec![]
             }
             Err(e) => {
-                let _ = app.emit("commit-output", format!("Error: {}", e));
+                log::error!("Failed to init repository: {}", e);
                 let _ = app.emit("commit-done", ());
                 return;
             }
@@ -194,32 +283,19 @@ async fn run_commit(
     } else {
         let git_dir_clone = git_dir.clone();
         let branch_clone = branch.clone();
-        let rev_result = tokio::task::spawn_blocking(move || {
-            superflat::utils::cmd::git_cmd(&git_dir_clone)
-                .args(["rev-parse", &format!("{}^{{commit}}", branch_clone)])
-                .output()
+        let rev = tokio::task::spawn_blocking(move || {
+            let mut cmd = superflat::utils::cmd::git_cmd(&git_dir_clone);
+            cmd.args(["rev-parse", &format!("{}^{{commit}}", branch_clone)]);
+            superflat::utils::cmd::exec_stdout(cmd, None)
         })
         .await;
-        match rev_result {
-            Ok(Ok(out)) if out.status.success() => {
-                let hash = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        match rev {
+            Ok(rev) => {
+                let hash = rev.trim().to_owned();
                 vec![hash]
             }
-            Ok(Ok(_)) => {
-                let _ = app.emit(
-                    "commit-output",
-                    format!("Error: branch '{}' not found in git repo", branch),
-                );
-                let _ = app.emit("commit-done", ());
-                return;
-            }
-            Ok(Err(e)) => {
-                let _ = app.emit("commit-output", format!("Error: {}", e));
-                let _ = app.emit("commit-done", ());
-                return;
-            }
             Err(e) => {
-                let _ = app.emit("commit-output", format!("Error: {}", e));
+                log::error!("Failed to parse {branch}: {}", e);
                 let _ = app.emit("commit-done", ());
                 return;
             }
@@ -241,10 +317,10 @@ async fn run_commit(
 
     match result {
         Ok(()) => {
-            let _ = app.emit("commit-output", "Done.");
+            log::info!("Done");
         }
         Err(e) => {
-            let _ = app.emit("commit-output", format!("Error: {}", e));
+            log::error!("Failed to commit: {}", e);
         }
     }
 
@@ -313,10 +389,22 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
 }
 
 pub fn run() {
+    log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
+    log::set_max_level(LevelFilter::Info);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .setup(|app| {
+            let debug = app
+                .store(STORE_FILE)
+                .ok()
+                .and_then(|store| store.get(KEY_DEBUG))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(DEFAULT_DEBUG);
+            GUI_LOGGER.configure(app.handle().clone(), debug);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pick_directory,
             get_settings,

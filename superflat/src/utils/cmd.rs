@@ -9,17 +9,22 @@ use anyhow::Context;
 
 pub fn exec(mut cmd: Command) {
     log::debug!("command (no capture): {cmd:?}");
-    let status = cmd
-        .status()
+    let out = cmd
+        .output()
         .with_context(|| format!("Failed to run command {cmd:?}"))
         .unwrap();
-    assert!(status.success());
+    for line in String::from_utf8(out.stderr).unwrap().lines() {
+        log::debug!("stderr: {}", line);
+    }
+    assert!(out.status.success());
 }
 
 pub fn exec_stdout(mut cmd: Command, stdin: Option<String>) -> String {
     log::debug!("command: {:?}", cmd);
     let out = if let Some(stdin) = stdin {
-        log::debug!("stdin: {}", stdin);
+        for line in stdin.lines() {
+            log::debug!("stdin: {}", line);
+        }
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -52,7 +57,9 @@ pub fn exec_stdout(mut cmd: Command, stdin: Option<String>) -> String {
     let stdout = String::from_utf8(out.stdout)
         .with_context(|| format!("Failed to encoding stdout by UTF-8: {cmd:?}"))
         .unwrap();
-    log::debug!("stdout: {:?}", stdout);
+    for line in stdout.lines() {
+        log::debug!("stdout: {:?}", line);
+    }
     stdout
 }
 

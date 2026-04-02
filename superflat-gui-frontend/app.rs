@@ -1,8 +1,7 @@
-use leptos::task::spawn_local;
 use leptos::prelude::*;
-use wasm_bindgen::prelude::*;
+use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -10,7 +9,10 @@ extern "C" {
     async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, js_namespace = ["window", "__TAURI__", "event"], js_name = listen)]
-    async fn tauri_listen(event: &str, handler: &Closure<dyn Fn(JsValue)>) -> Result<JsValue, JsValue>;
+    async fn tauri_listen(
+        event: &str,
+        handler: &Closure<dyn Fn(JsValue)>,
+    ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(js_name = setInterval)]
     fn set_interval(closure: &Closure<dyn Fn()>, millis: u32) -> i32;
@@ -42,6 +44,7 @@ struct SaveSettingsArgs {
     branch: String,
     mc_version: String,
     default_commit: String,
+    debug: bool,
 }
 
 #[derive(Serialize)]
@@ -54,6 +57,7 @@ struct Settings {
     branch: String,
     mc_version: String,
     default_commit: String,
+    debug: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -62,19 +66,6 @@ struct Profile {
     mc_version: String,
     branch: String,
     default_commit: String,
-}
-
-thread_local! {
-    static UNLISTEN_FNS: RefCell<Vec<js_sys::Function>> = RefCell::new(Vec::new());
-}
-
-fn cleanup_listeners() {
-    UNLISTEN_FNS.with(|fns| {
-        for f in fns.borrow().iter() {
-            let _ = f.call0(&JsValue::NULL);
-        }
-        fns.borrow_mut().clear();
-    });
 }
 
 fn current_datetime_string() -> String {
@@ -93,7 +84,11 @@ fn current_datetime_string() -> String {
 fn js_error_to_string(value: JsValue) -> String {
     value
         .as_string()
-        .or_else(|| js_sys::JSON::stringify(&value).ok().and_then(|s| s.as_string()))
+        .or_else(|| {
+            js_sys::JSON::stringify(&value)
+                .ok()
+                .and_then(|s| s.as_string())
+        })
         .unwrap_or_else(|| "unknown JS error".to_string())
 }
 
@@ -101,7 +96,7 @@ fn js_error_to_string(value: JsValue) -> String {
 pub fn App() -> impl IntoView {
     let (save_dir, set_save_dir) = signal(String::new());
     let (branch, set_branch) = signal(String::from("main"));
-    let (mc_version, set_mc_version) = signal(String::from("1.21.1"));
+    let (mc_version, set_mc_version) = signal(String::from("1.21.11"));
     let (message, set_message) = signal(String::new());
     let (commit_id, set_commit_id) = signal(String::from("main@{10 minutes ago}"));
     let (clock, set_clock) = signal(current_datetime_string());
@@ -114,6 +109,8 @@ pub fn App() -> impl IntoView {
     let (draft_branch, set_draft_branch) = signal(String::new());
     let (draft_mc_version, set_draft_mc_version) = signal(String::new());
     let (draft_default_commit, set_draft_default_commit) = signal(String::new());
+    let (debug_enabled, set_debug_enabled) = signal(false);
+    let (draft_debug_enabled, set_draft_debug_enabled) = signal(false);
 
     // Tick clock every second
     let tick = Closure::<dyn Fn()>::new(move || {
@@ -133,6 +130,8 @@ pub fn App() -> impl IntoView {
                 set_draft_mc_version.set(settings.mc_version);
                 set_commit_id.set(settings.default_commit.clone());
                 set_draft_default_commit.set(settings.default_commit);
+                set_debug_enabled.set(settings.debug);
+                set_draft_debug_enabled.set(settings.debug);
             }
         } else if let Err(err) = result {
             log(&format!("get_settings failed: {}", js_error_to_string(err)));
@@ -151,6 +150,51 @@ pub fn App() -> impl IntoView {
         }
     });
 
+    // Keep backend output listeners active for the lifetime of the app.
+    spawn_local(async move {
+        let set_lines = set_output_lines;
+        let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
+            let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
+                .unwrap_or(JsValue::NULL);
+            if let Some(line) = payload.as_string() {
+                set_lines.update(|lines| lines.push(line));
+            }
+        });
+
+        let set_running = set_is_running;
+        let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
+            set_running.set(false);
+        });
+
+        let listen_output = tauri_listen("commit-output", &on_output).await;
+        let listen_done = tauri_listen("commit-done", &on_done).await;
+
+        match (listen_output, listen_done) {
+            (Ok(_), Ok(_)) => {
+                on_output.forget();
+                on_done.forget();
+            }
+            (output_result, done_result) => {
+                if let Err(err) = output_result {
+                    set_output_lines.update(|lines| {
+                        lines.push(format!(
+                            "Error: failed to listen for backend output: {}",
+                            js_error_to_string(err)
+                        ))
+                    });
+                }
+                if let Err(err) = done_result {
+                    set_output_lines.update(|lines| {
+                        lines.push(format!(
+                            "Error: failed to listen for backend completion: {}",
+                            js_error_to_string(err)
+                        ))
+                    });
+                }
+            }
+        }
+    });
+
     let pick_dir = move |_| {
         spawn_local(async move {
             match invoke("pick_directory", JsValue::NULL).await {
@@ -159,7 +203,10 @@ pub fn App() -> impl IntoView {
                         set_save_dir.set(path);
                     }
                 }
-                Err(err) => log(&format!("pick_directory failed: {}", js_error_to_string(err))),
+                Err(err) => log(&format!(
+                    "pick_directory failed: {}",
+                    js_error_to_string(err)
+                )),
             }
         });
     };
@@ -168,6 +215,7 @@ pub fn App() -> impl IntoView {
         set_draft_branch.set(branch.get_untracked());
         set_draft_mc_version.set(mc_version.get_untracked());
         set_draft_default_commit.set(commit_id.get_untracked());
+        set_draft_debug_enabled.set(debug_enabled.get_untracked());
         set_show_settings.set(true);
     };
 
@@ -179,21 +227,31 @@ pub fn App() -> impl IntoView {
         let b = draft_branch.get_untracked();
         let v = draft_mc_version.get_untracked();
         let c = draft_default_commit.get_untracked();
+        let d = draft_debug_enabled.get_untracked();
         set_branch.set(b.clone());
         set_mc_version.set(v.clone());
         set_commit_id.set(c.clone());
+        set_debug_enabled.set(d);
         set_show_settings.set(false);
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs { branch: b, mc_version: v, default_commit: c }).unwrap();
+            let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs {
+                branch: b,
+                mc_version: v,
+                default_commit: c,
+                debug: d,
+            })
+            .unwrap();
             if let Err(err) = invoke("save_settings", args).await {
-                log(&format!("save_settings failed: {}", js_error_to_string(err)));
+                log(&format!(
+                    "save_settings failed: {}",
+                    js_error_to_string(err)
+                ));
             }
         });
     };
 
     let run_commit = move |_| {
         log("run_commit clicked");
-        cleanup_listeners();
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
 
@@ -205,62 +263,12 @@ pub fn App() -> impl IntoView {
             let default_commit_val = commit_id.get_untracked();
             let message_val = {
                 let m = message.get_untracked();
-                if m.is_empty() { current_datetime_string() } else { m }
+                if m.is_empty() {
+                    current_datetime_string()
+                } else {
+                    m
+                }
             };
-
-            let set_lines = set_output_lines;
-            let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
-                let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
-                    .unwrap_or(JsValue::NULL);
-                if let Some(line) = payload.as_string() {
-                    set_lines.update(|lines| lines.push(line));
-                }
-            });
-
-            let set_running = set_is_running;
-            let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
-                set_running.set(false);
-            });
-
-            let unlisten_output = tauri_listen("commit-output", &on_output).await;
-            let unlisten_done = tauri_listen("commit-done", &on_done).await;
-
-            on_output.forget();
-            on_done.forget();
-
-            match (unlisten_output, unlisten_done) {
-                (Ok(u1), Ok(u2)) => {
-                    if let (Some(u1), Some(u2)) = (
-                        u1.dyn_into::<js_sys::Function>().ok(),
-                        u2.dyn_into::<js_sys::Function>().ok(),
-                    ) {
-                        UNLISTEN_FNS.with(|fns| {
-                            fns.borrow_mut().push(u1);
-                            fns.borrow_mut().push(u2);
-                        });
-                    }
-                }
-                (output_result, done_result) => {
-                    if let Err(err) = output_result {
-                        set_output_lines.update(|lines| {
-                            lines.push(format!(
-                                "Error: failed to listen for commit output: {}",
-                                js_error_to_string(err)
-                            ))
-                        });
-                    }
-                    if let Err(err) = done_result {
-                        set_output_lines.update(|lines| {
-                            lines.push(format!(
-                                "Error: failed to listen for commit completion: {}",
-                                js_error_to_string(err)
-                            ))
-                        });
-                    }
-                    set_is_running.set(false);
-                    return;
-                }
-            }
 
             let args = serde_wasm_bindgen::to_value(&RunCommitArgs {
                 save_dir: save_dir_val.clone(),
@@ -271,7 +279,10 @@ pub fn App() -> impl IntoView {
             .unwrap();
             if let Err(err) = invoke("run_commit", args).await {
                 set_output_lines.update(|lines| {
-                    lines.push(format!("Error: run_commit failed: {}", js_error_to_string(err)))
+                    lines.push(format!(
+                        "Error: run_commit failed: {}",
+                        js_error_to_string(err)
+                    ))
                 });
             }
             set_is_running.set(false);
@@ -286,13 +297,15 @@ pub fn App() -> impl IntoView {
             })
             .unwrap();
             if let Err(err) = invoke("upsert_profile", profile_args).await {
-                log(&format!("upsert_profile failed: {}", js_error_to_string(err)));
+                log(&format!(
+                    "upsert_profile failed: {}",
+                    js_error_to_string(err)
+                ));
             }
         });
     };
 
     let run_checkout = move |_| {
-        cleanup_listeners();
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
 
@@ -301,60 +314,6 @@ pub fn App() -> impl IntoView {
             let commit_val = commit_id.get_untracked();
             let mc_version_val = mc_version.get_untracked();
             let branch_val = branch.get_untracked();
-
-            let set_lines = set_output_lines;
-            let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
-                let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
-                    .unwrap_or(JsValue::NULL);
-                if let Some(line) = payload.as_string() {
-                    set_lines.update(|lines| lines.push(line));
-                }
-            });
-
-            let set_running = set_is_running;
-            let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
-                set_running.set(false);
-            });
-
-            let unlisten_output = tauri_listen("commit-output", &on_output).await;
-            let unlisten_done = tauri_listen("commit-done", &on_done).await;
-
-            on_output.forget();
-            on_done.forget();
-
-            match (unlisten_output, unlisten_done) {
-                (Ok(u1), Ok(u2)) => {
-                    if let (Some(u1), Some(u2)) = (
-                        u1.dyn_into::<js_sys::Function>().ok(),
-                        u2.dyn_into::<js_sys::Function>().ok(),
-                    ) {
-                        UNLISTEN_FNS.with(|fns| {
-                            fns.borrow_mut().push(u1);
-                            fns.borrow_mut().push(u2);
-                        });
-                    }
-                }
-                (output_result, done_result) => {
-                    if let Err(err) = output_result {
-                        set_output_lines.update(|lines| {
-                            lines.push(format!(
-                                "Error: failed to listen for checkout output: {}",
-                                js_error_to_string(err)
-                            ))
-                        });
-                    }
-                    if let Err(err) = done_result {
-                        set_output_lines.update(|lines| {
-                            lines.push(format!(
-                                "Error: failed to listen for checkout completion: {}",
-                                js_error_to_string(err)
-                            ))
-                        });
-                    }
-                    set_is_running.set(false);
-                    return;
-                }
-            }
 
             let args = serde_wasm_bindgen::to_value(&RunCheckoutArgs {
                 save_dir: save_dir_val.clone(),
@@ -382,7 +341,10 @@ pub fn App() -> impl IntoView {
             })
             .unwrap();
             if let Err(err) = invoke("upsert_profile", profile_args).await {
-                log(&format!("upsert_profile failed: {}", js_error_to_string(err)));
+                log(&format!(
+                    "upsert_profile failed: {}",
+                    js_error_to_string(err)
+                ));
             }
         });
     };
@@ -492,7 +454,7 @@ pub fn App() -> impl IntoView {
                                 type="text"
                                 prop:value=move || draft_mc_version.get()
                                 on:input=move |ev| set_draft_mc_version.set(event_target_value(&ev))
-                                placeholder="e.g. 1.21.1"
+                                placeholder="e.g. 1.21.11"
                             />
                         </label>
                         <label>
@@ -503,6 +465,14 @@ pub fn App() -> impl IntoView {
                                 on:input=move |ev| set_draft_default_commit.set(event_target_value(&ev))
                                 placeholder="e.g. main@{10 minutes ago}"
                             />
+                        </label>
+                        <label>
+                            <input
+                                type="checkbox"
+                                prop:checked=move || draft_debug_enabled.get()
+                                on:change=move |ev| set_draft_debug_enabled.set(event_target_checked(&ev))
+                            />
+                            "Debug logging"
                         </label>
                         <div class="modal-actions">
                             <button on:click=close_settings>"Cancel"</button>
