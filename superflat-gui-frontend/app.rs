@@ -466,13 +466,16 @@ pub fn App() -> impl IntoView {
                                 placeholder="e.g. main@{10 minutes ago}"
                             />
                         </label>
-                        <label>
-                            <input
-                                type="checkbox"
-                                prop:checked=move || draft_debug_enabled.get()
-                                on:change=move |ev| set_draft_debug_enabled.set(event_target_checked(&ev))
-                            />
-                            "Debug logging"
+                        <label class="settings-switch-field">
+                            <div class="settings-switch-row">
+                                <span class="settings-field-label">"Debug logging"</span>
+                                <input
+                                    type="checkbox"
+                                    class="settings-switch-input"
+                                    prop:checked=move || draft_debug_enabled.get()
+                                    on:change=move |ev| set_draft_debug_enabled.set(event_target_checked(&ev))
+                                />
+                            </div>
                         </label>
                         <div class="modal-actions">
                             <button on:click=close_settings>"Cancel"</button>
