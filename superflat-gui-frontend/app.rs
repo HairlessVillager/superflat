@@ -6,17 +6,21 @@ use std::cell::RefCell;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(catch, js_namespace = ["window", "__TAURI__", "core"])]
+    async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
 
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = listen)]
-    async fn tauri_listen(event: &str, handler: &Closure<dyn Fn(JsValue)>) -> JsValue;
+    #[wasm_bindgen(catch, js_namespace = ["window", "__TAURI__", "event"], js_name = listen)]
+    async fn tauri_listen(event: &str, handler: &Closure<dyn Fn(JsValue)>) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(js_name = setInterval)]
     fn set_interval(closure: &Closure<dyn Fn()>, millis: u32) -> i32;
+
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RunCommitArgs {
     save_dir: String,
     branch: String,
@@ -25,6 +29,7 @@ struct RunCommitArgs {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RunCheckoutArgs {
     save_dir: String,
     commit: String,
@@ -32,10 +37,16 @@ struct RunCheckoutArgs {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SaveSettingsArgs {
     branch: String,
     mc_version: String,
     default_commit: String,
+}
+
+#[derive(Serialize)]
+struct UpsertProfileArgs {
+    profile: Profile,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +90,13 @@ fn current_datetime_string() -> String {
     )
 }
 
+fn js_error_to_string(value: JsValue) -> String {
+    value
+        .as_string()
+        .or_else(|| js_sys::JSON::stringify(&value).ok().and_then(|s| s.as_string()))
+        .unwrap_or_else(|| "unknown JS error".to_string())
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     let (save_dir, set_save_dir) = signal(String::new());
@@ -107,29 +125,41 @@ pub fn App() -> impl IntoView {
     // Load persisted settings on mount
     spawn_local(async move {
         let result = invoke("get_settings", JsValue::NULL).await;
-        if let Ok(settings) = serde_wasm_bindgen::from_value::<Settings>(result) {
-            set_branch.set(settings.branch.clone());
-            set_draft_branch.set(settings.branch);
-            set_mc_version.set(settings.mc_version.clone());
-            set_draft_mc_version.set(settings.mc_version);
-            set_commit_id.set(settings.default_commit.clone());
-            set_draft_default_commit.set(settings.default_commit);
+        if let Ok(result) = result {
+            if let Ok(settings) = serde_wasm_bindgen::from_value::<Settings>(result) {
+                set_branch.set(settings.branch.clone());
+                set_draft_branch.set(settings.branch);
+                set_mc_version.set(settings.mc_version.clone());
+                set_draft_mc_version.set(settings.mc_version);
+                set_commit_id.set(settings.default_commit.clone());
+                set_draft_default_commit.set(settings.default_commit);
+            }
+        } else if let Err(err) = result {
+            log(&format!("get_settings failed: {}", js_error_to_string(err)));
         }
     });
 
     // Load profiles on mount
     spawn_local(async move {
         let result = invoke("get_profiles", JsValue::NULL).await;
-        if let Ok(p) = serde_wasm_bindgen::from_value::<Vec<Profile>>(result) {
-            set_profiles.set(p);
+        if let Ok(result) = result {
+            if let Ok(p) = serde_wasm_bindgen::from_value::<Vec<Profile>>(result) {
+                set_profiles.set(p);
+            }
+        } else if let Err(err) = result {
+            log(&format!("get_profiles failed: {}", js_error_to_string(err)));
         }
     });
 
     let pick_dir = move |_| {
         spawn_local(async move {
-            let result = invoke("pick_directory", JsValue::NULL).await;
-            if let Some(path) = result.as_string() {
-                set_save_dir.set(path);
+            match invoke("pick_directory", JsValue::NULL).await {
+                Ok(result) => {
+                    if let Some(path) = result.as_string() {
+                        set_save_dir.set(path);
+                    }
+                }
+                Err(err) => log(&format!("pick_directory failed: {}", js_error_to_string(err))),
             }
         });
     };
@@ -155,16 +185,20 @@ pub fn App() -> impl IntoView {
         set_show_settings.set(false);
         spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs { branch: b, mc_version: v, default_commit: c }).unwrap();
-            invoke("save_settings", args).await;
+            if let Err(err) = invoke("save_settings", args).await {
+                log(&format!("save_settings failed: {}", js_error_to_string(err)));
+            }
         });
     };
 
     let run_commit = move |_| {
+        log("run_commit clicked");
         cleanup_listeners();
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
 
         spawn_local(async move {
+            log("spawn_local started");
             let save_dir_val = save_dir.get_untracked();
             let branch_val = branch.get_untracked();
             let mc_version_val = mc_version.get_untracked();
@@ -194,14 +228,38 @@ pub fn App() -> impl IntoView {
             on_output.forget();
             on_done.forget();
 
-            if let (Some(u1), Some(u2)) = (
-                unlisten_output.dyn_into::<js_sys::Function>().ok(),
-                unlisten_done.dyn_into::<js_sys::Function>().ok(),
-            ) {
-                UNLISTEN_FNS.with(|fns| {
-                    fns.borrow_mut().push(u1);
-                    fns.borrow_mut().push(u2);
-                });
+            match (unlisten_output, unlisten_done) {
+                (Ok(u1), Ok(u2)) => {
+                    if let (Some(u1), Some(u2)) = (
+                        u1.dyn_into::<js_sys::Function>().ok(),
+                        u2.dyn_into::<js_sys::Function>().ok(),
+                    ) {
+                        UNLISTEN_FNS.with(|fns| {
+                            fns.borrow_mut().push(u1);
+                            fns.borrow_mut().push(u2);
+                        });
+                    }
+                }
+                (output_result, done_result) => {
+                    if let Err(err) = output_result {
+                        set_output_lines.update(|lines| {
+                            lines.push(format!(
+                                "Error: failed to listen for commit output: {}",
+                                js_error_to_string(err)
+                            ))
+                        });
+                    }
+                    if let Err(err) = done_result {
+                        set_output_lines.update(|lines| {
+                            lines.push(format!(
+                                "Error: failed to listen for commit completion: {}",
+                                js_error_to_string(err)
+                            ))
+                        });
+                    }
+                    set_is_running.set(false);
+                    return;
+                }
             }
 
             let args = serde_wasm_bindgen::to_value(&RunCommitArgs {
@@ -211,16 +269,25 @@ pub fn App() -> impl IntoView {
                 mc_version: mc_version_val.clone(),
             })
             .unwrap();
-            invoke("run_commit", args).await;
+            if let Err(err) = invoke("run_commit", args).await {
+                set_output_lines.update(|lines| {
+                    lines.push(format!("Error: run_commit failed: {}", js_error_to_string(err)))
+                });
+            }
+            set_is_running.set(false);
 
-            let profile_args = serde_wasm_bindgen::to_value(&Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                default_commit: default_commit_val,
+            let profile_args = serde_wasm_bindgen::to_value(&UpsertProfileArgs {
+                profile: Profile {
+                    save_dir: save_dir_val,
+                    mc_version: mc_version_val,
+                    branch: branch_val,
+                    default_commit: default_commit_val,
+                },
             })
             .unwrap();
-            invoke("upsert_profile", profile_args).await;
+            if let Err(err) = invoke("upsert_profile", profile_args).await {
+                log(&format!("upsert_profile failed: {}", js_error_to_string(err)));
+            }
         });
     };
 
@@ -255,14 +322,38 @@ pub fn App() -> impl IntoView {
             on_output.forget();
             on_done.forget();
 
-            if let (Some(u1), Some(u2)) = (
-                unlisten_output.dyn_into::<js_sys::Function>().ok(),
-                unlisten_done.dyn_into::<js_sys::Function>().ok(),
-            ) {
-                UNLISTEN_FNS.with(|fns| {
-                    fns.borrow_mut().push(u1);
-                    fns.borrow_mut().push(u2);
-                });
+            match (unlisten_output, unlisten_done) {
+                (Ok(u1), Ok(u2)) => {
+                    if let (Some(u1), Some(u2)) = (
+                        u1.dyn_into::<js_sys::Function>().ok(),
+                        u2.dyn_into::<js_sys::Function>().ok(),
+                    ) {
+                        UNLISTEN_FNS.with(|fns| {
+                            fns.borrow_mut().push(u1);
+                            fns.borrow_mut().push(u2);
+                        });
+                    }
+                }
+                (output_result, done_result) => {
+                    if let Err(err) = output_result {
+                        set_output_lines.update(|lines| {
+                            lines.push(format!(
+                                "Error: failed to listen for checkout output: {}",
+                                js_error_to_string(err)
+                            ))
+                        });
+                    }
+                    if let Err(err) = done_result {
+                        set_output_lines.update(|lines| {
+                            lines.push(format!(
+                                "Error: failed to listen for checkout completion: {}",
+                                js_error_to_string(err)
+                            ))
+                        });
+                    }
+                    set_is_running.set(false);
+                    return;
+                }
             }
 
             let args = serde_wasm_bindgen::to_value(&RunCheckoutArgs {
@@ -271,16 +362,28 @@ pub fn App() -> impl IntoView {
                 mc_version: mc_version_val.clone(),
             })
             .unwrap();
-            invoke("run_checkout", args).await;
+            if let Err(err) = invoke("run_checkout", args).await {
+                set_output_lines.update(|lines| {
+                    lines.push(format!(
+                        "Error: run_checkout failed: {}",
+                        js_error_to_string(err)
+                    ))
+                });
+            }
+            set_is_running.set(false);
 
-            let profile_args = serde_wasm_bindgen::to_value(&Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                default_commit: commit_val,
+            let profile_args = serde_wasm_bindgen::to_value(&UpsertProfileArgs {
+                profile: Profile {
+                    save_dir: save_dir_val,
+                    mc_version: mc_version_val,
+                    branch: branch_val,
+                    default_commit: commit_val,
+                },
             })
             .unwrap();
-            invoke("upsert_profile", profile_args).await;
+            if let Err(err) = invoke("upsert_profile", profile_args).await {
+                log(&format!("upsert_profile failed: {}", js_error_to_string(err)));
+            }
         });
     };
 

@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_store::StoreExt;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use serde::{Deserialize, Serialize};
@@ -112,6 +110,11 @@ async fn run_commit(
     mc_version: String,
     app: AppHandle,
 ) {
+    eprintln!("[run_commit] called save_dir={save_dir}");
+    let _ = app.emit(
+        "commit-output",
+        format!("[run_commit] called save_dir={save_dir}"),
+    );
     let save_path = PathBuf::from(&save_dir);
 
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
@@ -127,65 +130,124 @@ async fn run_commit(
     let git_dir = save_path
         .join("../..")
         .join("backups")
-        .join(format!("{}.git", save_name));
+        .join(format!("{}.git", save_name))
+        .canonicalize()
+        .unwrap_or_else(|_| {
+            save_path
+                .join("../..")
+                .join("backups")
+                .join(format!("{}.git", save_name))
+        });
 
     let init = !git_dir.exists();
-
-    let git_dir_str = git_dir.to_string_lossy().into_owned();
 
     let _ = app.emit(
         "commit-output",
         format!(
             "save_dir={} git_dir={} init={} branch={} message={}",
-            save_dir, git_dir_str, init, branch, message
+            save_dir,
+            git_dir.display(),
+            init,
+            branch,
+            message
         ),
     );
 
-    let mut args = vec![
-        "commit".to_owned(),
-        save_dir.clone(),
-        git_dir_str.clone(),
-        "--branch".to_owned(),
-        branch,
-        "--message".to_owned(),
-        message,
-        "--repack".to_owned(),
-        "--mc-version".to_owned(),
-        mc_version,
-    ];
-    if init {
-        args.push("--init".to_owned());
-    }
-
-    let mut child = match Command::new("superflat")
-        .args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = app.emit("commit-output", format!("Error: {}", e));
+    // Resolve parent commits via git rev-parse
+    let parents = if init {
+        if let Err(e) = std::fs::create_dir_all(&git_dir) {
+            let _ = app.emit(
+                "commit-output",
+                format!("Error: failed to create git_dir: {}", e),
+            );
             let _ = app.emit("commit-done", ());
             return;
         }
+        let git_dir_clone = git_dir.clone();
+        let init_result = tokio::task::spawn_blocking(move || {
+            superflat::utils::cmd::git_cmd(&git_dir_clone)
+                .args(["init", "--bare"])
+                .status()
+        })
+        .await;
+        match init_result {
+            Ok(Ok(status)) if status.success() => vec![],
+            Ok(Ok(status)) => {
+                let _ = app.emit(
+                    "commit-output",
+                    format!("Error: git init --bare failed with {}", status),
+                );
+                let _ = app.emit("commit-done", ());
+                return;
+            }
+            Ok(Err(e)) => {
+                let _ = app.emit("commit-output", format!("Error: {}", e));
+                let _ = app.emit("commit-done", ());
+                return;
+            }
+            Err(e) => {
+                let _ = app.emit("commit-output", format!("Error: {}", e));
+                let _ = app.emit("commit-done", ());
+                return;
+            }
+        }
+    } else {
+        let git_dir_clone = git_dir.clone();
+        let branch_clone = branch.clone();
+        let rev_result = tokio::task::spawn_blocking(move || {
+            superflat::utils::cmd::git_cmd(&git_dir_clone)
+                .args(["rev-parse", &format!("{}^{{commit}}", branch_clone)])
+                .output()
+        })
+        .await;
+        match rev_result {
+            Ok(Ok(out)) if out.status.success() => {
+                let hash = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                vec![hash]
+            }
+            Ok(Ok(_)) => {
+                let _ = app.emit(
+                    "commit-output",
+                    format!("Error: branch '{}' not found in git repo", branch),
+                );
+                let _ = app.emit("commit-done", ());
+                return;
+            }
+            Ok(Err(e)) => {
+                let _ = app.emit("commit-output", format!("Error: {}", e));
+                let _ = app.emit("commit-done", ());
+                return;
+            }
+            Err(e) => {
+                let _ = app.emit("commit-output", format!("Error: {}", e));
+                let _ = app.emit("commit-done", ());
+                return;
+            }
+        }
     };
 
-    if let Some(stdout) = child.stdout.take() {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app.emit("commit-output", line);
+    let r#ref = format!("refs/heads/{}", branch);
+    let result = tokio::task::spawn_blocking(move || {
+        superflat::commit(
+            save_path,
+            git_dir,
+            parents,
+            &message,
+            Some(r#ref),
+            &mc_version,
+        )
+    })
+    .await;
+
+    match result {
+        Ok(()) => {
+            let _ = app.emit("commit-output", "Done.");
+        }
+        Err(e) => {
+            let _ = app.emit("commit-output", format!("Error: {}", e));
         }
     }
 
-    if let Some(stderr) = child.stderr.take() {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app.emit("commit-output", format!("stderr: {}", line));
-        }
-    }
-
-    let _ = child.wait().await;
     let _ = app.emit("commit-done", ());
 }
 
@@ -205,8 +267,14 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
     let git_dir = save_path
         .join("../..")
         .join("backups")
-        .join(format!("{}.git", save_name));
-    let git_dir_str = git_dir.to_string_lossy().into_owned();
+        .join(format!("{}.git", save_name))
+        .canonicalize()
+        .unwrap_or_else(|_| {
+            save_path
+                .join("../..")
+                .join("backups")
+                .join(format!("{}.git", save_name))
+        });
 
     if save_path.exists() {
         let bak = save_path.with_extension("bak");
@@ -227,45 +295,20 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
         }
     }
 
-    let args = vec![
-        "checkout".to_owned(),
-        save_dir.clone(),
-        git_dir_str,
-        "--commit".to_owned(),
-        commit,
-        "--mc-version".to_owned(),
-        mc_version,
-    ];
+    let result = tokio::task::spawn_blocking(move || {
+        superflat::checkout(save_path, git_dir, commit, &mc_version)
+    })
+    .await;
 
-    let mut child = match Command::new("superflat")
-        .args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
+    match result {
+        Ok(()) => {
+            let _ = app.emit("commit-output", "Done.");
+        }
         Err(e) => {
             let _ = app.emit("commit-output", format!("Error: {}", e));
-            let _ = app.emit("commit-done", ());
-            return;
-        }
-    };
-
-    if let Some(stdout) = child.stdout.take() {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app.emit("commit-output", line);
         }
     }
 
-    if let Some(stderr) = child.stderr.take() {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app.emit("commit-output", format!("stderr: {}", line));
-        }
-    }
-
-    let _ = child.wait().await;
     let _ = app.emit("commit-done", ());
 }
 

@@ -5908,8 +5908,10 @@ dependencies = [
 name = "superflat-gui"
 version = "0.1.0"
 dependencies = [
+ "log",
  "serde",
  "serde_json",
+ "superflat",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -6564,7 +6566,6 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
- "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
