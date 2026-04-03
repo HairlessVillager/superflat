@@ -59,9 +59,39 @@ cargo install --path . --bin sf
 
 ## Quick Start
 
+### Using the GUI
+
+We provide a GUI build for Windows users. Download the `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` executable from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page.
+
+> [!TIP]
+> If you trust the application, see [this document](docs/windows-defender-bypass.md) to whitelist the GUI process in Windows Defender for better performance.
+
+Double-click the downloaded file to launch it. You will see an interface like this:
+
+![docs/images/screenshot-2026-04-03-182406.png](docs/images/screenshot-2026-04-03-182406.png)
+
+On first launch, click the `Browse` button on the right side of the first row and select your save folder (the one containing `level.dat`):
+
+![docs/images/screenshot-2026-04-03-182432.png](docs/images/screenshot-2026-04-03-182432.png)
+
+Then click the `Settings` button on the right side of the first row to configure the Minecraft version and other information:
+
+![docs/images/screenshot-2026-04-03-182437.png](docs/images/screenshot-2026-04-03-182437.png)
+
+After setup, you can:
+
+- Backup: enter your own commit message in the first input box on the second row (or keep the default timestamp), click `Commit`, and wait until the console below prints `Done`.
+- Restore: change the time in the second input box on the second row (or enter the commit ID to restore, or a [revision expression](https://git-scm.com/docs/revisions)), click `Checkout`, and wait until the console below prints `Done`. The original save will be automatically backed up to `saves/<save-name>.bak/`, which you can delete after confirming that the restore succeeded.
+
+Later, you can open saved histories and configurations from `Profiles`:
+
+![docs/images/screenshot-2026-04-03-182423.png](docs/images/screenshot-2026-04-03-182423.png)
+
+### Using the CLI
+
 This section demonstrates a standard workflow:
 
-### 1. Prepare
+#### 1. Prepare
 
 You need to define the following two paths:
 
@@ -70,7 +100,7 @@ You need to define the following two paths:
 
 You also need to know the Minecraft version of your save (`$MC_VERSION`), e.g. `1.21.11`.
 
-### 2. Initialize Git Repository
+#### 2. Initialize Git Repository
 
 For the first backup, create a bare Git repository:
 
@@ -94,7 +124,7 @@ git config --global user.name $YOUR_USER_NAME
 git config --global user.email $YOUR_USER_EMAIL
 ```
 
-### 3. Execute Backup
+#### 3. Execute Backup
 
 Use the following command to backup and create a commit:
 
@@ -127,7 +157,7 @@ Options:
   -h, --help                     Print help
 ```
 
-### 4. Restore Backup
+#### 4. Restore Backup
 
 **Note:** If `$SAVE_DIR` is not empty, please back up its contents manually (e.g., as a `.zip`) before restoring.
 

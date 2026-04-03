@@ -59,9 +59,39 @@ cargo install --path . --bin sf
 
 ## 快速开始
 
+### 基于 GUI
+
+我们为 Windows 用户准备了 GUI 版本的程序。在 [GitHub Release 页面](https://github.com/HairlessVillager/superflat/releases) 下载 `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` 可执行文件。
+
+> [!TIP]
+> 如果您信任我们的程序，请参考 [这篇文档](docs/windows-defender-bypass.md) 把 GUI 进程加入 Window Defender 白名单，从而获得更好的性能。
+
+双击运行下载的文件，您将看到这样的界面：
+
+![docs/images/screenshot-2026-04-03-182406.png](docs/images/screenshot-2026-04-03-182406.png)
+
+对于首次运行，点击第一行右侧的 `Browse` 按钮选择存档文件夹（包含 `level.dat` 文件）：
+
+![docs/images/screenshot-2026-04-03-182432.png](docs/images/screenshot-2026-04-03-182432.png)
+
+然后点击第一行右侧的 `Settings` 按钮配置游戏版本等信息：
+
+![docs/images/screenshot-2026-04-03-182437.png](docs/images/screenshot-2026-04-03-182437.png)
+
+设置完毕后，你可以：
+
+- 备份：在第二行第一个输入框输入自己的提交信息（或保持默认的时间戳），点击 `Commit` 按钮备份，等待下方控制台输出 Done 即完成备份。
+- 恢复：在第二行第二个输入框修改要恢复备份的时间（或者输入要恢复的 Commit ID 或 [Revision 表达式](https://git-scm.com/docs/revisions)），点击 `Checkout` 按钮恢复，等待下方控制台输出 Done 即完成恢复。恢复时原存档会自动备份在 `saves/<save-name>.bak/` 目录下，确认恢复成功后可删除。
+
+之后您可以从 `Profiles` 打开历史存档和配置：
+
+![docs/images/screenshot-2026-04-03-182423.png](docs/images/screenshot-2026-04-03-182423.png)
+
+### 基于 CLI
+
 本节演示一个标准的工作流：
 
-### 1. 准备
+#### 1. 准备
 
 你需要明确以下两个路径：
 
@@ -70,7 +100,7 @@ cargo install --path . --bin sf
 
 此外你需要记住你的游戏存档的版本号（`$MC_VERSION`），比如 1.21.11 的版本记为 `1.21.11`。
 
-### 2. 初始化 Git 仓库
+#### 2. 初始化 Git 仓库
 
 若是首次备份，请创建一个 Git 裸仓库：
 
@@ -94,7 +124,7 @@ git config --global user.name $YOUR_USER_NAME
 git config --global user.email $YOUR_USER_EMAIL
 ```
 
-### 3. 执行备份
+#### 3. 执行备份
 
 使用下面的命令备份并创建一个 Commit：
 
@@ -127,7 +157,7 @@ Options:
   -h, --help                     Print help
 ```
 
-### 4. 恢复备份
+#### 4. 恢复备份
 
 **注意：** 如果 `$SAVE_DIR` 非空，恢复前请务必手动备份（如使用 `.zip`）。
 
