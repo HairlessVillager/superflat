@@ -72,11 +72,12 @@ cargo install --path . --bin sf
 
 ### 2. 初始化 Git 仓库
 
-若是首次备份，请创建一个 Git 裸仓库并禁用自动垃圾回收（以便后面手动实现更小的仓库体积）：
+若是首次备份，请创建一个 Git 裸仓库：
 
 ```sh
 git init --initial-branch main --bare $GIT_DIR
-git --git-dir $GIT_DIR config gc.auto 0
+git --git-dir $GIT_DIR config gc.auto 0 # 禁用自动垃圾回收，以便后面实现更小的仓库体积
+git --git-dir $GIT_DIR config core.logAllRefUpdates true # 记录 reflog，以便用更简单的语法表示 commit
 ```
 
 用下面的命令检查是否设置了 Git 的提交身份：
@@ -130,14 +131,9 @@ Options:
 
 **注意：** 如果 `$SAVE_DIR` 非空，恢复前请务必手动备份（如使用 `.zip`）。
 
-1.  **查找历史版本**：记住要恢复版本的 Commit ID（`$COMMIT`）
-    ```sh
-    git --git-dir $GIT_DIR log --oneline
-    ```
-2.  **还原存档**：
-    ```sh
-    sf checkout $SAVE_DIR $GIT_DIR -c $COMMIT
-    ```
+```sh
+sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}" # 恢复到 main 分支 10 分钟前的最近 commit
+```
 
 ## 实现原理
 

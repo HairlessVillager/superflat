@@ -72,11 +72,12 @@ You also need to know the Minecraft version of your save (`$MC_VERSION`), e.g. `
 
 ### 2. Initialize Git Repository
 
-For the first backup, create a bare Git repository and disable auto-GC for smaller repository size later:
+For the first backup, create a bare Git repository:
 
 ```sh
 git init --initial-branch main --bare $GIT_DIR
-git --git-dir $GIT_DIR config gc.auto 0
+git --git-dir $GIT_DIR config gc.auto 0 # Disable auto-GC for smaller repository size later
+git --git-dir $GIT_DIR config core.logAllRefUpdates true # Record reflog for simpler commit syntax
 ```
 
 Use these commands to check your Git commit identity:
@@ -130,14 +131,9 @@ Options:
 
 **Note:** If `$SAVE_DIR` is not empty, please back up its contents manually (e.g., as a `.zip`) before restoring.
 
-1.  **Find History**: Note the Commit ID (`$COMMIT`) of the version you want to restore.
-    ```sh
-    git --git-dir $GIT_DIR log --oneline
-    ```
-2.  **Restore the Save**:
-    ```sh
-    sf checkout $SAVE_DIR $GIT_DIR -c $COMMIT
-    ```
+```sh
+sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}" # Restore to the latest commit on the main branch 10 minutes ago
+```
 
 ## How It Works
 
