@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs, io,
     path::Path,
     path::PathBuf,
@@ -127,6 +128,23 @@ struct Profile {
     default_commit: String,
 }
 
+fn normalize_profiles(profiles: Vec<Profile>) -> Vec<Profile> {
+    let mut seen_save_dirs = HashSet::with_capacity(profiles.len());
+    let mut normalized = Vec::with_capacity(profiles.len());
+
+    for profile in profiles {
+        if profile.save_dir.trim().is_empty() {
+            continue;
+        }
+        if seen_save_dirs.insert(profile.save_dir.clone()) {
+            normalized.push(profile);
+        }
+    }
+
+    normalized.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
+    normalized
+}
+
 fn app_data_file(app: &AppHandle, file_name: &str) -> io::Result<PathBuf> {
     app.path()
         .resolve(file_name, BaseDirectory::AppData)
@@ -135,12 +153,9 @@ fn app_data_file(app: &AppHandle, file_name: &str) -> io::Result<PathBuf> {
 
 fn read_profiles_file(path: &Path) -> io::Result<Vec<Profile>> {
     match fs::read(path) {
-        Ok(bytes) => {
-            let mut profiles =
-                serde_json::from_slice::<Vec<Profile>>(&bytes).map_err(io::Error::other)?;
-            profiles.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
-            Ok(profiles)
-        }
+        Ok(bytes) => serde_json::from_slice::<Vec<Profile>>(&bytes)
+            .map(normalize_profiles)
+            .map_err(io::Error::other),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(err) => Err(err),
     }
@@ -150,7 +165,8 @@ fn write_profiles_file(path: &Path, profiles: &[Profile]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let bytes = serde_json::to_vec_pretty(profiles).map_err(io::Error::other)?;
+    let normalized = normalize_profiles(profiles.to_vec());
+    let bytes = serde_json::to_vec_pretty(&normalized).map_err(io::Error::other)?;
     fs::write(path, bytes)
 }
 
@@ -170,7 +186,6 @@ fn upsert_profile(app: AppHandle, profile: Profile) {
     } else {
         profiles.push(profile);
     }
-    profiles.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
 
     write_profiles_file(&path, &profiles).expect("failed to save profiles file");
 }
@@ -404,4 +419,51 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Profile, normalize_profiles};
+
+    #[test]
+    fn normalize_profiles_filters_empty_save_dirs_and_keeps_first_duplicate() {
+        let normalized = normalize_profiles(vec![
+            Profile {
+                save_dir: "/b".into(),
+                mc_version: "1.20.1".into(),
+                branch: "main".into(),
+                default_commit: "first".into(),
+            },
+            Profile {
+                save_dir: "".into(),
+                mc_version: "1.21.1".into(),
+                branch: "empty".into(),
+                default_commit: "drop-empty".into(),
+            },
+            Profile {
+                save_dir: "   ".into(),
+                mc_version: "1.21.2".into(),
+                branch: "blank".into(),
+                default_commit: "drop-blank".into(),
+            },
+            Profile {
+                save_dir: "/a".into(),
+                mc_version: "1.19.4".into(),
+                branch: "stable".into(),
+                default_commit: "keep".into(),
+            },
+            Profile {
+                save_dir: "/b".into(),
+                mc_version: "1.21.4".into(),
+                branch: "newer".into(),
+                default_commit: "drop-duplicate".into(),
+            },
+        ]);
+
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0].save_dir, "/a");
+        assert_eq!(normalized[0].default_commit, "keep");
+        assert_eq!(normalized[1].save_dir, "/b");
+        assert_eq!(normalized[1].default_commit, "first");
+    }
 }
