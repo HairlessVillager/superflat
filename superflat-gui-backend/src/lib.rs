@@ -1,4 +1,6 @@
 use std::{
+    fs, io,
+    path::Path,
     path::PathBuf,
     sync::{
         Mutex,
@@ -8,22 +10,13 @@ use std::{
 
 use chrono::Local;
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, path::BaseDirectory};
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_store::StoreExt;
 use tokio::sync::oneshot;
 
 use serde::{Deserialize, Serialize};
 
-const STORE_FILE: &str = "settings.json";
 const PROFILES_FILE: &str = "profiles.json";
-const KEY_BRANCH: &str = "branch";
-const DEFAULT_BRANCH: &str = "main";
-const KEY_MC_VERSION: &str = "mc_version";
-const DEFAULT_MC_VERSION: &str = "1.21.11";
-const KEY_DEFAULT_COMMIT: &str = "default_commit";
-const DEFAULT_DEFAULT_COMMIT: &str = "main@{10 minutes ago}";
-const KEY_DEBUG: &str = "debug";
 const DEFAULT_DEBUG: bool = false;
 
 struct GuiLogger {
@@ -126,58 +119,6 @@ async fn pick_directory(app: AppHandle) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-#[derive(Serialize)]
-struct Settings {
-    branch: String,
-    mc_version: String,
-    default_commit: String,
-    debug: bool,
-}
-
-#[tauri::command]
-fn get_settings(app: AppHandle) -> Settings {
-    let store = app.store(STORE_FILE).expect("failed to open store");
-    let branch = store
-        .get(KEY_BRANCH)
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_else(|| DEFAULT_BRANCH.to_owned());
-    let mc_version = store
-        .get(KEY_MC_VERSION)
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_else(|| DEFAULT_MC_VERSION.to_owned());
-    let default_commit = store
-        .get(KEY_DEFAULT_COMMIT)
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_else(|| DEFAULT_DEFAULT_COMMIT.to_owned());
-    let debug = store
-        .get(KEY_DEBUG)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(DEFAULT_DEBUG);
-    Settings {
-        branch,
-        mc_version,
-        default_commit,
-        debug,
-    }
-}
-
-#[tauri::command]
-fn save_settings(
-    app: AppHandle,
-    branch: String,
-    mc_version: String,
-    default_commit: String,
-    debug: bool,
-) {
-    let store = app.store(STORE_FILE).expect("failed to open store");
-    store.set(KEY_BRANCH, branch);
-    store.set(KEY_MC_VERSION, mc_version);
-    store.set(KEY_DEFAULT_COMMIT, default_commit);
-    store.set(KEY_DEBUG, debug);
-    store.save().expect("failed to save store");
-    GUI_LOGGER.configure(app, debug);
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 struct Profile {
     save_dir: String,
@@ -186,31 +127,56 @@ struct Profile {
     default_commit: String,
 }
 
+fn app_data_file(app: &AppHandle, file_name: &str) -> io::Result<PathBuf> {
+    app.path()
+        .resolve(file_name, BaseDirectory::AppData)
+        .map_err(io::Error::other)
+}
+
+fn read_profiles_file(path: &Path) -> io::Result<Vec<Profile>> {
+    match fs::read(path) {
+        Ok(bytes) => {
+            let mut profiles = serde_json::from_slice::<Vec<Profile>>(&bytes).map_err(io::Error::other)?;
+            profiles.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
+            Ok(profiles)
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(err) => Err(err),
+    }
+}
+
+fn write_profiles_file(path: &Path, profiles: &[Profile]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec_pretty(profiles).map_err(io::Error::other)?;
+    fs::write(path, bytes)
+}
+
 #[tauri::command]
 fn get_profiles(app: AppHandle) -> Vec<Profile> {
-    let store = app
-        .store(PROFILES_FILE)
-        .expect("failed to open profiles store");
-    let mut profiles: Vec<Profile> = store
-        .keys()
-        .into_iter()
-        .filter_map(|k| store.get(&k).and_then(|v| serde_json::from_value(v).ok()))
-        .collect();
-    // sort by save_dir for stable ordering
-    profiles.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
-    profiles
+    let path = app_data_file(&app, PROFILES_FILE).expect("failed to resolve profiles file");
+    read_profiles_file(&path).expect("failed to read profiles file")
 }
 
 #[tauri::command]
 fn upsert_profile(app: AppHandle, profile: Profile) {
-    let store = app
-        .store(PROFILES_FILE)
-        .expect("failed to open profiles store");
-    store.set(
-        profile.save_dir.clone(),
-        serde_json::to_value(&profile).expect("failed to serialize profile"),
-    );
-    store.save().expect("failed to save profiles store");
+    let path = app_data_file(&app, PROFILES_FILE).expect("failed to resolve profiles file");
+    let mut profiles = read_profiles_file(&path).expect("failed to read profiles file");
+
+    if let Some(existing) = profiles.iter_mut().find(|p| p.save_dir == profile.save_dir) {
+        *existing = profile;
+    } else {
+        profiles.push(profile);
+    }
+    profiles.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
+
+    write_profiles_file(&path, &profiles).expect("failed to save profiles file");
+}
+
+#[tauri::command]
+fn set_debug_logging(app: AppHandle, debug: bool) {
+    GUI_LOGGER.configure(app, debug);
 }
 
 #[tauri::command]
@@ -418,23 +384,22 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
-            let debug = app
-                .store(STORE_FILE)
-                .ok()
-                .and_then(|store| store.get(KEY_DEBUG))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(DEFAULT_DEBUG);
-            GUI_LOGGER.configure(app.handle().clone(), debug);
+            GUI_LOGGER.configure(app.handle().clone(), DEFAULT_DEBUG);
+            if let Ok(settings_path) = app_data_file(app.handle(), "settings.json") {
+                match fs::remove_file(settings_path) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                    Err(err) => log::warn!("Failed to remove legacy settings.json: {}", err),
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             pick_directory,
-            get_settings,
-            save_settings,
             get_profiles,
             upsert_profile,
+            set_debug_logging,
             run_commit,
             run_checkout
         ])

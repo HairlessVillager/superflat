@@ -39,24 +39,13 @@ struct RunCheckoutArgs {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SaveSettingsArgs {
-    branch: String,
-    mc_version: String,
-    default_commit: String,
-    debug: bool,
-}
-
-#[derive(Serialize)]
 struct UpsertProfileArgs {
     profile: Profile,
 }
 
-#[derive(Deserialize)]
-struct Settings {
-    branch: String,
-    mc_version: String,
-    default_commit: String,
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetDebugLoggingArgs {
     debug: bool,
 }
 
@@ -118,25 +107,6 @@ pub fn App() -> impl IntoView {
     });
     set_interval(&tick, 1000);
     tick.forget();
-
-    // Load persisted settings on mount
-    spawn_local(async move {
-        let result = invoke("get_settings", JsValue::NULL).await;
-        if let Ok(result) = result {
-            if let Ok(settings) = serde_wasm_bindgen::from_value::<Settings>(result) {
-                set_branch.set(settings.branch.clone());
-                set_draft_branch.set(settings.branch);
-                set_mc_version.set(settings.mc_version.clone());
-                set_draft_mc_version.set(settings.mc_version);
-                set_commit_id.set(settings.default_commit.clone());
-                set_draft_default_commit.set(settings.default_commit);
-                set_debug_enabled.set(settings.debug);
-                set_draft_debug_enabled.set(settings.debug);
-            }
-        } else if let Err(err) = result {
-            log(&format!("get_settings failed: {}", js_error_to_string(err)));
-        }
-    });
 
     // Load profiles on mount
     spawn_local(async move {
@@ -234,16 +204,10 @@ pub fn App() -> impl IntoView {
         set_debug_enabled.set(d);
         set_show_settings.set(false);
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&SaveSettingsArgs {
-                branch: b,
-                mc_version: v,
-                default_commit: c,
-                debug: d,
-            })
-            .unwrap();
-            if let Err(err) = invoke("save_settings", args).await {
+            let args = serde_wasm_bindgen::to_value(&SetDebugLoggingArgs { debug: d }).unwrap();
+            if let Err(err) = invoke("set_debug_logging", args).await {
                 log(&format!(
-                    "save_settings failed: {}",
+                    "set_debug_logging failed: {}",
                     js_error_to_string(err)
                 ));
             }
