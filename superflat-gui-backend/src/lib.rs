@@ -136,7 +136,8 @@ fn app_data_file(app: &AppHandle, file_name: &str) -> io::Result<PathBuf> {
 fn read_profiles_file(path: &Path) -> io::Result<Vec<Profile>> {
     match fs::read(path) {
         Ok(bytes) => {
-            let mut profiles = serde_json::from_slice::<Vec<Profile>>(&bytes).map_err(io::Error::other)?;
+            let mut profiles =
+                serde_json::from_slice::<Vec<Profile>>(&bytes).map_err(io::Error::other)?;
             profiles.sort_by(|a, b| a.save_dir.cmp(&b.save_dir));
             Ok(profiles)
         }
@@ -233,6 +234,13 @@ async fn run_commit(
         let init_result = tokio::task::spawn_blocking(move || {
             let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["init", "--bare"]);
             superflat::utils::cmd::exec(cmd, None).unwrap();
+            let cmd = superflat::utils::cmd::git_cmd(
+                &git_dir_clone,
+                ["config", "core.logAllRefUpdates", "true"],
+            );
+            superflat::utils::cmd::exec(cmd, None).unwrap();
+            let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["config", "gc.auto", "0"]);
+            superflat::utils::cmd::exec(cmd, None).unwrap();
         })
         .await;
         match init_result {
@@ -324,7 +332,7 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_owned(),
         None => {
-            let _ = app.emit("commit-output", "Error: invalid save directory path");
+            log::error!("Invalid save directory path");
             let _ = app.emit("commit-done", ());
             return;
         }
@@ -344,18 +352,9 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
 
     if save_path.exists() {
         let bak = save_path.with_extension("bak");
-        let _ = app.emit(
-            "commit-output",
-            format!(
-                "save_dir {:?} already exists, renaming to {:?}",
-                save_path, bak
-            ),
-        );
+        log::info!("save_dir {save_path:?} already exists, renaming to {bak:?}",);
         if let Err(e) = std::fs::rename(&save_path, &bak) {
-            let _ = app.emit(
-                "commit-output",
-                format!("Error: failed to rename save_dir: {}", e),
-            );
+            log::error!("Failed to rename save_dir: {e}");
             let _ = app.emit("commit-done", ());
             return;
         }
@@ -368,10 +367,10 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
 
     match result {
         Ok(()) => {
-            let _ = app.emit("commit-output", "Done.");
+            log::info!("Done");
         }
         Err(e) => {
-            let _ = app.emit("commit-output", format!("Error: {}", e));
+            log::error!("Error: {e}");
         }
     }
 
