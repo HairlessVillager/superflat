@@ -304,10 +304,11 @@ async fn run_commit(
     };
 
     let r#ref = format!("refs/heads/{}", branch);
+    let git_dir_for_commit = git_dir.clone();
     let result = tokio::task::spawn_blocking(move || {
         superflat::commit(
             save_path,
-            git_dir,
+            git_dir_for_commit,
             parents,
             &message,
             Some(r#ref),
@@ -318,7 +319,29 @@ async fn run_commit(
 
     match result {
         Ok(()) => {
-            log::info!("Done");
+            let git_dir_clone = git_dir.clone();
+            let repack_result = tokio::task::spawn_blocking(move || {
+                superflat::utils::cmd::git_count_objects(&git_dir_clone)
+                    .map_err(|e| e.to_string())?;
+                superflat::utils::cmd::git_repack_ad(&git_dir_clone, 4095, 2)
+                    .map_err(|e| e.to_string())?;
+                superflat::utils::cmd::git_count_objects(&git_dir_clone)
+                    .map_err(|e| e.to_string())?;
+                Ok::<(), String>(())
+            })
+            .await;
+
+            match repack_result {
+                Ok(Ok(())) => {
+                    log::info!("Done");
+                }
+                Ok(Err(e)) => {
+                    log::error!("Commit succeeded but repack failed: {}", e);
+                }
+                Err(e) => {
+                    log::error!("Commit succeeded but repack task failed: {}", e);
+                }
+            }
         }
         Err(e) => {
             log::error!("Failed to commit: {}", e);
