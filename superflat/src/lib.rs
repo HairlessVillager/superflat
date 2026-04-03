@@ -4,7 +4,7 @@ use crate::{
     crafter::{ChunkRegionCrafter, Crafter, GzipNbtCrafter, OtherRegionCrafter, RawCrafter},
     odb::{LocalFsOdb, LocalGitOdb},
     utils::{
-        cmd::{exec, git_cmd},
+        cmd::{exec, git_cmd, git_repack_ad},
         mc_data::init_mc_data,
     },
 };
@@ -76,4 +76,8 @@ pub fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String, mc_version:
     GzipNbtCrafter.unflatten(&mut save, &git);
     ChunkRegionCrafter.unflatten(&mut save, &git);
     OtherRegionCrafter.unflatten(&mut save, &git);
+}
+
+pub fn repack(git_dir: PathBuf) {
+    git_repack_ad(git_dir, 4095, 2).unwrap();
 }

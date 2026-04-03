@@ -4,8 +4,8 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use superflat::{
-    checkout, commit, flatten, unflatten,
-    utils::cmd::{git_cmd, git_count_objects, git_repack_ad, git_repo_exists},
+    checkout, commit, flatten, repack, unflatten,
+    utils::cmd::{git_cmd, git_count_objects, git_repo_exists},
 };
 
 /// Superflat - A bridge between Git and Minecraft save
@@ -57,8 +57,8 @@ enum CliSubcommand {
         #[arg(short, long)]
         message: String,
         /// Automatically repack loose objects.
-        #[arg(long, default_value_t = false)]
-        repack: bool,
+        #[arg(long = "repack", default_value_t = false)]
+        use_repack: bool,
         /// Minecraft version (e.g. 1.21.11)
         #[arg(long)]
         mc_version: String,
@@ -137,7 +137,7 @@ fn main() {
             branch,
             init,
             message,
-            repack,
+            use_repack,
             mc_version,
         } => {
             let parents = {
@@ -172,9 +172,9 @@ fn main() {
                 &mc_version,
             );
 
-            if repack {
+            if use_repack {
                 git_count_objects(&git_dir).unwrap();
-                git_repack_ad(&git_dir, 4095, 2).unwrap();
+                repack(git_dir.to_owned());
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
