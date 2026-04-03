@@ -108,11 +108,10 @@ jobs:
                   workspaces: |
                       . -> target
 
-            - name: Install Trunk
-              run: cargo install trunk --locked
-
-            - name: Install Tauri CLI
-              run: cargo install tauri-cli --version "^2" --locked
+            - name: Install Trunk and Tauri CLI
+              uses: taiki-e/install-action@v2
+              with:
+                  tool: trunk,tauri-cli@2
 
             - name: Build portable Windows executable
               working-directory: superflat-gui-backend
