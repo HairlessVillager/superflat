@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
 
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
-use crate::utils::cmd::{exec_stdout, git_cmd};
+use crate::utils::cmd::{exec, git_cmd};
 
 pub struct LocalGitOdb {
     repo: gix::ThreadSafeRepository,
@@ -30,21 +29,17 @@ impl LocalGitOdb {
     }
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
-        let repo: gix::ThreadSafeRepository = gix::open(git_dir).unwrap().into();
+        let repo: gix::ThreadSafeRepository = gix::open(&git_dir).unwrap().into();
         let path_to_oid = if commit.is_empty() {
             HashMap::new()
         } else {
-            build_path_to_oid(&repo, &commit)
+            build_path_to_oid(&git_dir, &commit)
         };
         Self {
             repo,
             pending: HashMap::new(),
             path_to_oid,
         }
-    }
-
-    fn git(&self) -> Command {
-        git_cmd(self.repo.git_dir())
     }
 
     /// Create a commit from all pending blobs, consuming self.
@@ -58,14 +53,14 @@ impl LocalGitOdb {
     pub fn commit(self, parents: &[impl AsRef<str>], message: &str) -> String {
         let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "");
 
-        let mut cmd = self.git();
+        let mut cmd = git_cmd(self.repo.git_dir(), [] as [&str; 0]);
         cmd.arg("commit-tree").arg(&tree_sha);
         for parent in parents {
             cmd.arg("-p").arg(&format!("{}^0", parent.as_ref()));
         }
         cmd.arg("-m").arg(message);
 
-        let commit = exec_stdout(cmd, None).trim().to_string();
+        let commit = exec(cmd, None).unwrap().trim().to_string();
         commit
     }
 }
@@ -118,22 +113,15 @@ fn build_tree(
         mktree_input.push_str(&format!("100644 blob {sha1}\t{name}\n"));
     }
 
-    let mut cmd = git_cmd(git_dir);
-    cmd.args(["mktree"]);
-
-    exec_stdout(cmd, Some(mktree_input)).trim().to_string()
+    let cmd = git_cmd(git_dir, ["mktree"]);
+    exec(cmd, Some(mktree_input)).unwrap().trim().to_string()
 }
 
 /// Build a path → oid map for a commit using `git ls-tree -r`.
-fn build_path_to_oid(
-    repo: &gix::ThreadSafeRepository,
-    commit_sha: &str,
-) -> HashMap<String, gix::ObjectId> {
-    let mut cmd = git_cmd(repo.git_dir());
-    cmd.arg("--git-dir")
-        .arg(repo.git_dir())
-        .args(["ls-tree", "-r", "--", commit_sha]);
-    exec_stdout(cmd, None)
+fn build_path_to_oid(git_dir: &PathBuf, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
+    let cmd = git_cmd(git_dir, ["ls-tree", "-r", "--", commit_sha]);
+    exec(cmd, None)
+        .unwrap()
         .lines()
         .filter_map(|line| {
             let oid_str = line.get(12..52)?;
@@ -215,6 +203,8 @@ impl OdbWriter for LocalGitOdb {
 
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
+
     use super::*;
 
     /// Initialise a bare git repo in a tempdir and return its path.

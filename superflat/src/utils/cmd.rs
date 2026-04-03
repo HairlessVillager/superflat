@@ -5,21 +5,9 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 
-pub fn exec(mut cmd: Command) {
-    log::debug!("command (no capture): {cmd:?}");
-    let out = cmd
-        .output()
-        .with_context(|| format!("Failed to run command {cmd:?}"))
-        .unwrap();
-    for line in String::from_utf8(out.stderr).unwrap().lines() {
-        log::debug!("stderr: {}", line);
-    }
-    assert!(out.status.success());
-}
-
-pub fn exec_stdout(mut cmd: Command, stdin: Option<String>) -> String {
+pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
     log::debug!("command: {:?}", cmd);
     let out = if let Some(stdin) = stdin {
         for line in stdin.lines() {
@@ -29,77 +17,76 @@ pub fn exec_stdout(mut cmd: Command, stdin: Option<String>) -> String {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .with_context(|| format!("Failed to run command {cmd:?}"))
-            .unwrap();
+            .with_context(|| format!("Failed to run command {cmd:?}"))?;
         child
             .stdin
             .as_mut()
             .unwrap()
             .write_all(stdin.as_bytes())
-            .with_context(|| format!("Failed to write stdin to command {cmd:?}"))
-            .unwrap();
+            .with_context(|| format!("Failed to write stdin to command {cmd:?}"))?;
         child
             .wait_with_output()
-            .with_context(|| format!("Failed to wait command {cmd:?}"))
-            .unwrap()
+            .with_context(|| format!("Failed to wait command {cmd:?}"))?
     } else {
         cmd.output()
-            .with_context(|| format!("Failed to read stdout from command {cmd:?}"))
-            .unwrap()
+            .with_context(|| format!("Failed to read stdout from command {cmd:?}"))?
     };
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8(out.stderr)
-            .with_context(|| format!("Failed to encoding stderr by UTF-8: {cmd:?}"))
-            .unwrap()
-    );
+    let stderr = String::from_utf8(out.stderr)
+        .with_context(|| format!("Failed to encoding stderr by UTF-8"))?;
+    for line in stderr.lines() {
+        log::debug!("stderr: {:?}", line);
+    }
     let stdout = String::from_utf8(out.stdout)
-        .with_context(|| format!("Failed to encoding stdout by UTF-8: {cmd:?}"))
-        .unwrap();
+        .with_context(|| format!("Failed to encoding stdout by UTF-8"))?;
     for line in stdout.lines() {
         log::debug!("stdout: {:?}", line);
     }
-    stdout
+    anyhow::ensure!(out.status.success(), "Command status is failed");
+    Ok(stdout)
 }
 
-pub fn git_cmd(git_dir: impl AsRef<OsStr>) -> Command {
+pub fn git_cmd(
+    git_dir: impl AsRef<OsStr>,
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+) -> Command {
     let mut cmd = Command::new("git");
     cmd.arg("--git-dir").arg(git_dir);
+    for arg in args {
+        cmd.arg(arg);
+    }
     cmd
 }
 
-pub fn git_repo_exists(git_dir: &str) -> Result<PathBuf, String> {
+pub fn git_repo_exists(git_dir: &str) -> Result<PathBuf> {
     let git_dir = PathBuf::from(git_dir);
-    let out = git_cmd(&git_dir)
-        .args(["rev-parse", "--is-bare-repository"])
-        .output()
-        .unwrap();
-    if out.status.success() {
-        Ok(git_dir)
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).into())
+    let cmd = git_cmd(&git_dir, ["rev-parse", "--is-bare-repository"]);
+    let _ = exec(cmd, None)?;
+    Ok(git_dir)
+}
+
+pub fn git_count_objects(git_dir: impl AsRef<OsStr>) -> Result<()> {
+    let cmd = git_cmd(git_dir, ["count-objects", "-vH"]);
+    let result = exec(cmd, None)?;
+    for line in result.lines() {
+        log::info!("git-count-objects: {line}");
     }
+    Ok(())
 }
 
-pub fn git_count_objects(git_dir: impl AsRef<OsStr>) {
-    log::info!("Counting objects");
-    let mut cmd = git_cmd(git_dir);
-    cmd.args(["count-objects", "-vH"]);
-    exec(cmd);
-}
-
-pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) {
+pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) -> Result<()> {
     log::info!("Repacking");
-    let mut cmd = git_cmd(git_dir);
-    cmd.args([
-        "repack",
-        "--depth",
-        &depth.to_string(),
-        "--window",
-        &window.to_string(),
-        "-a",
-        "-d",
-    ]);
-    exec(cmd);
+    let cmd = git_cmd(
+        git_dir,
+        [
+            "repack",
+            "--depth",
+            &depth.to_string(),
+            "--window",
+            &window.to_string(),
+            "-a",
+            "-d",
+        ],
+    );
+    let _ = exec(cmd, None)?;
+    Ok(())
 }

@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use crate::{
     crafter::{ChunkRegionCrafter, Crafter, GzipNbtCrafter, OtherRegionCrafter, RawCrafter},
     odb::{LocalFsOdb, LocalGitOdb},
-    utils::{cmd::git_cmd, mc_data::init_mc_data},
+    utils::{
+        cmd::{exec, git_cmd},
+        mc_data::init_mc_data,
+    },
 };
 
 mod crafter;
@@ -56,15 +59,11 @@ pub fn commit(
     let commit = git.commit(parents.as_slice(), message);
 
     if let Some(r#ref) = r#ref {
-        git_cmd(git_dir)
-            .arg("update-ref")
-            .arg(r#ref.to_owned())
-            .arg(&commit)
-            .status()
-            .unwrap();
+        let cmd = git_cmd(git_dir, ["update-ref", &r#ref, &commit]);
+        let _ = exec(cmd, None).unwrap();
         log::info!("{:?} -> {commit}", r#ref);
     } else {
-        log::warn!("Dangling {commit}");
+        log::warn!("Dangling commit {commit}");
     }
 }
 

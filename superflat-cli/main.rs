@@ -141,10 +141,8 @@ fn main() {
             mc_version,
         } => {
             let parents = {
-                let out = git_cmd(&git_dir)
-                    .args(["rev-parse", &format!("{branch}^{{commit}}")])
-                    .output()
-                    .expect("Failed to run git rev-parse");
+                let mut cmd = git_cmd(&git_dir, ["rev-parse", &format!("{branch}^{{commit}}")]);
+                let out = cmd.output().expect("Failed to run git rev-parse");
                 let branch_exists = out.status.success();
                 match (branch_exists, init) {
                     (true, false) => {
@@ -175,13 +173,13 @@ fn main() {
             );
 
             if repack {
-                git_count_objects(&git_dir);
-                git_repack_ad(&git_dir, 4095, 2);
+                git_count_objects(&git_dir).unwrap();
+                git_repack_ad(&git_dir, 4095, 2).unwrap();
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
 
-            git_count_objects(git_dir.to_owned());
+            git_count_objects(git_dir.to_owned()).unwrap();
         }
         CliSubcommand::Checkout {
             save_dir,

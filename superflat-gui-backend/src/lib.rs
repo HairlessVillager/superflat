@@ -1,8 +1,8 @@
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicU8, Ordering},
         Mutex,
+        atomic::{AtomicU8, Ordering},
     },
 };
 
@@ -265,9 +265,8 @@ async fn run_commit(
         }
         let git_dir_clone = git_dir.clone();
         let init_result = tokio::task::spawn_blocking(move || {
-            let mut cmd = superflat::utils::cmd::git_cmd(&git_dir_clone);
-            cmd.args(["init", "--bare"]);
-            superflat::utils::cmd::exec(cmd);
+            let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["init", "--bare"]);
+            superflat::utils::cmd::exec(cmd, None).unwrap();
         })
         .await;
         match init_result {
@@ -284,9 +283,11 @@ async fn run_commit(
         let git_dir_clone = git_dir.clone();
         let branch_clone = branch.clone();
         let rev = tokio::task::spawn_blocking(move || {
-            let mut cmd = superflat::utils::cmd::git_cmd(&git_dir_clone);
-            cmd.args(["rev-parse", &format!("{}^{{commit}}", branch_clone)]);
-            superflat::utils::cmd::exec_stdout(cmd, None)
+            let cmd = superflat::utils::cmd::git_cmd(
+                &git_dir_clone,
+                ["rev-parse", &format!("{}^{{commit}}", branch_clone)],
+            );
+            superflat::utils::cmd::exec(cmd, None).unwrap()
         })
         .await;
         match rev {
