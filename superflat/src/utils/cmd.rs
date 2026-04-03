@@ -5,9 +5,18 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use anyhow::{Context, Result};
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
     log::debug!("command: {:?}", cmd);
     let out = if let Some(stdin) = stdin {
         for line in stdin.lines() {
