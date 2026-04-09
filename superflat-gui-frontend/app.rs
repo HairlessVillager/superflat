@@ -90,7 +90,6 @@ struct Profile {
     save_dir: String,
     mc_version: String,
     branch: String,
-    default_commit: String,
     #[serde(default)]
     remote_url: String,
 }
@@ -143,7 +142,6 @@ pub fn App() -> impl IntoView {
     let (save_dir, set_save_dir) = signal(String::new());
     let (branch, set_branch) = signal(String::from("main"));
     let (mc_version, set_mc_version) = signal(String::from("1.21.11"));
-    let (commit_id, set_commit_id) = signal(String::from("main"));
     let (remote_url, set_remote_url) = signal(String::new());
 
     // --- ui state ---
@@ -175,7 +173,6 @@ pub fn App() -> impl IntoView {
     let (form_save_dir, set_form_save_dir) = signal(String::new());
     let (form_branch, set_form_branch) = signal(String::from("main"));
     let (form_mc_version, set_form_mc_version) = signal(String::from("1.21.11"));
-    let (form_default_commit, set_form_default_commit) = signal(String::from("main"));
     let (form_remote_url, set_form_remote_url) = signal(String::new());
 
     // Reactively check repo + load commits when save_dir changes
@@ -296,7 +293,6 @@ pub fn App() -> impl IntoView {
         let save_dir_val = save_dir.get_untracked();
         let branch_val = branch.get_untracked();
         let mc_version_val = mc_version.get_untracked();
-        let default_commit_val = commit_id.get_untracked();
         let remote_url_val = remote_url.get_untracked();
         let message_val = {
             let m = draft_message.get_untracked();
@@ -322,7 +318,6 @@ pub fn App() -> impl IntoView {
                 save_dir: save_dir_val,
                 mc_version: mc_version_val,
                 branch: branch_val,
-                default_commit: default_commit_val,
                 remote_url: remote_url_val,
             });
         });
@@ -350,7 +345,6 @@ pub fn App() -> impl IntoView {
                 save_dir: save_dir_val,
                 mc_version: mc_version_val,
                 branch: branch_val,
-                default_commit: commit_clone,
                 remote_url: remote_url_val,
             });
         });
@@ -363,7 +357,6 @@ pub fn App() -> impl IntoView {
         let remote_url_val = remote_url.get_untracked();
         let branch_val = branch.get_untracked();
         let mc_version_val = mc_version.get_untracked();
-        let default_commit_val = commit_id.get_untracked();
         spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&RunPullArgs {
                 save_dir: save_dir_val.clone(),
@@ -377,7 +370,6 @@ pub fn App() -> impl IntoView {
                 save_dir: save_dir_val,
                 mc_version: mc_version_val,
                 branch: branch_val,
-                default_commit: default_commit_val,
                 remote_url: remote_url_val,
             });
         });
@@ -390,7 +382,6 @@ pub fn App() -> impl IntoView {
         let remote_url_val = remote_url.get_untracked();
         let branch_val = branch.get_untracked();
         let mc_version_val = mc_version.get_untracked();
-        let default_commit_val = commit_id.get_untracked();
         spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&RunPushArgs {
                 save_dir: save_dir_val.clone(),
@@ -404,20 +395,22 @@ pub fn App() -> impl IntoView {
                 save_dir: save_dir_val,
                 mc_version: mc_version_val,
                 branch: branch_val,
-                default_commit: default_commit_val,
                 remote_url: remote_url_val,
             });
         });
     };
 
     let run_clone = move |_: leptos::ev::MouseEvent| {
+        let remote_url_val = remote_url.get_untracked();
+        if remote_url_val.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
+            return;
+        }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
         let save_dir_val = save_dir.get_untracked();
-        let remote_url_val = remote_url.get_untracked();
         let branch_val = branch.get_untracked();
         let mc_version_val = mc_version.get_untracked();
-        let default_commit_val = commit_id.get_untracked();
         spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&RunCloneArgs {
                 save_dir: save_dir_val.clone(),
@@ -431,7 +424,6 @@ pub fn App() -> impl IntoView {
                 save_dir: save_dir_val,
                 mc_version: mc_version_val,
                 branch: branch_val,
-                default_commit: default_commit_val,
                 remote_url: remote_url_val,
             });
         });
@@ -441,7 +433,6 @@ pub fn App() -> impl IntoView {
         set_form_save_dir.set(String::new());
         set_form_branch.set(String::from("main"));
         set_form_mc_version.set(String::from("1.21.11"));
-        set_form_default_commit.set(String::from("main"));
         set_form_remote_url.set(String::new());
         set_right_panel.set(RightPanel::AddProfile);
         set_show_profiles.set(true);
@@ -452,7 +443,6 @@ pub fn App() -> impl IntoView {
             save_dir: form_save_dir.get_untracked(),
             branch: form_branch.get_untracked(),
             mc_version: form_mc_version.get_untracked(),
-            default_commit: form_default_commit.get_untracked(),
             remote_url: form_remote_url.get_untracked(),
         };
         if p.save_dir.is_empty() {
@@ -498,7 +488,6 @@ pub fn App() -> impl IntoView {
                                                 set_save_dir.set(p_load.save_dir.clone());
                                                 set_branch.set(p_load.branch.clone());
                                                 set_mc_version.set(p_load.mc_version.clone());
-                                                set_commit_id.set(p_load.default_commit.clone());
                                                 set_remote_url.set(p_load.remote_url.clone());
                                                 set_show_profiles.set(false);
                                                 set_right_panel.set(RightPanel::None);
@@ -514,7 +503,6 @@ pub fn App() -> impl IntoView {
                                                     set_form_save_dir.set(p_edit.save_dir.clone());
                                                     set_form_branch.set(p_edit.branch.clone());
                                                     set_form_mc_version.set(p_edit.mc_version.clone());
-                                                    set_form_default_commit.set(p_edit.default_commit.clone());
                                                     set_form_remote_url.set(p_edit.remote_url.clone());
                                                     set_right_panel.set(RightPanel::EditProfile(p_edit.save_dir.clone()));
                                                 }>
@@ -595,15 +583,6 @@ pub fn App() -> impl IntoView {
                                 />
                             </label>
                             <label class="panel-label">
-                                "Default commit"
-                                <input
-                                    type="text"
-                                    prop:value=move || form_default_commit.get()
-                                    on:input=move |ev| set_form_default_commit.set(event_target_value(&ev))
-                                    placeholder="main@{10 minutes ago}"
-                                />
-                            </label>
-                            <label class="panel-label">
                                 "Remote URL"
                                 <input
                                     type="text"
@@ -618,7 +597,6 @@ pub fn App() -> impl IntoView {
                                     set_save_dir.set(form_save_dir.get_untracked());
                                     set_branch.set(form_branch.get_untracked());
                                     set_mc_version.set(form_mc_version.get_untracked());
-                                    set_commit_id.set(form_default_commit.get_untracked());
                                     set_remote_url.set(form_remote_url.get_untracked());
                                     set_show_profiles.set(false);
                                     close_form(RightPanel::None);

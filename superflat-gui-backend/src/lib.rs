@@ -125,7 +125,6 @@ struct Profile {
     save_dir: String,
     mc_version: String,
     branch: String,
-    default_commit: String,
     #[serde(default)]
     remote_url: String,
 }
@@ -688,43 +687,38 @@ mod tests {
                 save_dir: "/b".into(),
                 mc_version: "1.20.1".into(),
                 branch: "main".into(),
-                default_commit: "first".into(),
                 remote_url: String::new(),
             },
             Profile {
                 save_dir: "".into(),
                 mc_version: "1.21.1".into(),
                 branch: "empty".into(),
-                default_commit: "drop-empty".into(),
                 remote_url: String::new(),
             },
             Profile {
                 save_dir: "   ".into(),
                 mc_version: "1.21.2".into(),
                 branch: "blank".into(),
-                default_commit: "drop-blank".into(),
                 remote_url: String::new(),
             },
             Profile {
                 save_dir: "/a".into(),
                 mc_version: "1.19.4".into(),
                 branch: "stable".into(),
-                default_commit: "keep".into(),
                 remote_url: String::new(),
             },
             Profile {
                 save_dir: "/b".into(),
                 mc_version: "1.21.4".into(),
                 branch: "newer".into(),
-                default_commit: "drop-duplicate".into(),
                 remote_url: String::new(),
             },
         ]);
 
         assert_eq!(normalized.len(), 2);
         assert_eq!(normalized[0].save_dir, "/a");
-        assert_eq!(normalized[0].default_commit, "keep");
+        assert_eq!(normalized[0].branch, "stable");
         assert_eq!(normalized[1].save_dir, "/b");
-        assert_eq!(normalized[1].default_commit, "first");
+        assert_eq!(normalized[1].branch, "main");
     }
 }
