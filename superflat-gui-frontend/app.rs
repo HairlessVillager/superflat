@@ -204,7 +204,7 @@ pub fn App() -> impl IntoView {
         set_debug_enabled.set(d);
         set_show_settings.set(false);
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&SetDebugLoggingArgs { debug: d }).unwrap();
+            let args = serde_wasm_bindgen::to_value(&SetDebugLoggingArgs { debug: d }).expect("failed to serialize set_debug_logging args");
             if let Err(err) = invoke("set_debug_logging", args).await {
                 log(&format!(
                     "set_debug_logging failed: {}",
@@ -240,7 +240,7 @@ pub fn App() -> impl IntoView {
                 message: message_val,
                 mc_version: mc_version_val.clone(),
             })
-            .unwrap();
+            .expect("failed to serialize run_commit args");
             if let Err(err) = invoke("run_commit", args).await {
                 set_output_lines.update(|lines| {
                     lines.push(format!(
@@ -259,7 +259,7 @@ pub fn App() -> impl IntoView {
                     default_commit: default_commit_val,
                 },
             })
-            .unwrap();
+            .expect("failed to serialize upsert_profile args");
             if let Err(err) = invoke("upsert_profile", profile_args).await {
                 log(&format!(
                     "upsert_profile failed: {}",
@@ -284,7 +284,7 @@ pub fn App() -> impl IntoView {
                 commit: commit_val.clone(),
                 mc_version: mc_version_val.clone(),
             })
-            .unwrap();
+            .expect("failed to serialize run_checkout args");
             if let Err(err) = invoke("run_checkout", args).await {
                 set_output_lines.update(|lines| {
                     lines.push(format!(
@@ -303,7 +303,7 @@ pub fn App() -> impl IntoView {
                     default_commit: commit_val,
                 },
             })
-            .unwrap();
+            .expect("failed to serialize upsert_profile args");
             if let Err(err) = invoke("upsert_profile", profile_args).await {
                 log(&format!(
                     "upsert_profile failed: {}",

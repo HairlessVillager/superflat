@@ -7,7 +7,7 @@ fn bench_unflatten(c: &mut Criterion) {
         .expect("set SF_BENCH_FIXTURE to a save dir with a single region/r.0.0.mca");
     let version = std::env::var("SF_BENCH_VERSION")
         .expect("set SF_BENCH_VERSION to a Minecraft version (eg. 1.21.11)");
-    let flattened = tempfile::tempdir().unwrap();
+    let flattened = tempfile::tempdir().expect("failed to create temp dir");
     flatten(
         PathBuf::from(&fixture),
         flattened.path().to_path_buf(),
@@ -16,7 +16,7 @@ fn bench_unflatten(c: &mut Criterion) {
 
     c.bench_function("unflatten", |b| {
         b.iter_batched(
-            || tempfile::tempdir().unwrap(),
+            || tempfile::tempdir().expect("failed to create temp dir"),
             |output| {
                 unflatten(
                     output.path().to_path_buf(),

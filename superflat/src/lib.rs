@@ -60,7 +60,7 @@ pub fn commit(
 
     if let Some(r#ref) = r#ref {
         let cmd = git_cmd(git_dir, ["update-ref", &r#ref, &commit]);
-        let _ = exec(cmd, None).unwrap();
+        let _ = exec(cmd, None).expect("failed to run update-ref");
         log::info!("{:?} -> {commit}", r#ref);
     } else {
         log::warn!("Dangling commit {commit}");
@@ -79,5 +79,5 @@ pub fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String, mc_version:
 }
 
 pub fn repack(git_dir: PathBuf) {
-    git_repack_ad(git_dir, 4095, 2).unwrap();
+    git_repack_ad(git_dir, 4095, 2).expect("failed to repack git repository");
 }

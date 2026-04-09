@@ -68,7 +68,7 @@ impl GuiLogger {
             }),
             Ordering::Relaxed,
         );
-        *self.app.lock().unwrap() = Some(app);
+        *self.app.lock().expect("gui logger mutex is poisoned") = Some(app);
         log::set_max_level(self.current_level());
     }
 }
@@ -97,7 +97,7 @@ impl Log for GuiLogger {
             record.args()
         );
 
-        if let Some(app) = self.app.lock().unwrap().clone() {
+        if let Some(app) = self.app.lock().expect("gui logger mutex is poisoned").clone() {
             let _ = app.emit("commit-output", line);
         }
     }
@@ -248,14 +248,14 @@ async fn run_commit(
         let git_dir_clone = git_dir.clone();
         let init_result = tokio::task::spawn_blocking(move || {
             let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["init", "--bare"]);
-            superflat::utils::cmd::exec(cmd, None).unwrap();
+            superflat::utils::cmd::exec(cmd, None).expect("failed to run git init");
             let cmd = superflat::utils::cmd::git_cmd(
                 &git_dir_clone,
                 ["config", "core.logAllRefUpdates", "true"],
             );
-            superflat::utils::cmd::exec(cmd, None).unwrap();
+            superflat::utils::cmd::exec(cmd, None).expect("failed to run git config logAllRefUpdates");
             let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["config", "gc.auto", "0"]);
-            superflat::utils::cmd::exec(cmd, None).unwrap();
+            superflat::utils::cmd::exec(cmd, None).expect("failed to run git config gc.auto");
         })
         .await;
         match init_result {
@@ -276,7 +276,7 @@ async fn run_commit(
                 &git_dir_clone,
                 ["rev-parse", &format!("{}^{{commit}}", branch_clone)],
             );
-            superflat::utils::cmd::exec(cmd, None).unwrap()
+            superflat::utils::cmd::exec(cmd, None).expect("failed to run git rev-parse")
         })
         .await;
         match rev {

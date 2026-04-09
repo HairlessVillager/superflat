@@ -26,7 +26,7 @@ pub fn read_region<B: Read + Seek>(
 
     let mut timestamps = [0u8; 4096];
     buf.read_exact(&mut timestamps)
-        .context("Buffer's length < 8192")?;
+        .context("buffer's length < 8192")?;
 
     let mut compressed_chunks = Vec::new();
 
@@ -41,11 +41,11 @@ pub fn read_region<B: Read + Seek>(
 
         let byte_offset = offset * SECTOR_SIZE;
         buf.seek(SeekStart(byte_offset as u64))
-            .with_context(|| format!("At chunk #{i}: Failed to seek {byte_offset}"))?;
+            .with_context(|| format!("at chunk #{i}: failed to seek {byte_offset}"))?;
 
         let mut header = [0u8; 5];
         buf.read_exact(&mut header)
-            .with_context(|| format!("At chunk #{i}: Failed to read chunk header"))?;
+            .with_context(|| format!("at chunk #{i}: failed to read chunk header"))?;
 
         let data_length = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize;
         let compression_type = header[4];
@@ -53,7 +53,7 @@ pub fn read_region<B: Read + Seek>(
         let compressed_len = data_length.saturating_sub(1);
         let mut compressed_data = vec![0u8; compressed_len];
         buf.read_exact(&mut compressed_data).with_context(|| {
-            format!("At chunk #{i}: Failed to read chunk body (length: {compressed_len})")
+            format!("at chunk #{i}: failed to read chunk body (length: {compressed_len})")
         })?;
 
         compressed_chunks.push((i, compression_type, compressed_data));
@@ -92,9 +92,9 @@ pub fn write_region<B: Write + Seek>(
     chunks: impl IntoParallelIterator<Item = (i32, i32, impl AsRef<[u8]>)>,
     mut buf: B,
 ) -> Result<()> {
-    buf.seek(SeekStart(4096)).context("Failed to seek 4096")?;
+    buf.seek(SeekStart(4096)).context("failed to seek 4096")?;
     buf.write(timestamp_header)
-        .context("Failed to write timestamp header")?;
+        .context("failed to write timestamp header")?;
 
     let mut current_sector = 2usize;
     let chunks = chunks
@@ -102,10 +102,10 @@ pub fn write_region<B: Write + Seek>(
         .map(|(chunk_x, chunk_z, nbt)| {
             let mut encoder = ZlibEncoder::new(Vec::with_capacity(8192), Compression::default());
             encoder.write_all(nbt.as_ref()).with_context(|| {
-                format!("At chunk ({chunk_x}, {chunk_z}): Failed to feed data into encoder")
+                format!("at chunk ({chunk_x}, {chunk_z}): failed to feed data into encoder")
             })?;
             let compressed = encoder.finish().with_context(|| {
-                format!("At chunk ({chunk_x}, {chunk_z}): Failed to finalize compression")
+                format!("at chunk ({chunk_x}, {chunk_z}): failed to finalize compression")
             })?;
             Ok((chunk_x, chunk_z, compressed))
         })
@@ -132,7 +132,7 @@ pub fn write_region<B: Write + Seek>(
         let sector_bytes = (current_sector as u32).to_be_bytes();
 
         buf.seek(SeekStart(loc_offset as u64)).with_context(|| {
-            format!("At chunk ({chunk_x}, {chunk_z}): Failed to seek header@{loc_offset}")
+            format!("at chunk ({chunk_x}, {chunk_z}): failed to seek header@{loc_offset}")
         })?;
         buf.write(&[
             sector_bytes[1],
@@ -140,20 +140,20 @@ pub fn write_region<B: Write + Seek>(
             sector_bytes[3],
             sectors_needed as u8,
         ])
-        .with_context(|| format!("At chunk ({chunk_x}, {chunk_z}): Failed to write header"))?;
+        .with_context(|| format!("at chunk ({chunk_x}, {chunk_z}): failed to write header"))?;
 
         buf.seek(SeekStart((current_sector * SECTOR_SIZE) as u64))
             .with_context(|| {
                 format!(
-                    "At chunk ({chunk_x}, {chunk_z}): Failed to seek chunk@{}",
+                    "at chunk ({chunk_x}, {chunk_z}): failed to seek chunk@{}",
                     current_sector * SECTOR_SIZE
                 )
             })?;
         buf.write(&payload)
-            .with_context(|| format!("At chunk ({chunk_x}, {chunk_z}): Failed to write payload"))?;
+            .with_context(|| format!("at chunk ({chunk_x}, {chunk_z}): failed to write payload"))?;
 
         buf.write(&std::iter::repeat_n(0u8, padding).collect::<Vec<u8>>())
-            .with_context(|| format!("At chunk ({chunk_x}, {chunk_z}): Failed to write padding"))?;
+            .with_context(|| format!("at chunk ({chunk_x}, {chunk_z}): failed to write padding"))?;
 
         current_sector += sectors_needed;
     }
@@ -166,10 +166,10 @@ pub fn parse_xz(filename: &str) -> Result<(i32, i32)> {
     let parts: Vec<&str> = filename.split('.').collect();
     let x: i32 = parts[1]
         .parse()
-        .with_context(|| format!("Failed to parse {} as i32", parts[1]))?;
+        .with_context(|| format!("failed to parse {} as i32", parts[1]))?;
     let z: i32 = parts[2]
         .parse()
-        .with_context(|| format!("Failed to parse {} as i32", parts[1]))?;
+        .with_context(|| format!("failed to parse {} as i32", parts[1]))?;
     Ok((x, z))
 }
 
@@ -191,7 +191,7 @@ fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
         .enumerate()
         .map(|(idx, section)| {
             let section = section.extract_compound().with_context(|| {
-                format!("Expect sections.{idx} is a NBT compund, got: {section:#?}")
+                format!("expect sections.{idx} is a NBT compund, got: {section:#?}")
             })?;
             let y = section.get_byte("Y").with_context(|| {
                 format!("Missing NBT byte 'sections.{idx}.Y', got: {section:#?}")
@@ -288,7 +288,7 @@ pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
         let sections = nbt.root_tag.child_tags.swap_remove(sections_idx).1;
         let sections = sections
             .extract_list()
-            .with_context(|| format!("Expect sections is a NBT list, got: {sections:#?}"))?;
+            .with_context(|| format!("expect sections is a NBT list, got: {sections:#?}"))?;
         dump_sections(sections)?
     };
 

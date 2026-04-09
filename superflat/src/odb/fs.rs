@@ -17,7 +17,7 @@ impl LocalFsOdb {
 
 impl OdbReader for LocalFsOdb {
     fn get(&self, key: &str) -> Vec<u8> {
-        fs::read(self.root_dir.join(key)).unwrap()
+        fs::read(self.root_dir.join(key)).expect("failed to read file from odb")
     }
 
     fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
@@ -27,8 +27,8 @@ impl OdbReader for LocalFsOdb {
     fn glob(&self, pattern: &str) -> Vec<String> {
         let full_pattern = self.root_dir.join(pattern);
         let root = self.root_dir.clone();
-        glob::glob(full_pattern.to_str().unwrap())
-            .unwrap()
+        glob::glob(full_pattern.to_str().expect("glob pattern path is not valid utf-8"))
+            .expect("failed to run glob")
             .filter_map(|e| e.ok())
             .filter_map(|path| {
                 path.strip_prefix(&root)
@@ -43,18 +43,18 @@ impl OdbWriter for LocalFsOdb {
     fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
         let path = self.root_dir.join(key);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
+            fs::create_dir_all(parent).expect("failed to create parent directory");
         }
-        fs::write(path, value).unwrap();
+        fs::write(path, value).expect("failed to write file to odb");
     }
 
     fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
         entries.into_par_iter().for_each(|(key, value)| {
             let path = self.root_dir.join(&key);
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).unwrap(); // TODO: create dir before par write
+                fs::create_dir_all(parent).expect("failed to create parent directory"); // TODO: create dir before par write
             }
-            fs::write(path, value).unwrap();
+            fs::write(path, value).expect("failed to write file to odb");
         });
     }
 }
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn fs_put_get_roundtrip() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
         let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
         let data = b"hello superflat".to_vec();
         odb.put("foo/bar.bin", &data);
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn fs_glob_returns_matching_keys() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
         let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
         odb.put("a/x.txt", &b"1".to_vec());
         odb.put("a/y.txt", &b"2".to_vec());

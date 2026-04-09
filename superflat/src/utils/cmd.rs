@@ -26,27 +26,27 @@ pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .with_context(|| format!("Failed to run command {cmd:?}"))?;
+            .with_context(|| format!("failed to run command {cmd:?}"))?;
         child
             .stdin
             .as_mut()
-            .unwrap()
+            .expect("failed to get stdin handle")
             .write_all(stdin.as_bytes())
-            .with_context(|| format!("Failed to write stdin to command {cmd:?}"))?;
+            .with_context(|| format!("failed to write stdin to command {cmd:?}"))?;
         child
             .wait_with_output()
-            .with_context(|| format!("Failed to wait command {cmd:?}"))?
+            .with_context(|| format!("failed to wait command {cmd:?}"))?
     } else {
         cmd.output()
-            .with_context(|| format!("Failed to read stdout from command {cmd:?}"))?
+            .with_context(|| format!("failed to read stdout from command {cmd:?}"))?
     };
     let stderr = String::from_utf8(out.stderr)
-        .with_context(|| format!("Failed to encoding stderr by UTF-8"))?;
+        .with_context(|| format!("failed to encoding stderr by UTF-8"))?;
     for line in stderr.lines() {
         log::debug!("stderr: {:?}", line);
     }
     let stdout = String::from_utf8(out.stdout)
-        .with_context(|| format!("Failed to encoding stdout by UTF-8"))?;
+        .with_context(|| format!("failed to encoding stdout by UTF-8"))?;
     for line in stdout.lines() {
         log::debug!("stdout: {:?}", line);
     }

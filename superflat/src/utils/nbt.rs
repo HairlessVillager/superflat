@@ -33,9 +33,9 @@ pub fn sort_nbt(nbt: Nbt) -> Nbt {
 pub fn load_nbt<R: Read + Seek>(reader: R, named: bool) -> Nbt {
     let mut helper = NbtReadHelper::new(reader);
     if named {
-        Nbt::read(&mut helper).unwrap()
+        Nbt::read(&mut helper).expect("failed to read named nbt")
     } else {
-        Nbt::read_unnamed(&mut helper).unwrap()
+        Nbt::read_unnamed(&mut helper).expect("failed to read unnamed nbt")
     }
 }
 

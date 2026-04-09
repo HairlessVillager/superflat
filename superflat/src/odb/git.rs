@@ -19,8 +19,8 @@ impl LocalGitOdb {
         Self {
             repo: gix::open(git_dir.to_owned())
                 .expect(&format!(
-                    "Try 'git init --bare {}'",
-                    git_dir.to_str().unwrap()
+                    "try 'git init --bare {}'",
+                    git_dir.to_str().expect("git dir path is not valid utf-8")
                 ))
                 .into(),
             pending: HashMap::new(),
@@ -29,7 +29,7 @@ impl LocalGitOdb {
     }
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
-        let repo: gix::ThreadSafeRepository = gix::open(&git_dir).unwrap().into();
+        let repo: gix::ThreadSafeRepository = gix::open(&git_dir).expect("failed to open git repository").into();
         let path_to_oid = if commit.is_empty() {
             HashMap::new()
         } else {
@@ -60,7 +60,7 @@ impl LocalGitOdb {
         }
         cmd.arg("-m").arg(message);
 
-        let commit = exec(cmd, None).unwrap().trim().to_string();
+        let commit = exec(cmd, None).expect("failed to run commit-tree").trim().to_string();
         commit
     }
 }
@@ -114,14 +114,14 @@ fn build_tree(
     }
 
     let cmd = git_cmd(git_dir, ["mktree"]);
-    exec(cmd, Some(mktree_input)).unwrap().trim().to_string()
+    exec(cmd, Some(mktree_input)).expect("failed to run mktree").trim().to_string()
 }
 
 /// Build a path → oid map for a commit using `git ls-tree -r`.
 fn build_path_to_oid(git_dir: &PathBuf, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
     let cmd = git_cmd(git_dir, ["ls-tree", "-r", "--", commit_sha]);
     exec(cmd, None)
-        .unwrap()
+        .expect("failed to run ls-tree")
         .lines()
         .filter_map(|line| {
             let oid_str = line.get(12..52)?;
@@ -138,7 +138,7 @@ impl OdbReader for LocalGitOdb {
         self.repo
             .to_thread_local()
             .find_blob(*oid)
-            .unwrap()
+            .expect("failed to find blob in git odb")
             .data
             .to_vec()
     }
@@ -151,7 +151,7 @@ impl OdbReader for LocalGitOdb {
                 let oid = path_to_oid.get(*key).expect("key not found");
                 repo.to_thread_local()
                     .find_blob(*oid)
-                    .unwrap()
+                    .expect("failed to find blob in git odb")
                     .data
                     .to_vec()
             })
@@ -159,7 +159,7 @@ impl OdbReader for LocalGitOdb {
     }
 
     fn glob(&self, pattern: &str) -> Vec<String> {
-        let pat = glob::Pattern::new(pattern).unwrap();
+        let pat = glob::Pattern::new(pattern).expect("failed to compile glob pattern");
         self.path_to_oid
             .par_iter()
             .map(|(p, _)| p)
@@ -175,7 +175,7 @@ impl OdbWriter for LocalGitOdb {
             .repo
             .to_thread_local()
             .write_blob(value)
-            .unwrap()
+            .expect("failed to write blob to git odb")
             .to_hex()
             .to_string();
         self.pending.insert(key.to_string(), sha1);
@@ -189,7 +189,7 @@ impl OdbWriter for LocalGitOdb {
                 let repo = ts_repo.to_thread_local();
                 let sha1 = repo
                     .write_blob(value.as_ref())
-                    .unwrap()
+                    .expect("failed to write blob to git odb")
                     .to_hex()
                     .to_string();
                 (key, sha1)
@@ -209,22 +209,22 @@ mod tests {
 
     /// Initialise a bare git repo in a tempdir and return its path.
     fn init_bare_repo() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
         Command::new("git")
-            .args(["init", "--bare", dir.path().to_str().unwrap()])
+            .args(["init", "--bare", dir.path().to_str().expect("temp dir path is not valid utf-8")])
             .output()
-            .unwrap();
+            .expect("failed to run git init");
         // git commit-tree needs author/committer config
         Command::new("git")
-            .args(["--git-dir", dir.path().to_str().unwrap()])
+            .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
             .args(["config", "user.email", "test@test"])
             .output()
-            .unwrap();
+            .expect("failed to run git config user.email");
         Command::new("git")
-            .args(["--git-dir", dir.path().to_str().unwrap()])
+            .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
             .args(["config", "user.name", "Test"])
             .output()
-            .unwrap();
+            .expect("failed to run git config user.name");
         dir
     }
 
@@ -275,13 +275,13 @@ mod tests {
         // second commit's tree contains only b.txt
         let files: Vec<String> = String::from_utf8(
             Command::new("git")
-                .args(["--git-dir", repo.path().to_str().unwrap()])
+                .args(["--git-dir", repo.path().to_str().expect("repo path is not valid utf-8")])
                 .args(["ls-tree", "--name-only", &second])
                 .output()
-                .unwrap()
+                .expect("failed to run git ls-tree")
                 .stdout,
         )
-        .unwrap()
+        .expect("git ls-tree output is not valid utf-8")
         .lines()
         .map(|s| s.to_string())
         .collect();
@@ -290,13 +290,13 @@ mod tests {
         // parent linkage is recorded
         let parent = String::from_utf8(
             Command::new("git")
-                .args(["--git-dir", repo.path().to_str().unwrap()])
+                .args(["--git-dir", repo.path().to_str().expect("repo path is not valid utf-8")])
                 .args(["rev-parse", &format!("{second}^1")])
                 .output()
-                .unwrap()
+                .expect("failed to run git rev-parse")
                 .stdout,
         )
-        .unwrap();
+        .expect("git rev-parse output is not valid utf-8");
         assert_eq!(parent.trim(), first);
     }
 }

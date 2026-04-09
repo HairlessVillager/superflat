@@ -39,12 +39,12 @@ impl Crafter for OtherRegionCrafter {
                 let data = save.get(&key);
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename)
-                    .with_context(|| format!("Failed to parse (x,z) from {key}"))
-                    .unwrap();
+                    .with_context(|| format!("failed to parse (x,z) from {key}"))
+                    .expect("failed to parse region coordinates");
                 let Some((timestamp_header, chunks)) =
                     read_region(Cursor::new(data), region_x, region_z)
-                        .with_context(|| format!("Failed to read region from {key}"))
-                        .unwrap()
+                        .with_context(|| format!("failed to read region from {key}"))
+                        .expect("failed to read region")
                 else {
                     continue;
                 };
@@ -70,16 +70,16 @@ impl Crafter for OtherRegionCrafter {
                 };
                 let filename = region_key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename)
-                    .with_context(|| format!("Failed to parse (x,z) from {ts_key}"))
-                    .unwrap();
+                    .with_context(|| format!("failed to parse (x,z) from {ts_key}"))
+                    .expect("failed to parse region coordinates");
                 let timestamp_header = storage.get(&ts_key);
                 let chunk_pattern = format!("{region_key}/c.*.*.nbt");
                 let mut chunks = Vec::new();
                 for chunk_key in storage.glob(&chunk_pattern) {
                     let chunk_filename = chunk_key.split('/').next_back().unwrap_or("");
                     let (chunk_x, chunk_z) = parse_xz(chunk_filename)
-                        .with_context(|| format!("Failed to parse (x,z) from {chunk_filename}"))
-                        .unwrap();
+                        .with_context(|| format!("failed to parse (x,z) from {chunk_filename}"))
+                        .expect("failed to parse chunk coordinates");
                     let nbt = storage.get(&chunk_key);
                     chunks.push((chunk_x, chunk_z, nbt));
                 }
@@ -87,12 +87,12 @@ impl Crafter for OtherRegionCrafter {
                 write_region(
                     region_x,
                     region_z,
-                    &timestamp_header[..4096].try_into().unwrap(),
+                    &timestamp_header[..4096].try_into().expect("timestamp header must be at least 4096 bytes"),
                     chunks,
                     Cursor::new(&mut mca_buf),
                 )
-                .with_context(|| format!("Failed to write region for {ts_key}"))
-                .unwrap();
+                .with_context(|| format!("failed to write region for {ts_key}"))
+                .expect("failed to write region");
                 save.put(region_key, &mca_buf);
             }
         }

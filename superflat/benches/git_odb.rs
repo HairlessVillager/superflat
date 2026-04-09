@@ -4,21 +4,21 @@ use std::process::Command;
 use superflat::odb::{LocalGitOdb, OdbReader, OdbWriter};
 
 fn init_bare_repo() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("failed to create temp dir");
     Command::new("git")
-        .args(["init", "--bare", dir.path().to_str().unwrap()])
+        .args(["init", "--bare", dir.path().to_str().expect("temp dir path is not valid utf-8")])
         .output()
-        .unwrap();
+        .expect("failed to run git init");
     Command::new("git")
-        .args(["--git-dir", dir.path().to_str().unwrap()])
+        .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
         .args(["config", "user.email", "bench@bench"])
         .output()
-        .unwrap();
+        .expect("failed to run git config user.email");
     Command::new("git")
-        .args(["--git-dir", dir.path().to_str().unwrap()])
+        .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
         .args(["config", "user.name", "Bench"])
         .output()
-        .unwrap();
+        .expect("failed to run git config user.name");
     dir
 }
 

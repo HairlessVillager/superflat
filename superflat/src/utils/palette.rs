@@ -117,7 +117,7 @@ impl<V: Hash + Eq + Copy + Default, const DIM: usize> PalettedContainer<V, DIM> 
                     .chunks(blocks_per_i64 as usize)
                     .map(|chunk| {
                         chunk.iter().enumerate().fold(0, |acc, (index, key)| {
-                            let key_index = data.palette.iter().position(|&x| x == *key).unwrap();
+                            let key_index = data.palette.iter().position(|&x| x == *key).expect("key not found in palette");
                             debug_assert!((1 << bits_per_entry) > key_index);
 
                             let packed_offset_index =
@@ -146,7 +146,7 @@ impl<V: Hash + Eq + Copy + Default, const DIM: usize> PalettedContainer<V, DIM> 
         if palette.len() == 1 {
             return Self::Homogeneous(palette[0]);
         }
-        let packed_data = packed_data.unwrap();
+        let packed_data = packed_data.expect("packed data is required when palette has more than one entry");
 
         let bits_per_key = encompassing_bits(palette.len()).max(minimum_bits_per_entry);
         let index_mask = (1 << bits_per_key) - 1;
@@ -242,12 +242,12 @@ impl BiomePalette {
     pub fn from_disk_nbt(nbt: &NbtCompound) -> Result<Self> {
         let palette = nbt
             .get_list("palette")
-            .with_context(|| format!("Missing NBT list 'palette', got: {nbt:#?}"))?
+            .with_context(|| format!("missing NBT list 'palette', got: {nbt:#?}"))?
             .into_iter()
             .enumerate()
             .map(|(idx, entry)| {
                 let s = entry.extract_string().with_context(|| {
-                    format!("Expect 'palette.{idx}' is a NBT string, got: {entry:#?}")
+                    format!("expect 'palette.{idx}' is a NBT string, got: {entry:#?}")
                 })?;
                 let key = s.strip_prefix("minecraft:").unwrap_or(s);
                 biome_id_from_name(key)
@@ -297,15 +297,15 @@ impl BlockPalette {
     pub fn from_disk_nbt(nbt: &NbtCompound) -> Result<Self> {
         let palette = nbt
             .get_list("palette")
-            .with_context(|| format!("Missing NBT list 'palette', got: {nbt:#?}"))?
+            .with_context(|| format!("missing NBT list 'palette', got: {nbt:#?}"))?
             .into_iter()
             .enumerate()
             .map(|(idx, entry)| {
                 let entry = entry.extract_compound().with_context(|| {
-                    format!("Expect 'palette.{idx}' is a NBT compund, got: {entry:#?}")
+                    format!("expect 'palette.{idx}' is a NBT compund, got: {entry:#?}")
                 })?;
                 let block_name = entry.get_string("Name").with_context(|| {
-                    format!("Missing NBT string 'palette.{idx}.Name', got: {entry:#?}")
+                    format!("missing NBT string 'palette.{idx}.Name', got: {entry:#?}")
                 })?;
                 let name = block_name.strip_prefix("minecraft:").unwrap_or(block_name);
                 if let Some(props) = entry.get_compound("Properties") {
@@ -314,7 +314,7 @@ impl BlockPalette {
                         .iter()
                         .enumerate()
                         .map(|(idx2, (key, value))| Ok((key.as_str(), value.extract_string().with_context(|| {
-                            format!("Expect 'palette.{idx}.Properties.{idx2}' is a NBT string, got: {value:#?}")
+                            format!("expect 'palette.{idx}.Properties.{idx2}' is a NBT string, got: {value:#?}")
                         })?)))
                         .collect::<Result<Vec<_>>>()?;
                     block_state_id_from_name_and_props(name, &props_map)

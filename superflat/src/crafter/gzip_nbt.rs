@@ -51,7 +51,7 @@ impl Crafter for GzipNbtCrafter {
                 let compressed = save.get(&key);
                 let mut decoder = GzDecoder::new(compressed.as_slice());
                 let mut decompressed = Vec::new();
-                decoder.read_to_end(&mut decompressed).unwrap();
+                decoder.read_to_end(&mut decompressed).expect("failed to decompress gzip data");
                 storage.put(&key, &decompressed);
             }
         }
@@ -63,8 +63,8 @@ impl Crafter for GzipNbtCrafter {
                 log::info!("Process gzip nbt file {key}");
                 let data = storage.get(&key);
                 let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-                encoder.write_all(&data).unwrap();
-                let compressed = encoder.finish().unwrap();
+                encoder.write_all(&data).expect("failed to write data to gzip encoder");
+                let compressed = encoder.finish().expect("failed to finish gzip compression");
                 save.put(&key, &compressed);
             }
         }
