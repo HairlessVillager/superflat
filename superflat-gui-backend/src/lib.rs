@@ -193,6 +193,14 @@ fn upsert_profile(app: AppHandle, profile: Profile) {
 }
 
 #[tauri::command]
+fn delete_profile(app: AppHandle, save_dir: String) {
+    let path = app_data_file(&app, PROFILES_FILE).expect("failed to resolve profiles file");
+    let profiles = read_profiles_file(&path).expect("failed to read profiles file");
+    let profiles: Vec<Profile> = profiles.into_iter().filter(|p| p.save_dir != save_dir).collect();
+    write_profiles_file(&path, &profiles).expect("failed to save profiles file");
+}
+
+#[tauri::command]
 fn set_debug_logging(app: AppHandle, debug: bool) {
     GUI_LOGGER.configure(app, debug);
 }
@@ -569,6 +577,71 @@ async fn run_push(save_dir: String, url: String, app: AppHandle) {
     let _ = app.emit("commit-done", ());
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct CommitInfo {
+    hash: String,
+    short_hash: String,
+    subject: String,
+    author: String,
+    timestamp: String,
+}
+
+#[tauri::command]
+fn get_commits(save_dir: String) -> Vec<CommitInfo> {
+    if save_dir.is_empty() {
+        return vec![];
+    }
+    let save_path = PathBuf::from(&save_dir);
+    let git_dir = save_dir_to_git_dir(&save_path);
+    if !git_dir.exists() {
+        return vec![];
+    }
+
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("--git-dir").arg(&git_dir);
+    cmd.args([
+        "log",
+        "--all",
+        "--format=%H\x1f%h\x1f%s\x1f%aN\x1f%ai",
+        "-n",
+        "50",
+    ]);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    let out = match cmd.output() {
+        Ok(o) => o,
+        Err(_) => return vec![],
+    };
+
+    if !out.status.success() {
+        return vec![];
+    }
+
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(5, '\x1f').collect();
+            if parts.len() == 5 {
+                Some(CommitInfo {
+                    hash: parts[0].to_owned(),
+                    short_hash: parts[1].to_owned(),
+                    subject: parts[2].to_owned(),
+                    author: parts[3].to_owned(),
+                    timestamp: parts[4].to_owned(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+
 pub fn run() {
     log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
     log::set_max_level(LevelFilter::Info);
@@ -590,13 +663,15 @@ pub fn run() {
             pick_directory,
             get_profiles,
             upsert_profile,
+            delete_profile,
             set_debug_logging,
             run_commit,
             run_checkout,
             check_repo_exists,
             run_clone,
             run_pull,
-            run_push
+            run_push,
+            get_commits
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
