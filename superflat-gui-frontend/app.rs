@@ -45,6 +45,33 @@ struct UpsertProfileArgs {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct RunPullArgs {
+    save_dir: String,
+    url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunPushArgs {
+    save_dir: String,
+    url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunCloneArgs {
+    save_dir: String,
+    url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckRepoExistsArgs {
+    save_dir: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SetDebugLoggingArgs {
     debug: bool,
 }
@@ -55,6 +82,8 @@ struct Profile {
     mc_version: String,
     branch: String,
     default_commit: String,
+    #[serde(default)]
+    remote_url: String,
 }
 
 fn current_datetime_string() -> String {
@@ -100,6 +129,32 @@ pub fn App() -> impl IntoView {
     let (draft_default_commit, set_draft_default_commit) = signal(String::new());
     let (debug_enabled, set_debug_enabled) = signal(false);
     let (draft_debug_enabled, set_draft_debug_enabled) = signal(false);
+    let (remote_url, set_remote_url) = signal(String::new());
+    let (repo_exists, set_repo_exists) = signal(false);
+
+    // Reactively check whether the bare repo exists whenever save_dir changes.
+    Effect::new(move |_| {
+        let dir = save_dir.get();
+        spawn_local(async move {
+            if dir.is_empty() {
+                set_repo_exists.set(false);
+                return;
+            }
+            let args = serde_wasm_bindgen::to_value(&CheckRepoExistsArgs { save_dir: dir })
+                .expect("failed to serialize check_repo_exists args");
+            match invoke("check_repo_exists", args).await {
+                Ok(val) => {
+                    if let Some(exists) = val.as_bool() {
+                        set_repo_exists.set(exists);
+                    }
+                }
+                Err(err) => log(&format!(
+                    "check_repo_exists failed: {}",
+                    js_error_to_string(err)
+                )),
+            }
+        });
+    });
 
     // Tick clock every second
     let tick = Closure::<dyn Fn()>::new(move || {
@@ -225,6 +280,7 @@ pub fn App() -> impl IntoView {
             let branch_val = branch.get_untracked();
             let mc_version_val = mc_version.get_untracked();
             let default_commit_val = commit_id.get_untracked();
+            let remote_url_val = remote_url.get_untracked();
             let message_val = {
                 let m = message.get_untracked();
                 if m.is_empty() {
@@ -249,6 +305,15 @@ pub fn App() -> impl IntoView {
                     ))
                 });
             }
+            // First commit initialises the bare repo; refresh the flag.
+            let check_args =
+                serde_wasm_bindgen::to_value(&CheckRepoExistsArgs { save_dir: save_dir_val.clone() })
+                    .expect("failed to serialize check_repo_exists args");
+            if let Ok(val) = invoke("check_repo_exists", check_args).await {
+                if let Some(exists) = val.as_bool() {
+                    set_repo_exists.set(exists);
+                }
+            }
             set_is_running.set(false);
 
             let profile_args = serde_wasm_bindgen::to_value(&UpsertProfileArgs {
@@ -257,6 +322,7 @@ pub fn App() -> impl IntoView {
                     mc_version: mc_version_val,
                     branch: branch_val,
                     default_commit: default_commit_val,
+                    remote_url: remote_url_val,
                 },
             })
             .expect("failed to serialize upsert_profile args");
@@ -278,6 +344,7 @@ pub fn App() -> impl IntoView {
             let commit_val = commit_id.get_untracked();
             let mc_version_val = mc_version.get_untracked();
             let branch_val = branch.get_untracked();
+            let remote_url_val = remote_url.get_untracked();
 
             let args = serde_wasm_bindgen::to_value(&RunCheckoutArgs {
                 save_dir: save_dir_val.clone(),
@@ -301,6 +368,7 @@ pub fn App() -> impl IntoView {
                     mc_version: mc_version_val,
                     branch: branch_val,
                     default_commit: commit_val,
+                    remote_url: remote_url_val,
                 },
             })
             .expect("failed to serialize upsert_profile args");
@@ -310,6 +378,79 @@ pub fn App() -> impl IntoView {
                     js_error_to_string(err)
                 ));
             }
+        });
+    };
+
+    let run_pull = move |_| {
+        set_output_lines.set(Vec::new());
+        set_is_running.set(true);
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&RunPullArgs {
+                save_dir: save_dir.get_untracked(),
+                url: remote_url.get_untracked(),
+            })
+            .expect("failed to serialize run_pull args");
+            if let Err(err) = invoke("run_pull", args).await {
+                set_output_lines.update(|lines| {
+                    lines.push(format!(
+                        "Error: run_pull failed: {}",
+                        js_error_to_string(err)
+                    ))
+                });
+            }
+            set_is_running.set(false);
+        });
+    };
+
+    let run_push = move |_| {
+        set_output_lines.set(Vec::new());
+        set_is_running.set(true);
+        spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&RunPushArgs {
+                save_dir: save_dir.get_untracked(),
+                url: remote_url.get_untracked(),
+            })
+            .expect("failed to serialize run_push args");
+            if let Err(err) = invoke("run_push", args).await {
+                set_output_lines.update(|lines| {
+                    lines.push(format!(
+                        "Error: run_push failed: {}",
+                        js_error_to_string(err)
+                    ))
+                });
+            }
+            set_is_running.set(false);
+        });
+    };
+
+    let run_clone = move |_: leptos::ev::MouseEvent| {
+        set_output_lines.set(Vec::new());
+        set_is_running.set(true);
+        spawn_local(async move {
+            let save_dir_val = save_dir.get_untracked();
+            let args = serde_wasm_bindgen::to_value(&RunCloneArgs {
+                save_dir: save_dir_val.clone(),
+                url: remote_url.get_untracked(),
+            })
+            .expect("failed to serialize run_clone args");
+            if let Err(err) = invoke("run_clone", args).await {
+                set_output_lines.update(|lines| {
+                    lines.push(format!(
+                        "Error: run_clone failed: {}",
+                        js_error_to_string(err)
+                    ))
+                });
+            }
+            // Re-check whether the repo now exists after clone attempt.
+            let check_args =
+                serde_wasm_bindgen::to_value(&CheckRepoExistsArgs { save_dir: save_dir_val })
+                    .expect("failed to serialize check_repo_exists args");
+            if let Ok(val) = invoke("check_repo_exists", check_args).await {
+                if let Some(exists) = val.as_bool() {
+                    set_repo_exists.set(exists);
+                }
+            }
+            set_is_running.set(false);
         });
     };
 
@@ -353,6 +494,29 @@ pub fn App() -> impl IntoView {
                         "Checkout"
                     </button>
                 </div>
+                <div class="toolbar-row">
+                    <input
+                        type="text"
+                        prop:value=move || remote_url.get()
+                        on:input=move |ev| set_remote_url.set(event_target_value(&ev))
+                        placeholder="Remote URL"
+                    />
+                    <Show
+                        when=move || repo_exists.get()
+                        fallback=move || view! {
+                            <button class="btn-clone" on:click=run_clone disabled=move || is_running.get()>
+                                "Clone"
+                            </button>
+                        }
+                    >
+                        <button class="btn-pull" on:click=run_pull disabled=move || is_running.get()>
+                            "Pull"
+                        </button>
+                        <button class="btn-push" on:click=run_push disabled=move || is_running.get()>
+                            "Push"
+                        </button>
+                    </Show>
+                </div>
             </div>
 
             <Show when=move || show_profiles.get()>
@@ -379,6 +543,7 @@ pub fn App() -> impl IntoView {
                                                         set_branch.set(p2.branch.clone());
                                                         set_mc_version.set(p2.mc_version.clone());
                                                         set_commit_id.set(p2.default_commit.clone());
+                                                        set_remote_url.set(p2.remote_url.clone());
                                                         set_show_profiles.set(false);
                                                     }
                                                 >

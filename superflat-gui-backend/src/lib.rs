@@ -126,6 +126,8 @@ struct Profile {
     mc_version: String,
     branch: String,
     default_commit: String,
+    #[serde(default)]
+    remote_url: String,
 }
 
 fn normalize_profiles(profiles: Vec<Profile>) -> Vec<Profile> {
@@ -392,6 +394,176 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
     let _ = app.emit("commit-done", ());
 }
 
+fn save_dir_to_git_dir(save_path: &Path) -> PathBuf {
+    let save_name = save_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_owned();
+    save_path
+        .join("../..")
+        .join("backups")
+        .join(format!("{}.git", save_name))
+        .canonicalize()
+        .unwrap_or_else(|_| {
+            save_path
+                .join("../..")
+                .join("backups")
+                .join(format!("{}.git", save_name))
+        })
+}
+
+#[tauri::command]
+fn check_repo_exists(save_dir: String) -> bool {
+    if save_dir.is_empty() {
+        return false;
+    }
+    let save_path = PathBuf::from(&save_dir);
+    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
+        return false;
+    }
+    save_dir_to_git_dir(&save_path).exists()
+}
+
+#[tauri::command]
+async fn run_clone(save_dir: String, url: String, app: AppHandle) {
+    let save_path = PathBuf::from(&save_dir);
+
+    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
+        log::error!("Invalid save directory path");
+        let _ = app.emit("commit-done", ());
+        return;
+    }
+
+    let git_dir = save_dir_to_git_dir(&save_path);
+
+    log::info!("Cloning {} into {}", url, git_dir.display());
+
+    let result = tokio::task::spawn_blocking(move || {
+        // Ensure the backups/ parent directory exists
+        if let Some(parent) = git_dir.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent dir: {e}"))?;
+        }
+
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["clone", "--bare", &url]).arg(&git_dir);
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+
+        let out = cmd.output().map_err(|e| e.to_string())?;
+
+        // git clone writes its progress to stderr
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        for line in stderr.lines() {
+            log::info!("{}", line);
+        }
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        for line in stdout.lines() {
+            log::info!("{}", line);
+        }
+
+        if !out.status.success() {
+            return Err(format!("git clone exited with {}", out.status));
+        }
+
+        // Apply the same repo config as run_commit uses for new repos
+        let cmd = superflat::utils::cmd::git_cmd(
+            &git_dir,
+            ["config", "core.logAllRefUpdates", "true"],
+        );
+        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())?;
+        let cmd = superflat::utils::cmd::git_cmd(&git_dir, ["config", "gc.auto", "0"]);
+        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())?;
+
+        Ok::<(), String>(())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(())) => log::info!("Clone done"),
+        Ok(Err(e)) => log::error!("Clone failed: {}", e),
+        Err(e) => log::error!("Clone task failed: {}", e),
+    }
+
+    let _ = app.emit("commit-done", ());
+}
+
+#[tauri::command]
+async fn run_pull(save_dir: String, url: String, app: AppHandle) {
+    let save_path = PathBuf::from(&save_dir);
+
+    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
+        log::error!("Invalid save directory path");
+        let _ = app.emit("commit-done", ());
+        return;
+    }
+
+    let git_dir = save_dir_to_git_dir(&save_path);
+
+    log::info!("Pulling from {}", url);
+
+    let result = tokio::task::spawn_blocking(move || {
+        let cmd = superflat::utils::cmd::git_cmd(
+            &git_dir,
+            ["fetch", &url, "refs/heads/*:refs/heads/*"],
+        );
+        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(out)) => {
+            for line in out.lines() {
+                log::info!("{}", line);
+            }
+            log::info!("Pull done");
+        }
+        Ok(Err(e)) => log::error!("Pull failed: {}", e),
+        Err(e) => log::error!("Pull task failed: {}", e),
+    }
+
+    let _ = app.emit("commit-done", ());
+}
+
+#[tauri::command]
+async fn run_push(save_dir: String, url: String, app: AppHandle) {
+    let save_path = PathBuf::from(&save_dir);
+
+    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
+        log::error!("Invalid save directory path");
+        let _ = app.emit("commit-done", ());
+        return;
+    }
+
+    let git_dir = save_dir_to_git_dir(&save_path);
+
+    log::info!("Pushing to {}", url);
+
+    let result = tokio::task::spawn_blocking(move || {
+        let cmd = superflat::utils::cmd::git_cmd(&git_dir, ["push", &url, "--all"]);
+        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(out)) => {
+            for line in out.lines() {
+                log::info!("{}", line);
+            }
+            log::info!("Push done");
+        }
+        Ok(Err(e)) => log::error!("Push failed: {}", e),
+        Err(e) => log::error!("Push task failed: {}", e),
+    }
+
+    let _ = app.emit("commit-done", ());
+}
+
 pub fn run() {
     log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
     log::set_max_level(LevelFilter::Info);
@@ -415,7 +587,11 @@ pub fn run() {
             upsert_profile,
             set_debug_logging,
             run_commit,
-            run_checkout
+            run_checkout,
+            check_repo_exists,
+            run_clone,
+            run_pull,
+            run_push
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -433,30 +609,35 @@ mod tests {
                 mc_version: "1.20.1".into(),
                 branch: "main".into(),
                 default_commit: "first".into(),
+                remote_url: String::new(),
             },
             Profile {
                 save_dir: "".into(),
                 mc_version: "1.21.1".into(),
                 branch: "empty".into(),
                 default_commit: "drop-empty".into(),
+                remote_url: String::new(),
             },
             Profile {
                 save_dir: "   ".into(),
                 mc_version: "1.21.2".into(),
                 branch: "blank".into(),
                 default_commit: "drop-blank".into(),
+                remote_url: String::new(),
             },
             Profile {
                 save_dir: "/a".into(),
                 mc_version: "1.19.4".into(),
                 branch: "stable".into(),
                 default_commit: "keep".into(),
+                remote_url: String::new(),
             },
             Profile {
                 save_dir: "/b".into(),
                 mc_version: "1.21.4".into(),
                 branch: "newer".into(),
                 default_commit: "drop-duplicate".into(),
+                remote_url: String::new(),
             },
         ]);
 
