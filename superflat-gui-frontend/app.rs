@@ -14,9 +14,6 @@ extern "C" {
         handler: &Closure<dyn Fn(JsValue)>,
     ) -> Result<JsValue, JsValue>;
 
-    #[wasm_bindgen(js_name = setInterval)]
-    fn set_interval(closure: &Closure<dyn Fn()>, millis: u32) -> i32;
-
     #[wasm_bindgen(js_name = setTimeout)]
     fn set_timeout(closure: &Closure<dyn Fn()>, millis: u32) -> i32;
 
@@ -103,19 +100,6 @@ struct CommitInfo {
     timestamp: String,
 }
 
-fn current_datetime_string() -> String {
-    let d = js_sys::Date::new_0();
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        d.get_full_year(),
-        d.get_month() + 1,
-        d.get_date(),
-        d.get_hours(),
-        d.get_minutes(),
-        d.get_seconds(),
-    )
-}
-
 fn js_error_to_string(value: JsValue) -> String {
     value
         .as_string()
@@ -145,7 +129,6 @@ pub fn App() -> impl IntoView {
     let (remote_url, set_remote_url) = signal(String::new());
 
     // --- ui state ---
-    let (clock, set_clock) = signal(current_datetime_string());
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
     let (is_running, set_is_running) = signal(false);
     let (show_profiles, set_show_profiles) = signal(false);
@@ -154,13 +137,16 @@ pub fn App() -> impl IntoView {
     let (commits, set_commits) = signal(Vec::<CommitInfo>::new());
     let (repo_exists, set_repo_exists) = signal(false);
     let (form_closing, set_form_closing) = signal(false);
+    let (list_instant, set_list_instant) = signal(false);
 
     // Close the Add/Edit form with an exit animation, then switch panel
     let close_form = move |next: RightPanel| {
         set_form_closing.set(true);
+        set_list_instant.set(true);
         let cb = Closure::<dyn Fn()>::new(move || {
             set_right_panel.set(next.clone());
             set_form_closing.set(false);
+            set_list_instant.set(false);
         });
         set_timeout(&cb, 200);
         cb.forget();
@@ -203,10 +189,6 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    // Tick clock
-    let tick = Closure::<dyn Fn()>::new(move || set_clock.set(current_datetime_string()));
-    set_interval(&tick, 1000);
-    tick.forget();
 
     // Load profiles on mount
     spawn_local(async move {
@@ -287,6 +269,11 @@ pub fn App() -> impl IntoView {
     };
 
     let run_commit = move |_: leptos::ev::MouseEvent| {
+        let message_val = draft_message.get_untracked();
+        if message_val.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Commit message is empty".to_string()));
+            return;
+        }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
         set_right_panel.set(RightPanel::None);
@@ -294,14 +281,6 @@ pub fn App() -> impl IntoView {
         let branch_val = branch.get_untracked();
         let mc_version_val = mc_version.get_untracked();
         let remote_url_val = remote_url.get_untracked();
-        let message_val = {
-            let m = draft_message.get_untracked();
-            if m.is_empty() {
-                current_datetime_string()
-            } else {
-                m
-            }
-        };
         set_draft_message.set(String::new());
         spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&RunCommitArgs {
@@ -455,172 +434,176 @@ pub fn App() -> impl IntoView {
     view! {
         <div class="app">
 
-            // ── Left sidebar (profiles) ─────────────────────────────
-            <div class="sidebar" class:open=move || show_profiles.get()>
-                // Profile list view
-                <Show when=move || !matches!(right_panel.get(), RightPanel::AddProfile | RightPanel::EditProfile(_))>
-                    <div class="sidebar-panel-list">
-                        <div class="sidebar-header">
-                            <span class="sidebar-title">"Profiles"</span>
-                            <button class="sidebar-close" on:click=move |_| set_show_profiles.set(false)>"✕"</button>
-                        </div>
-                        <button class="btn-add-profile" on:click=open_add_profile>
-                            "+ Add Profile"
-                        </button>
-                        <Show
-                            when=move || profiles.get().is_empty()
-                            fallback=|| view! {}
-                        >
-                            <p class="sidebar-empty">"No profiles yet"</p>
-                        </Show>
-                        <div class="profile-list">
-                            <For
-                                each=move || profiles.get()
-                                key=|p| p.save_dir.clone()
-                                children=move |p| {
-                                    let p_load = p.clone();
-                                    let p_edit = p.clone();
-                                    let p_del  = p.clone();
-                                    view! {
-                                        <div
-                                            class="profile-card"
-                                            on:click=move |_| {
-                                                set_save_dir.set(p_load.save_dir.clone());
-                                                set_branch.set(p_load.branch.clone());
-                                                set_mc_version.set(p_load.mc_version.clone());
-                                                set_remote_url.set(p_load.remote_url.clone());
-                                                set_show_profiles.set(false);
-                                                set_right_panel.set(RightPanel::None);
-                                            }
-                                        >
-                                            <div class="profile-card-path">{p.save_dir.clone()}</div>
-                                            <div class="profile-card-meta">
-                                                {format!("{} · {}", p.branch, p.mc_version)}
-                                            </div>
-                                            <div class="profile-card-actions">
-                                                <button class="btn-edit" on:click=move |ev| {
-                                                    ev.stop_propagation();
-                                                    set_form_save_dir.set(p_edit.save_dir.clone());
-                                                    set_form_branch.set(p_edit.branch.clone());
-                                                    set_form_mc_version.set(p_edit.mc_version.clone());
-                                                    set_form_remote_url.set(p_edit.remote_url.clone());
-                                                    set_right_panel.set(RightPanel::EditProfile(p_edit.save_dir.clone()));
-                                                }>
-                                                    "Edit"
-                                                </button>
-                                                <button class="btn-remove" on:click=move |ev| {
-                                                    ev.stop_propagation();
-                                                    let dir = p_del.save_dir.clone();
-                                                    set_profiles.update(|ps| ps.retain(|x| x.save_dir != dir));
-                                                    spawn_local(async move {
-                                                        let args = serde_wasm_bindgen::to_value(&DeleteProfileArgs { save_dir: dir })
-                                                            .expect("serialize");
-                                                        if let Err(err) = invoke("delete_profile", args).await {
-                                                            log(&format!("delete_profile failed: {}", js_error_to_string(err)));
-                                                        }
-                                                    });
-                                                }>
-                                                    "Remove"
-                                                </button>
-                                            </div>
+            // ── Profiles list modal ─────────────────────────────────
+            <div class="sidebar"
+                class:open=move || show_profiles.get() && !matches!(right_panel.get(), RightPanel::AddProfile | RightPanel::EditProfile(_))
+                class:no-transition=move || list_instant.get()
+            >
+                <div class="sidebar-panel-list">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">"Profiles"</span>
+                        <button class="sidebar-close" on:click=move |_| set_show_profiles.set(false)>"✕"</button>
+                    </div>
+                    <button class="btn-add-profile" on:click=open_add_profile>
+                        "+ Add Profile"
+                    </button>
+                    <Show
+                        when=move || profiles.get().is_empty()
+                        fallback=|| view! {}
+                    >
+                        <p class="sidebar-empty">"No profiles yet"</p>
+                    </Show>
+                    <div class="profile-list">
+                        <For
+                            each=move || profiles.get()
+                            key=|p| p.save_dir.clone()
+                            children=move |p| {
+                                let p_load = p.clone();
+                                let p_edit = p.clone();
+                                let p_del  = p.clone();
+                                view! {
+                                    <div
+                                        class="profile-card"
+                                        on:click=move |_| {
+                                            set_save_dir.set(p_load.save_dir.clone());
+                                            set_branch.set(p_load.branch.clone());
+                                            set_mc_version.set(p_load.mc_version.clone());
+                                            set_remote_url.set(p_load.remote_url.clone());
+                                            set_show_profiles.set(false);
+                                            set_right_panel.set(RightPanel::None);
+                                        }
+                                    >
+                                        <div class="profile-card-path">{p.save_dir.clone()}</div>
+                                        <div class="profile-card-meta">
+                                            {format!("{} · {}", p.branch, p.mc_version)}
                                         </div>
-                                    }
+                                        <div class="profile-card-actions">
+                                            <button class="btn-edit" on:click=move |ev| {
+                                                ev.stop_propagation();
+                                                set_form_save_dir.set(p_edit.save_dir.clone());
+                                                set_form_branch.set(p_edit.branch.clone());
+                                                set_form_mc_version.set(p_edit.mc_version.clone());
+                                                set_form_remote_url.set(p_edit.remote_url.clone());
+                                                set_right_panel.set(RightPanel::EditProfile(p_edit.save_dir.clone()));
+                                            }>
+                                                "Edit"
+                                            </button>
+                                            <button class="btn-remove" on:click=move |ev| {
+                                                ev.stop_propagation();
+                                                let dir = p_del.save_dir.clone();
+                                                set_profiles.update(|ps| ps.retain(|x| x.save_dir != dir));
+                                                spawn_local(async move {
+                                                    let args = serde_wasm_bindgen::to_value(&DeleteProfileArgs { save_dir: dir })
+                                                        .expect("serialize");
+                                                    if let Err(err) = invoke("delete_profile", args).await {
+                                                        log(&format!("delete_profile failed: {}", js_error_to_string(err)));
+                                                    }
+                                                });
+                                            }>
+                                                "Remove"
+                                            </button>
+                                        </div>
+                                    </div>
                                 }
-                            />
-                        </div>
+                            }
+                        />
                     </div>
-                </Show>
-
-                // Add / Edit profile form view
-                <Show when=move || matches!(right_panel.get(), RightPanel::AddProfile | RightPanel::EditProfile(_)) || form_closing.get()>
-                    <div class="sidebar-panel-form" class:closing=move || form_closing.get()>
-                        <div class="sidebar-header">
-                            <span class="sidebar-title">
-                                {move || if right_panel.get() == RightPanel::AddProfile { "Add Profile" } else { "Edit Profile" }}
-                            </span>
-                            <button class="sidebar-close" on:click=move |_| close_form(RightPanel::None)>"✕"</button>
-                        </div>
-                        <div class="panel-body">
-                            <label class="panel-label">
-                                "Save directory"
-                                <div class="panel-dir-row">
-                                    <input
-                                        type="text"
-                                        prop:value=move || form_save_dir.get()
-                                        on:input=move |ev| set_form_save_dir.set(event_target_value(&ev))
-                                        placeholder="Path to save directory"
-                                        disabled=move || matches!(right_panel.get(), RightPanel::EditProfile(_))
-                                    />
-                                    <button class="btn-browse" on:click=move |_| {
-                                        spawn_local(async move {
-                                            if let Ok(result) = invoke("pick_directory", JsValue::NULL).await {
-                                                if let Some(path) = result.as_string() {
-                                                    set_form_save_dir.set(path);
-                                                }
-                                            }
-                                        });
-                                    }>
-                                        "Browse"
-                                    </button>
-                                </div>
-                            </label>
-                            <label class="panel-label">
-                                "Branch"
-                                <input
-                                    type="text"
-                                    prop:value=move || form_branch.get()
-                                    on:input=move |ev| set_form_branch.set(event_target_value(&ev))
-                                    placeholder="main"
-                                />
-                            </label>
-                            <label class="panel-label">
-                                "MC Version"
-                                <input
-                                    type="text"
-                                    prop:value=move || form_mc_version.get()
-                                    on:input=move |ev| set_form_mc_version.set(event_target_value(&ev))
-                                    placeholder="e.g. 1.21.11"
-                                />
-                            </label>
-                            <label class="panel-label">
-                                "Remote URL"
-                                <input
-                                    type="text"
-                                    prop:value=move || form_remote_url.get()
-                                    on:input=move |ev| set_form_remote_url.set(event_target_value(&ev))
-                                    placeholder="https://..."
-                                />
-                            </label>
-                            // Load profile button (only in edit mode)
-                            <Show when=move || matches!(right_panel.get(), RightPanel::EditProfile(_))>
-                                <button class="btn-load-profile" on:click=move |_| {
-                                    set_save_dir.set(form_save_dir.get_untracked());
-                                    set_branch.set(form_branch.get_untracked());
-                                    set_mc_version.set(form_mc_version.get_untracked());
-                                    set_remote_url.set(form_remote_url.get_untracked());
-                                    set_show_profiles.set(false);
-                                    close_form(RightPanel::None);
-                                }>
-                                    "Load this profile"
-                                </button>
-                            </Show>
-                            <button
-                                class="btn-panel-primary"
-                                on:click=save_profile_form
-                            >
-                                "Save"
-                            </button>
-                        </div>
-                    </div>
-                </Show>
+                </div>
             </div>
 
-            // ── Sidebar overlay ─────────────────────────────────────
-            <Show when=move || show_profiles.get()>
+            // ── Add / Edit profile modal ─────────────────────────────
+            <div class="sidebar" class:open=move || (matches!(right_panel.get(), RightPanel::AddProfile | RightPanel::EditProfile(_)) || form_closing.get()) && show_profiles.get()>
+                <div class="sidebar-panel-form" class:closing=move || form_closing.get()>
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">
+                            {move || if right_panel.get() == RightPanel::AddProfile { "Add Profile" } else { "Edit Profile" }}
+                        </span>
+                        <button class="sidebar-close" on:click=move |_| close_form(RightPanel::None)>"✕"</button>
+                    </div>
+                    <div class="panel-body">
+                        <label class="panel-label">
+                            "Save directory"
+                            <div class="panel-dir-row">
+                                <input
+                                    type="text"
+                                    prop:value=move || form_save_dir.get()
+                                    on:input=move |ev| set_form_save_dir.set(event_target_value(&ev))
+                                    placeholder="Path to save directory"
+                                    disabled=move || matches!(right_panel.get(), RightPanel::EditProfile(_))
+                                />
+                                <button class="btn-browse" on:click=move |_| {
+                                    spawn_local(async move {
+                                        if let Ok(result) = invoke("pick_directory", JsValue::NULL).await {
+                                            if let Some(path) = result.as_string() {
+                                                set_form_save_dir.set(path);
+                                            }
+                                        }
+                                    });
+                                }>
+                                    "Browse"
+                                </button>
+                            </div>
+                        </label>
+                        <label class="panel-label">
+                            "Branch"
+                            <input
+                                type="text"
+                                prop:value=move || form_branch.get()
+                                on:input=move |ev| set_form_branch.set(event_target_value(&ev))
+                                placeholder="main"
+                            />
+                        </label>
+                        <label class="panel-label">
+                            "MC Version"
+                            <input
+                                type="text"
+                                prop:value=move || form_mc_version.get()
+                                on:input=move |ev| set_form_mc_version.set(event_target_value(&ev))
+                                placeholder="e.g. 1.21.11"
+                            />
+                        </label>
+                        <label class="panel-label">
+                            "Remote URL"
+                            <input
+                                type="text"
+                                prop:value=move || form_remote_url.get()
+                                on:input=move |ev| set_form_remote_url.set(event_target_value(&ev))
+                                placeholder="https://..."
+                            />
+                        </label>
+                        // Load profile button (only in edit mode)
+                        <Show when=move || matches!(right_panel.get(), RightPanel::EditProfile(_))>
+                            <button class="btn-load-profile" on:click=move |_| {
+                                set_save_dir.set(form_save_dir.get_untracked());
+                                set_branch.set(form_branch.get_untracked());
+                                set_mc_version.set(form_mc_version.get_untracked());
+                                set_remote_url.set(form_remote_url.get_untracked());
+                                set_show_profiles.set(false);
+                                close_form(RightPanel::None);
+                            }>
+                                "Load this profile"
+                            </button>
+                        </Show>
+                        <button
+                            class="btn-panel-primary"
+                            on:click=save_profile_form
+                        >
+                            "Save"
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            // ── Overlay ─────────────────────────────────────────────
+            <Show when=move || show_profiles.get() || right_panel.get() == RightPanel::Commit>
                 <div class="sidebar-overlay" on:click=move |_| {
-                    set_show_profiles.set(false);
-                    if matches!(right_panel.get_untracked(), RightPanel::AddProfile | RightPanel::EditProfile(_)) {
-                        close_form(RightPanel::None);
+                    if right_panel.get_untracked() == RightPanel::Commit {
+                        set_right_panel.set(RightPanel::None);
+                    } else {
+                        set_show_profiles.set(false);
+                        if matches!(right_panel.get_untracked(), RightPanel::AddProfile | RightPanel::EditProfile(_)) {
+                            close_form(RightPanel::None);
+                        }
                     }
                 }/>
             </Show>
@@ -655,6 +638,19 @@ pub fn App() -> impl IntoView {
                     </div>
                     <Show when=move || !save_dir.get().is_empty()>
                         <div class="topbar-actions">
+                            <button
+                                class="btn-action btn-commit"
+                                on:click=move |_| {
+                                    if right_panel.get_untracked() == RightPanel::Commit {
+                                        set_right_panel.set(RightPanel::None);
+                                    } else {
+                                        set_right_panel.set(RightPanel::Commit);
+                                    }
+                                }
+                                disabled=move || is_running.get()
+                            >
+                                "Commit"
+                            </button>
                             <Show
                                 when=move || repo_exists.get()
                                 fallback=move || view! {
@@ -675,19 +671,6 @@ pub fn App() -> impl IntoView {
                                     "Pull"
                                 </button>
                             </Show>
-                            <button
-                                class="btn-action btn-commit"
-                                on:click=move |_| {
-                                    if right_panel.get_untracked() == RightPanel::Commit {
-                                        set_right_panel.set(RightPanel::None);
-                                    } else {
-                                        set_right_panel.set(RightPanel::Commit);
-                                    }
-                                }
-                                disabled=move || is_running.get()
-                            >
-                                "Commit"
-                            </button>
                             <Show when=move || repo_exists.get()>
                                 <button
                                     class="btn-action btn-push"
@@ -749,60 +732,34 @@ pub fn App() -> impl IntoView {
                     </div>
 
                     // ── Right panel ─────────────────────────────────
-                    <Show when=move || right_panel.get() == RightPanel::Commit>
-                        <div class="right-panel">
-                            <div class="panel-header">
-                                <span>"Commit"</span>
-                                <button class="panel-close" on:click=move |_| set_right_panel.set(RightPanel::None)>"✕"</button>
-                            </div>
-                            <div class="panel-body">
-                                <label class="panel-label">
-                                    "Branch"
-                                    <input
-                                        type="text"
-                                        prop:value=move || branch.get()
-                                        on:input=move |ev| set_branch.set(event_target_value(&ev))
-                                        placeholder="main"
-                                    />
-                                </label>
-                                <label class="panel-label">
-                                    "MC Version"
-                                    <input
-                                        type="text"
-                                        prop:value=move || mc_version.get()
-                                        on:input=move |ev| set_mc_version.set(event_target_value(&ev))
-                                        placeholder="e.g. 1.21.11"
-                                    />
-                                </label>
-                                <label class="panel-label">
-                                    "Remote URL"
-                                    <input
-                                        type="text"
-                                        prop:value=move || remote_url.get()
-                                        on:input=move |ev| set_remote_url.set(event_target_value(&ev))
-                                        placeholder="https://..."
-                                    />
-                                </label>
-                                <label class="panel-label">
-                                    "Commit message"
-                                    <input
-                                        type="text"
-                                        prop:value=move || draft_message.get()
-                                        on:input=move |ev| set_draft_message.set(event_target_value(&ev))
-                                        placeholder=move || clock.get()
-                                    />
-                                </label>
-                                <button
-                                    class="btn-panel-primary"
-                                    on:click=run_commit
-                                    disabled=move || is_running.get()
-                                >
-                                    "Commit"
-                                </button>
-                            </div>
-                        </div>
-                    </Show>
+                </div>
+            </div>
 
+            // ── Commit modal ─────────────────────────────────────────
+            <div class="sidebar" class:open=move || right_panel.get() == RightPanel::Commit>
+                <div class="sidebar-panel-form">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">"Commit"</span>
+                        <button class="sidebar-close" on:click=move |_| set_right_panel.set(RightPanel::None)>"✕"</button>
+                    </div>
+                    <div class="panel-body">
+                        <label class="panel-label">
+                            "Commit message"
+                            <input
+                                type="text"
+                                prop:value=move || draft_message.get()
+                                on:input=move |ev| set_draft_message.set(event_target_value(&ev))
+                                placeholder=""
+                            />
+                        </label>
+                        <button
+                            class="btn-panel-primary btn-commit-modal"
+                            on:click=run_commit
+                            disabled=move || is_running.get()
+                        >
+                            "Commit"
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

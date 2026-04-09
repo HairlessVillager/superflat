@@ -26,30 +26,46 @@ html {
 
 .sidebar {
     position: fixed;
-    top: 0;
-    left: 0;
-    height: 100%;
-    width: 320px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -46%) scale(0.95);
+    width: 360px;
+    max-height: 80vh;
     background: #161616;
-    border-right: 1px solid #2a2a2a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.65);
     display: flex;
     flex-direction: column;
-    gap: 0;
     z-index: 200;
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
     overflow-x: hidden;
     overflow-y: auto;
 }
 
-@keyframes sidebar-slide-from-left {
-    from { transform: translateX(-20px); opacity: 0; }
-    to   { transform: translateX(0);     opacity: 1; }
+.sidebar.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) scale(1);
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s;
 }
 
-@keyframes sidebar-slide-to-left {
-    from { transform: translateX(0);     opacity: 1; }
-    to   { transform: translateX(-20px); opacity: 0; }
+.sidebar.no-transition {
+    transition: none;
+}
+
+@keyframes panel-fade-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes panel-fade-out {
+    from { opacity: 1; transform: scale(1); }
+    to   { opacity: 0; transform: scale(0.95); }
 }
 
 .sidebar-panel-list,
@@ -58,15 +74,11 @@ html {
 }
 
 .sidebar-panel-form {
-    animation: sidebar-slide-from-left 0.2s ease;
+    animation: panel-fade-in 0.2s ease;
 }
 
 .sidebar-panel-form.closing {
-    animation: sidebar-slide-to-left 0.2s ease forwards;
-}
-
-.sidebar.open {
-    transform: translateX(0);
+    animation: panel-fade-out 0.2s ease forwards;
 }
 
 .sidebar-overlay {
@@ -332,7 +344,6 @@ html {
 }
 
 .btn-pull,
-.btn-commit,
 .btn-push,
 .btn-clone {
     background: #1a3a5a;
@@ -341,10 +352,19 @@ html {
 }
 
 .btn-pull:hover:not(:disabled),
-.btn-commit:hover:not(:disabled),
 .btn-push:hover:not(:disabled),
 .btn-clone:hover:not(:disabled) {
     background: #1f4a72;
+}
+
+.btn-commit {
+    background: #1a3a1a;
+    color: #7ecf7e;
+    border: 1px solid #2e5e2e;
+}
+
+.btn-commit:hover:not(:disabled) {
+    background: #214a21;
 }
 
 /* ── Body ────────────────────────────────────────────────── */
@@ -466,36 +486,20 @@ html {
     flex-shrink: 0;
 }
 
-/* ── Right panel ─────────────────────────────────────────── */
+/* ── Commit modal button ─────────────────────────────────── */
 
-.right-panel {
-    width: 280px;
-    flex-shrink: 0;
-    background: #141414;
-    border-left: 1px solid #252525;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
+.btn-commit-modal {
+    background: #1a3a1a;
+    border: 1px solid #2e5e2e;
+    color: #7ecf7e;
 }
 
-.panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px 12px;
-    border-bottom: 1px solid #252525;
-    font-size: 13px;
-    color: #aaa;
-    font-weight: bold;
-    letter-spacing: 0.05em;
-    flex-shrink: 0;
+.btn-commit-modal:hover:not(:disabled) {
+    background: #214a21;
+    color: #9ee09e;
 }
 
-.panel-close {
-    background: transparent;
-    border: none;
-    color: #555;
-    font-size: 15px;
+
     cursor: pointer;
     padding: 2px 6px;
     border-radius: 4px;
