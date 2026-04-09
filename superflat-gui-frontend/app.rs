@@ -21,6 +21,12 @@ extern "C" {
     fn log(s: &str);
 }
 
+const DEFAULT_BRANCH: &str = "main";
+const DEFAULT_MC_VERSION: &str = "1.21.11";
+const FORM_CLOSE_ANIMATION_MS: u32 = 200;
+const EVENT_OUTPUT: &str = "commit-output";
+const EVENT_DONE: &str = "commit-done";
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunCommitArgs {
@@ -111,6 +117,13 @@ fn js_error_to_string(value: JsValue) -> String {
         .unwrap_or_else(|| "unknown JS error".to_string())
 }
 
+fn to_js<T: Serialize>(value: &T) -> JsValue {
+    serde_wasm_bindgen::to_value(value).unwrap_or_else(|e| {
+        log(&format!("serialization error: {e}"));
+        JsValue::NULL
+    })
+}
+
 // Which right-side panel is open
 #[derive(Clone, PartialEq)]
 enum RightPanel {
@@ -122,11 +135,13 @@ enum RightPanel {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // --- active profile state ---
-    let (save_dir, set_save_dir) = signal(String::new());
-    let (branch, set_branch) = signal(String::from("main"));
-    let (mc_version, set_mc_version) = signal(String::from("1.21.11"));
-    let (remote_url, set_remote_url) = signal(String::new());
+    // --- active profile state (single signal for the whole profile) ---
+    let (active_profile, set_active_profile) = signal(Profile {
+        save_dir: String::new(),
+        branch: DEFAULT_BRANCH.to_string(),
+        mc_version: DEFAULT_MC_VERSION.to_string(),
+        remote_url: String::new(),
+    });
 
     // --- ui state ---
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
@@ -148,7 +163,7 @@ pub fn App() -> impl IntoView {
             set_form_closing.set(false);
             set_list_instant.set(false);
         });
-        set_timeout(&cb, 200);
+        set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
         cb.forget();
     };
 
@@ -157,38 +172,45 @@ pub fn App() -> impl IntoView {
 
     // profile form draft
     let (form_save_dir, set_form_save_dir) = signal(String::new());
-    let (form_branch, set_form_branch) = signal(String::from("main"));
-    let (form_mc_version, set_form_mc_version) = signal(String::from("1.21.11"));
+    let (form_branch, set_form_branch) = signal(DEFAULT_BRANCH.to_string());
+    let (form_mc_version, set_form_mc_version) = signal(DEFAULT_MC_VERSION.to_string());
     let (form_remote_url, set_form_remote_url) = signal(String::new());
 
-    // Reactively check repo + load commits when save_dir changes
-    Effect::new(move |_| {
-        let dir = save_dir.get();
-        set_repo_exists.set(false);
-        set_commits.set(vec![]);
+    // Fetch both repo_exists and commits for a given directory in one async task.
+    let refresh_repo_state = move |dir: String| {
+        if dir.is_empty() {
+            return;
+        }
         spawn_local(async move {
-            if dir.is_empty() {
-                return;
-            }
-            let args = serde_wasm_bindgen::to_value(&CheckRepoExistsArgs {
-                save_dir: dir.clone(),
-            })
-            .expect("serialize");
+            let args = to_js(&CheckRepoExistsArgs { save_dir: dir.clone() });
             if let Ok(val) = invoke("check_repo_exists", args).await {
                 if let Some(exists) = val.as_bool() {
                     set_repo_exists.set(exists);
                 }
             }
-            let args =
-                serde_wasm_bindgen::to_value(&GetCommitsArgs { save_dir: dir }).expect("serialize");
-            if let Ok(val) = invoke("get_commits", args).await {
-                if let Ok(c) = serde_wasm_bindgen::from_value::<Vec<CommitInfo>>(val) {
-                    set_commits.set(c);
+            let args = to_js(&GetCommitsArgs { save_dir: dir });
+            match invoke("get_commits", args).await {
+                Ok(val) => {
+                    if let Ok(c) = serde_wasm_bindgen::from_value::<Vec<CommitInfo>>(val) {
+                        set_commits.set(c);
+                    }
+                }
+                Err(err) => {
+                    set_output_lines.update(|l| {
+                        l.push(format!("Failed to load commits: {}", js_error_to_string(err)))
+                    });
                 }
             }
         });
-    });
+    };
 
+    // Reactively check repo + load commits when save_dir changes
+    Effect::new(move |_| {
+        let dir = active_profile.get().save_dir;
+        set_repo_exists.set(false);
+        set_commits.set(vec![]);
+        refresh_repo_state(dir);
+    });
 
     // Load profiles on mount
     spawn_local(async move {
@@ -212,35 +234,11 @@ pub fn App() -> impl IntoView {
         let set_running = set_is_running;
         let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
             set_running.set(false);
-            // refresh commits after any operation
-            let dir = save_dir.get_untracked();
-            if !dir.is_empty() {
-                spawn_local(async move {
-                    let args = serde_wasm_bindgen::to_value(&GetCommitsArgs { save_dir: dir })
-                        .expect("serialize");
-                    if let Ok(val) = invoke("get_commits", args).await {
-                        if let Ok(c) = serde_wasm_bindgen::from_value::<Vec<CommitInfo>>(val) {
-                            set_commits.set(c);
-                        }
-                    }
-                });
-                // also refresh repo_exists
-                let dir2 = save_dir.get_untracked();
-                spawn_local(async move {
-                    let args =
-                        serde_wasm_bindgen::to_value(&CheckRepoExistsArgs { save_dir: dir2 })
-                            .expect("serialize");
-                    if let Ok(val) = invoke("check_repo_exists", args).await {
-                        if let Some(exists) = val.as_bool() {
-                            set_repo_exists.set(exists);
-                        }
-                    }
-                });
-            }
+            refresh_repo_state(active_profile.get_untracked().save_dir);
         });
         if let (Ok(_), Ok(_)) = (
-            tauri_listen("commit-output", &on_output).await,
-            tauri_listen("commit-done", &on_done).await,
+            tauri_listen(EVENT_OUTPUT, &on_output).await,
+            tauri_listen(EVENT_DONE, &on_done).await,
         ) {
             on_output.forget();
             on_done.forget();
@@ -257,8 +255,7 @@ pub fn App() -> impl IntoView {
             }
         });
         spawn_local(async move {
-            let args =
-                serde_wasm_bindgen::to_value(&UpsertProfileArgs { profile: p }).expect("serialize");
+            let args = to_js(&UpsertProfileArgs { profile: p });
             if let Err(err) = invoke("upsert_profile", args).await {
                 log(&format!(
                     "upsert_profile failed: {}",
@@ -277,141 +274,95 @@ pub fn App() -> impl IntoView {
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
         set_right_panel.set(RightPanel::None);
-        let save_dir_val = save_dir.get_untracked();
-        let branch_val = branch.get_untracked();
-        let mc_version_val = mc_version.get_untracked();
-        let remote_url_val = remote_url.get_untracked();
+        let p = active_profile.get_untracked();
         set_draft_message.set(String::new());
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&RunCommitArgs {
-                save_dir: save_dir_val.clone(),
-                branch: branch_val.clone(),
+            let args = to_js(&RunCommitArgs {
+                save_dir: p.save_dir.clone(),
+                branch: p.branch.clone(),
                 message: message_val,
-                mc_version: mc_version_val.clone(),
-            })
-            .expect("serialize");
+                mc_version: p.mc_version.clone(),
+            });
             if let Err(err) = invoke("run_commit", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
-            do_upsert_profile(Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                remote_url: remote_url_val,
-            });
+            do_upsert_profile(p);
         });
     };
 
     let run_checkout = move |commit: String| {
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let save_dir_val = save_dir.get_untracked();
-        let mc_version_val = mc_version.get_untracked();
-        let branch_val = branch.get_untracked();
-        let remote_url_val = remote_url.get_untracked();
-        let commit_clone = commit.clone();
+        let p = active_profile.get_untracked();
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&RunCheckoutArgs {
-                save_dir: save_dir_val.clone(),
-                commit: commit_clone.clone(),
-                mc_version: mc_version_val.clone(),
-            })
-            .expect("serialize");
+            let args = to_js(&RunCheckoutArgs {
+                save_dir: p.save_dir.clone(),
+                commit,
+                mc_version: p.mc_version.clone(),
+            });
             if let Err(err) = invoke("run_checkout", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
-            do_upsert_profile(Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                remote_url: remote_url_val,
-            });
+            do_upsert_profile(p);
         });
     };
 
     let run_pull = move |_: leptos::ev::MouseEvent| {
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let save_dir_val = save_dir.get_untracked();
-        let remote_url_val = remote_url.get_untracked();
-        let branch_val = branch.get_untracked();
-        let mc_version_val = mc_version.get_untracked();
+        let p = active_profile.get_untracked();
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&RunPullArgs {
-                save_dir: save_dir_val.clone(),
-                url: remote_url_val.clone(),
-            })
-            .expect("serialize");
+            let args = to_js(&RunPullArgs {
+                save_dir: p.save_dir.clone(),
+                url: p.remote_url.clone(),
+            });
             if let Err(err) = invoke("run_pull", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
-            do_upsert_profile(Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                remote_url: remote_url_val,
-            });
+            do_upsert_profile(p);
         });
     };
 
     let run_push = move |_: leptos::ev::MouseEvent| {
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let save_dir_val = save_dir.get_untracked();
-        let remote_url_val = remote_url.get_untracked();
-        let branch_val = branch.get_untracked();
-        let mc_version_val = mc_version.get_untracked();
+        let p = active_profile.get_untracked();
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&RunPushArgs {
-                save_dir: save_dir_val.clone(),
-                url: remote_url_val.clone(),
-            })
-            .expect("serialize");
+            let args = to_js(&RunPushArgs {
+                save_dir: p.save_dir.clone(),
+                url: p.remote_url.clone(),
+            });
             if let Err(err) = invoke("run_push", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
-            do_upsert_profile(Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                remote_url: remote_url_val,
-            });
+            do_upsert_profile(p);
         });
     };
 
     let run_clone = move |_: leptos::ev::MouseEvent| {
-        let remote_url_val = remote_url.get_untracked();
-        if remote_url_val.is_empty() {
+        let p = active_profile.get_untracked();
+        if p.remote_url.is_empty() {
             set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
             return;
         }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let save_dir_val = save_dir.get_untracked();
-        let branch_val = branch.get_untracked();
-        let mc_version_val = mc_version.get_untracked();
         spawn_local(async move {
-            let args = serde_wasm_bindgen::to_value(&RunCloneArgs {
-                save_dir: save_dir_val.clone(),
-                url: remote_url_val.clone(),
-            })
-            .expect("serialize");
+            let args = to_js(&RunCloneArgs {
+                save_dir: p.save_dir.clone(),
+                url: p.remote_url.clone(),
+            });
             if let Err(err) = invoke("run_clone", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
-            do_upsert_profile(Profile {
-                save_dir: save_dir_val,
-                mc_version: mc_version_val,
-                branch: branch_val,
-                remote_url: remote_url_val,
-            });
+            do_upsert_profile(p);
         });
     };
 
     let open_add_profile = move |_: leptos::ev::MouseEvent| {
         set_form_save_dir.set(String::new());
-        set_form_branch.set(String::from("main"));
-        set_form_mc_version.set(String::from("1.21.11"));
+        set_form_branch.set(DEFAULT_BRANCH.to_string());
+        set_form_mc_version.set(DEFAULT_MC_VERSION.to_string());
         set_form_remote_url.set(String::new());
         set_right_panel.set(RightPanel::AddProfile);
         set_show_profiles.set(true);
@@ -458,17 +409,13 @@ pub fn App() -> impl IntoView {
                             each=move || profiles.get()
                             key=|p| p.save_dir.clone()
                             children=move |p| {
-                                let p_load = p.clone();
                                 let p_edit = p.clone();
-                                let p_del  = p.clone();
+                                let dir_remove = p.save_dir.clone();
                                 view! {
                                     <div
                                         class="profile-card"
                                         on:click=move |_| {
-                                            set_save_dir.set(p_load.save_dir.clone());
-                                            set_branch.set(p_load.branch.clone());
-                                            set_mc_version.set(p_load.mc_version.clone());
-                                            set_remote_url.set(p_load.remote_url.clone());
+                                            set_active_profile.set(p.clone());
                                             set_show_profiles.set(false);
                                             set_right_panel.set(RightPanel::None);
                                         }
@@ -490,11 +437,10 @@ pub fn App() -> impl IntoView {
                                             </button>
                                             <button class="btn-remove" on:click=move |ev| {
                                                 ev.stop_propagation();
-                                                let dir = p_del.save_dir.clone();
-                                                set_profiles.update(|ps| ps.retain(|x| x.save_dir != dir));
+                                                set_profiles.update(|ps| ps.retain(|x| x.save_dir != dir_remove));
+                                                let dir = dir_remove.clone();
                                                 spawn_local(async move {
-                                                    let args = serde_wasm_bindgen::to_value(&DeleteProfileArgs { save_dir: dir })
-                                                        .expect("serialize");
+                                                    let args = to_js(&DeleteProfileArgs { save_dir: dir });
                                                     if let Err(err) = invoke("delete_profile", args).await {
                                                         log(&format!("delete_profile failed: {}", js_error_to_string(err)));
                                                     }
@@ -574,10 +520,12 @@ pub fn App() -> impl IntoView {
                         // Load profile button (only in edit mode)
                         <Show when=move || matches!(right_panel.get(), RightPanel::EditProfile(_))>
                             <button class="btn-load-profile" on:click=move |_| {
-                                set_save_dir.set(form_save_dir.get_untracked());
-                                set_branch.set(form_branch.get_untracked());
-                                set_mc_version.set(form_mc_version.get_untracked());
-                                set_remote_url.set(form_remote_url.get_untracked());
+                                set_active_profile.set(Profile {
+                                    save_dir: form_save_dir.get_untracked(),
+                                    branch: form_branch.get_untracked(),
+                                    mc_version: form_mc_version.get_untracked(),
+                                    remote_url: form_remote_url.get_untracked(),
+                                });
                                 set_show_profiles.set(false);
                                 close_form(RightPanel::None);
                             }>
@@ -621,11 +569,11 @@ pub fn App() -> impl IntoView {
                         "☰"
                     </button>
                     <div class="topbar-dir-wrap">
-                        <Show when=move || !save_dir.get().is_empty()>
-                            <div class="topbar-dir-display" title=move || save_dir.get()>
+                        <Show when=move || !active_profile.get().save_dir.is_empty()>
+                            <div class="topbar-dir-display" title=move || active_profile.get().save_dir>
                                 <span class="topbar-dir-name">
                                     {move || {
-                                        let d = save_dir.get();
+                                        let d = active_profile.get().save_dir;
                                         d.trim_end_matches(['/', '\\'])
                                             .rsplit(['/', '\\'])
                                             .next()
@@ -636,7 +584,7 @@ pub fn App() -> impl IntoView {
                             </div>
                         </Show>
                     </div>
-                    <Show when=move || !save_dir.get().is_empty()>
+                    <Show when=move || !active_profile.get().save_dir.is_empty()>
                         <div class="topbar-actions">
                             <button
                                 class="btn-action btn-commit"

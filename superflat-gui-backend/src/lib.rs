@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 
 const PROFILES_FILE: &str = "profiles.json";
 const DEFAULT_DEBUG: bool = false;
+const EVENT_OUTPUT: &str = "commit-output";
+const EVENT_DONE: &str = "commit-done";
 
 struct GuiLogger {
     level: AtomicU8,
@@ -98,7 +100,7 @@ impl Log for GuiLogger {
         );
 
         if let Some(app) = self.app.lock().expect("gui logger mutex is poisoned").clone() {
-            let _ = app.emit("commit-output", line);
+            let _ = app.emit(EVENT_OUTPUT, line);
         }
     }
 
@@ -172,15 +174,15 @@ fn write_profiles_file(path: &Path, profiles: &[Profile]) -> io::Result<()> {
 }
 
 #[tauri::command]
-fn get_profiles(app: AppHandle) -> Vec<Profile> {
-    let path = app_data_file(&app, PROFILES_FILE).expect("failed to resolve profiles file");
-    read_profiles_file(&path).expect("failed to read profiles file")
+fn get_profiles(app: AppHandle) -> Result<Vec<Profile>, String> {
+    let path = app_data_file(&app, PROFILES_FILE).map_err(|e| e.to_string())?;
+    read_profiles_file(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn upsert_profile(app: AppHandle, profile: Profile) {
-    let path = app_data_file(&app, PROFILES_FILE).expect("failed to resolve profiles file");
-    let mut profiles = read_profiles_file(&path).expect("failed to read profiles file");
+fn upsert_profile(app: AppHandle, profile: Profile) -> Result<(), String> {
+    let path = app_data_file(&app, PROFILES_FILE).map_err(|e| e.to_string())?;
+    let mut profiles = read_profiles_file(&path).map_err(|e| e.to_string())?;
 
     if let Some(existing) = profiles.iter_mut().find(|p| p.save_dir == profile.save_dir) {
         *existing = profile;
@@ -188,20 +190,38 @@ fn upsert_profile(app: AppHandle, profile: Profile) {
         profiles.push(profile);
     }
 
-    write_profiles_file(&path, &profiles).expect("failed to save profiles file");
+    write_profiles_file(&path, &profiles).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn delete_profile(app: AppHandle, save_dir: String) {
-    let path = app_data_file(&app, PROFILES_FILE).expect("failed to resolve profiles file");
-    let profiles = read_profiles_file(&path).expect("failed to read profiles file");
+fn delete_profile(app: AppHandle, save_dir: String) -> Result<(), String> {
+    let path = app_data_file(&app, PROFILES_FILE).map_err(|e| e.to_string())?;
+    let profiles = read_profiles_file(&path).map_err(|e| e.to_string())?;
     let profiles: Vec<Profile> = profiles.into_iter().filter(|p| p.save_dir != save_dir).collect();
-    write_profiles_file(&path, &profiles).expect("failed to save profiles file");
+    write_profiles_file(&path, &profiles).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_debug_logging(app: AppHandle, debug: bool) {
     GUI_LOGGER.configure(app, debug);
+}
+
+/// Apply repo config settings shared by all superflat git repos.
+fn apply_repo_config(git_dir: &Path) -> Result<(), String> {
+    let cmd = superflat::utils::cmd::git_cmd(
+        git_dir,
+        ["config", "core.logAllRefUpdates", "true"],
+    );
+    superflat::utils::cmd::exec(cmd, None).map(|_| ()).map_err(|e| e.to_string())?;
+    let cmd = superflat::utils::cmd::git_cmd(git_dir, ["config", "gc.auto", "0"]);
+    superflat::utils::cmd::exec(cmd, None).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Initialize a new bare git repo and apply repo config.
+fn git_init_bare(git_dir: &Path) -> Result<(), String> {
+    let cmd = superflat::utils::cmd::git_cmd(git_dir, ["init", "--bare"]);
+    superflat::utils::cmd::exec(cmd, None).map(|_| ()).map_err(|e| e.to_string())?;
+    apply_repo_config(git_dir)
 }
 
 #[tauri::command]
@@ -218,7 +238,7 @@ async fn run_commit(
         Some(n) => n.to_owned(),
         None => {
             log::error!("Invalid save directory path");
-            let _ = app.emit("commit-done", ());
+            let _ = app.emit(EVENT_DONE, ());
             return;
         }
     };
@@ -251,29 +271,21 @@ async fn run_commit(
     let parents = if init {
         if let Err(e) = std::fs::create_dir_all(&git_dir) {
             log::error!("Failed to create git_dir: {}", e);
-            let _ = app.emit("commit-done", ());
+            let _ = app.emit(EVENT_DONE, ());
             return;
         }
         let git_dir_clone = git_dir.clone();
-        let init_result = tokio::task::spawn_blocking(move || {
-            let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["init", "--bare"]);
-            superflat::utils::cmd::exec(cmd, None).expect("failed to run git init");
-            let cmd = superflat::utils::cmd::git_cmd(
-                &git_dir_clone,
-                ["config", "core.logAllRefUpdates", "true"],
-            );
-            superflat::utils::cmd::exec(cmd, None).expect("failed to run git config logAllRefUpdates");
-            let cmd = superflat::utils::cmd::git_cmd(&git_dir_clone, ["config", "gc.auto", "0"]);
-            superflat::utils::cmd::exec(cmd, None).expect("failed to run git config gc.auto");
-        })
-        .await;
+        let init_result = tokio::task::spawn_blocking(move || git_init_bare(&git_dir_clone)).await;
         match init_result {
-            Ok(()) => {
-                vec![]
+            Ok(Ok(())) => vec![],
+            Ok(Err(e)) => {
+                log::error!("Failed to init repository: {}", e);
+                let _ = app.emit(EVENT_DONE, ());
+                return;
             }
             Err(e) => {
-                log::error!("Failed to init repository: {}", e);
-                let _ = app.emit("commit-done", ());
+                log::error!("Failed to init repository (task panic): {}", e);
+                let _ = app.emit(EVENT_DONE, ());
                 return;
             }
         }
@@ -285,17 +297,22 @@ async fn run_commit(
                 &git_dir_clone,
                 ["rev-parse", &format!("{}^{{commit}}", branch_clone)],
             );
-            superflat::utils::cmd::exec(cmd, None).expect("failed to run git rev-parse")
+            superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
         })
         .await;
         match rev {
-            Ok(rev) => {
+            Ok(Ok(rev)) => {
                 let hash = rev.trim().to_owned();
                 vec![hash]
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 log::error!("Failed to parse {branch}: {}", e);
-                let _ = app.emit("commit-done", ());
+                let _ = app.emit(EVENT_DONE, ());
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to parse {branch} (task panic): {}", e);
+                let _ = app.emit(EVENT_DONE, ());
                 return;
             }
         }
@@ -346,7 +363,7 @@ async fn run_commit(
         }
     }
 
-    let _ = app.emit("commit-done", ());
+    let _ = app.emit(EVENT_DONE, ());
 }
 
 #[tauri::command]
@@ -357,7 +374,7 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
         Some(n) => n.to_owned(),
         None => {
             log::error!("Invalid save directory path");
-            let _ = app.emit("commit-done", ());
+            let _ = app.emit(EVENT_DONE, ());
             return;
         }
     };
@@ -378,13 +395,13 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
         let bak = save_path.with_extension("bak");
         if bak.exists() {
             log::error!("Backup {bak:?} already exists, aborting checkout");
-            let _ = app.emit("commit-done", ());
+            let _ = app.emit(EVENT_DONE, ());
             return;
         }
         log::info!("save_dir {save_path:?} already exists, renaming to {bak:?}",);
         if let Err(e) = std::fs::rename(&save_path, &bak) {
             log::error!("Failed to rename save_dir: {e}");
-            let _ = app.emit("commit-done", ());
+            let _ = app.emit(EVENT_DONE, ());
             return;
         }
     }
@@ -403,26 +420,16 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
         }
     }
 
-    let _ = app.emit("commit-done", ());
+    let _ = app.emit(EVENT_DONE, ());
 }
 
-fn save_dir_to_git_dir(save_path: &Path) -> PathBuf {
-    let save_name = save_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("")
-        .to_owned();
-    save_path
+fn save_dir_to_git_dir(save_path: &Path) -> Option<PathBuf> {
+    let save_name = save_path.file_name()?.to_str()?.to_owned();
+    let path = save_path
         .join("../..")
         .join("backups")
-        .join(format!("{}.git", save_name))
-        .canonicalize()
-        .unwrap_or_else(|_| {
-            save_path
-                .join("../..")
-                .join("backups")
-                .join(format!("{}.git", save_name))
-        })
+        .join(format!("{}.git", save_name));
+    Some(path.canonicalize().unwrap_or(path))
 }
 
 #[tauri::command]
@@ -431,23 +438,23 @@ fn check_repo_exists(save_dir: String) -> bool {
         return false;
     }
     let save_path = PathBuf::from(&save_dir);
-    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
-        return false;
-    }
-    save_dir_to_git_dir(&save_path).exists()
+    save_dir_to_git_dir(&save_path)
+        .map(|p| p.exists())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
 async fn run_clone(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
 
-    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
-        log::error!("Invalid save directory path");
-        let _ = app.emit("commit-done", ());
-        return;
-    }
-
-    let git_dir = save_dir_to_git_dir(&save_path);
+    let git_dir = match save_dir_to_git_dir(&save_path) {
+        Some(d) => d,
+        None => {
+            log::error!("Invalid save directory path");
+            let _ = app.emit(EVENT_DONE, ());
+            return;
+        }
+    };
 
     log::info!("Cloning {} into {}", url, git_dir.display());
 
@@ -483,16 +490,7 @@ async fn run_clone(save_dir: String, url: String, app: AppHandle) {
             return Err(format!("git clone exited with {}", out.status));
         }
 
-        // Apply the same repo config as run_commit uses for new repos
-        let cmd = superflat::utils::cmd::git_cmd(
-            &git_dir,
-            ["config", "core.logAllRefUpdates", "true"],
-        );
-        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())?;
-        let cmd = superflat::utils::cmd::git_cmd(&git_dir, ["config", "gc.auto", "0"]);
-        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())?;
-
-        Ok::<(), String>(())
+        apply_repo_config(&git_dir)
     })
     .await;
 
@@ -502,20 +500,21 @@ async fn run_clone(save_dir: String, url: String, app: AppHandle) {
         Err(e) => log::error!("Clone task failed: {}", e),
     }
 
-    let _ = app.emit("commit-done", ());
+    let _ = app.emit(EVENT_DONE, ());
 }
 
 #[tauri::command]
 async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
 
-    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
-        log::error!("Invalid save directory path");
-        let _ = app.emit("commit-done", ());
-        return;
-    }
-
-    let git_dir = save_dir_to_git_dir(&save_path);
+    let git_dir = match save_dir_to_git_dir(&save_path) {
+        Some(d) => d,
+        None => {
+            log::error!("Invalid save directory path");
+            let _ = app.emit(EVENT_DONE, ());
+            return;
+        }
+    };
 
     log::info!("Pulling from {}", url);
 
@@ -539,20 +538,21 @@ async fn run_pull(save_dir: String, url: String, app: AppHandle) {
         Err(e) => log::error!("Pull task failed: {}", e),
     }
 
-    let _ = app.emit("commit-done", ());
+    let _ = app.emit(EVENT_DONE, ());
 }
 
 #[tauri::command]
 async fn run_push(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
 
-    if save_path.file_name().and_then(|n| n.to_str()).is_none() {
-        log::error!("Invalid save directory path");
-        let _ = app.emit("commit-done", ());
-        return;
-    }
-
-    let git_dir = save_dir_to_git_dir(&save_path);
+    let git_dir = match save_dir_to_git_dir(&save_path) {
+        Some(d) => d,
+        None => {
+            log::error!("Invalid save directory path");
+            let _ = app.emit(EVENT_DONE, ());
+            return;
+        }
+    };
 
     log::info!("Pushing to {}", url);
 
@@ -573,7 +573,7 @@ async fn run_push(save_dir: String, url: String, app: AppHandle) {
         Err(e) => log::error!("Push task failed: {}", e),
     }
 
-    let _ = app.emit("commit-done", ());
+    let _ = app.emit(EVENT_DONE, ());
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -586,14 +586,17 @@ struct CommitInfo {
 }
 
 #[tauri::command]
-fn get_commits(save_dir: String) -> Vec<CommitInfo> {
+fn get_commits(save_dir: String) -> Result<Vec<CommitInfo>, String> {
     if save_dir.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
     let save_path = PathBuf::from(&save_dir);
-    let git_dir = save_dir_to_git_dir(&save_path);
+    let git_dir = match save_dir_to_git_dir(&save_path) {
+        Some(d) => d,
+        None => return Ok(vec![]),
+    };
     if !git_dir.exists() {
-        return vec![];
+        return Ok(vec![]);
     }
 
     let mut cmd = std::process::Command::new("git");
@@ -612,16 +615,14 @@ fn get_commits(save_dir: String) -> Vec<CommitInfo> {
         cmd.creation_flags(0x08000000);
     }
 
-    let out = match cmd.output() {
-        Ok(o) => o,
-        Err(_) => return vec![],
-    };
+    let out = cmd.output().map_err(|e| format!("git log failed: {e}"))?;
 
     if !out.status.success() {
-        return vec![];
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("git log exited with {}: {stderr}", out.status));
     }
 
-    String::from_utf8_lossy(&out.stdout)
+    Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.splitn(5, '\x1f').collect();
@@ -637,7 +638,7 @@ fn get_commits(save_dir: String) -> Vec<CommitInfo> {
                 None
             }
         })
-        .collect()
+        .collect())
 }
 
 
