@@ -369,6 +369,11 @@ async fn run_checkout(save_dir: String, commit: String, mc_version: String, app:
 
     if save_path.exists() {
         let bak = save_path.with_extension("bak");
+        if bak.exists() {
+            log::error!("Backup {bak:?} already exists, aborting checkout");
+            let _ = app.emit("commit-done", ());
+            return;
+        }
         log::info!("save_dir {save_path:?} already exists, renaming to {bak:?}",);
         if let Err(e) = std::fs::rename(&save_path, &bak) {
             log::error!("Failed to rename save_dir: {e}");
