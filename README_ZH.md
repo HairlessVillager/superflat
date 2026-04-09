@@ -63,6 +63,9 @@ cargo install --path . --bin sf
 
 我们为 Windows 用户准备了 GUI 版本的程序。在 [GitHub Release 页面](https://github.com/HairlessVillager/superflat/releases) 下载 `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` 可执行文件。
 
+> [!IMPORTANT]
+> 本节剩余内容需要更新。
+
 > [!TIP]
 > 如果您信任我们的程序，请参考 [这篇文档](docs/windows-defender-bypass.md) 把 GUI 进程加入 Window Defender 白名单，从而获得更好的性能。
 
