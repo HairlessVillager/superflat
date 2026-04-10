@@ -20,6 +20,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 
+    #[wasm_bindgen(js_namespace = ["navigator", "clipboard"], js_name = writeText)]
+    fn clipboard_write_text(s: &str);
+
 }
 
 const DEFAULT_BRANCH: &str = "main";
@@ -156,6 +159,15 @@ pub fn App() -> impl IntoView {
     let (form_closing, set_form_closing) = signal(false);
     let (list_instant, set_list_instant) = signal(false);
     let (current_action, set_current_action) = signal(String::new());
+    let (show_log, set_show_log) = signal(false);
+    let log_console_ref = NodeRef::<leptos::html::Pre>::new();
+
+    Effect::new(move |_| {
+        let _ = output_lines.get();
+        if let Some(el) = log_console_ref.get() {
+            el.set_scroll_top(el.scroll_height());
+        }
+    });
 
     // Close the Add/Edit form with an exit animation, then switch panel
     let close_form = move |next: RightPanel| {
@@ -726,13 +738,7 @@ pub fn App() -> impl IntoView {
                     // ── Commit list ─────────────────────────────────
                     <div class="commit-area">
                         <Show
-                            when=move || !output_lines.get().is_empty()
-                            fallback=|| view! {}
-                        >
-                            <pre class="console">{move || output_lines.get().join("\n")}</pre>
-                        </Show>
-                        <Show
-                            when=move || commits.get().is_empty() && output_lines.get().is_empty()
+                            when=move || commits.get().is_empty()
                             fallback=|| view! {}
                         >
                             <div class="commit-empty">
@@ -776,10 +782,36 @@ pub fn App() -> impl IntoView {
                         <span class="status-bar-item warn">"⚠ No Remote"</span>
                     </Show>
                     <Show when=move || is_running.get()>
-                        <span class="status-bar-item running">
+                        <button class="status-bar-btn running" on:click=move |_| set_show_log.set(true)>
                             {move || format!("⟳ {}", current_action.get())}
-                        </span>
+                        </button>
                     </Show>
+                    <Show when=move || !is_running.get() && !output_lines.get().is_empty()>
+                        <button class="status-bar-btn" on:click=move |_| set_show_log.set(true)>
+                            "📋 Last output"
+                        </button>
+                    </Show>
+                </div>
+            </div>
+
+            // ── Log modal ────────────────────────────────────────────
+            <div class="sidebar" class:open=move || show_log.get()>
+                <div class="sidebar-panel-form">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">"Output Log"</span>
+                        <div style="display:flex;gap:6px;align-items:center">
+                            <button
+                                class="sidebar-close"
+                                style="background:#2a5a3a;border-color:#1a3a2a"
+                                on:click=move |_| clipboard_write_text(&output_lines.get_untracked().join("\n"))
+                                title="Copy to clipboard"
+                            >"Copy"</button>
+                            <button class="sidebar-close" on:click=move |_| set_show_log.set(false)>"✕"</button>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:0">
+                        <pre class="log-console" node_ref=log_console_ref>{move || output_lines.get().join("\n")}</pre>
+                    </div>
                 </div>
             </div>
 

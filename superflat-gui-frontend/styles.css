@@ -245,6 +245,49 @@ body::after {
   color: #5ab4d4;
 }
 
+.status-bar-btn {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: monospace;
+  color: #7a9a6a;
+  line-height: 22px;
+}
+
+.status-bar-btn:hover {
+  color: #c8f0b0;
+  text-decoration: underline;
+}
+
+.status-bar-btn.running {
+  color: #5ab4d4;
+}
+
+.status-bar-btn.running:hover {
+  color: #8ad4f4;
+}
+
+.log-console {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  margin: 0;
+  background: #0e1a0c;
+  color: #a8d89a;
+  font-size: 11px;
+  font-family: monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  scroll-behavior: smooth;
+}
+
 .commit-area {
   flex: 1;
   display: flex;
