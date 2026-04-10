@@ -216,6 +216,35 @@ body::after {
   overflow: hidden;
 }
 
+.status-bar {
+  height: 22px;
+  background: #1a2e14;
+  border-top: 1px solid #0a1a08;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.status-bar-item {
+  font-size: 11px;
+  font-family: monospace;
+  color: #7a9a6a;
+}
+
+.status-bar-item.ok {
+  color: #6abf6a;
+}
+
+.status-bar-item.warn {
+  color: #d4a04a;
+}
+
+.status-bar-item.running {
+  color: #5ab4d4;
+}
+
 .commit-area {
   flex: 1;
   display: flex;

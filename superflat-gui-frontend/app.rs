@@ -725,28 +725,6 @@ pub fn App() -> impl IntoView {
 
                     // ── Commit list ─────────────────────────────────
                     <div class="commit-area">
-                        <div class="status-panel">
-                            <div class="status-line">
-                                <span class="status-chip" class:ok=move || repo_exists.get() class:warn=move || !repo_exists.get()>
-                                    {move || if repo_exists.get() { "Repo Ready" } else { "Need Clone / First Commit" }}
-                                </span>
-                                <span class="status-chip" class:ok=move || !active_profile.get().remote_url.is_empty() class:warn=move || active_profile.get().remote_url.is_empty()>
-                                    {move || if active_profile.get().remote_url.is_empty() { "Remote URL Missing" } else { "Remote URL Ready" }}
-                                </span>
-                                <Show when=move || is_running.get()>
-                                    <span class="status-chip running">
-                                        {move || format!("Running: {}", current_action.get())}
-                                    </span>
-                                </Show>
-                            </div>
-                            <div class="mapping-grid">
-                                <div class="mapping-item"><strong>"Commit"</strong>" → sf commit"</div>
-                                <div class="mapping-item"><strong>"Checkout"</strong>" → sf checkout"</div>
-                                <div class="mapping-item"><strong>"Clone"</strong>" → git clone --bare"</div>
-                                <div class="mapping-item"><strong>"Pull"</strong>" → git fetch refs/heads/*"</div>
-                                <div class="mapping-item"><strong>"Push"</strong>" → git push --all"</div>
-                            </div>
-                        </div>
                         <Show
                             when=move || !output_lines.get().is_empty()
                             fallback=|| view! {}
@@ -790,6 +768,18 @@ pub fn App() -> impl IntoView {
                     </div>
 
                     // ── Right panel ─────────────────────────────────
+                </div>
+
+                // ── Status bar ──────────────────────────────────
+                <div class="status-bar">
+                    <Show when=move || repo_exists.get() && active_profile.get().remote_url.is_empty()>
+                        <span class="status-bar-item warn">"⚠ No Remote"</span>
+                    </Show>
+                    <Show when=move || is_running.get()>
+                        <span class="status-bar-item running">
+                            {move || format!("⟳ {}", current_action.get())}
+                        </span>
+                    </Show>
                 </div>
             </div>
 
