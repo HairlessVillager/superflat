@@ -1,6 +1,6 @@
-use crate::bindings::{invoke, set_timeout};
+use crate::bindings::{clipboard_write_text, invoke, log, set_timeout};
 use crate::handlers::{
-    make_refresh_repo_state, make_upsert_profile, run_remote_op, setup_event_listeners,
+    make_refresh_repo_state, make_upsert_profile, run_remote_op,
     MainContent,
 };
 use crate::types::*;
@@ -24,7 +24,7 @@ fn ProfileCard(
 ) -> impl IntoView {
     let p_edit = p.clone();
     let dir_remove = p.save_dir.clone();
-view! {
+    view! {
         <div class="profile-card" on:click=move |_| {
             set_active_profile.set(p.clone());
             set_show_profiles.set(false);
@@ -234,6 +234,16 @@ pub fn App() -> impl IntoView {
     let (form_branch, set_form_branch) = signal(DEFAULT_BRANCH.to_string());
     let (form_mc_version, set_form_mc_version) = signal(DEFAULT_MC_VERSION.to_string());
     let (form_remote_url, set_form_remote_url) = signal(String::new());
+    let (current_action, set_current_action) = signal(String::new());
+    let (show_log, set_show_log) = signal(false);
+    let log_console_ref = NodeRef::<leptos::html::Pre>::new();
+
+    Effect::new(move |_| {
+        let _ = output_lines.get();
+        if let Some(el) = log_console_ref.get() {
+            el.set_scroll_top(el.scroll_height());
+        }
+    });
 
     let refresh = make_refresh_repo_state(set_repo_exists, set_commits, set_output_lines);
     let do_upsert = make_upsert_profile(set_profiles);
@@ -253,7 +263,29 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    setup_event_listeners(set_output_lines, set_is_running, active_profile, refresh);
+    // Wrap setup_event_listeners to also clear current_action on done
+    spawn_local(async move {
+        let set_lines = set_output_lines;
+        let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
+            let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
+                .unwrap_or(JsValue::NULL);
+            if let Some(line) = payload.as_string() {
+                set_lines.update(|lines| lines.push(line));
+            }
+        });
+        let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
+            set_is_running.set(false);
+            set_current_action.set(String::new());
+            refresh(active_profile.get_untracked().save_dir);
+        });
+        if let (Ok(_), Ok(_)) = (
+            crate::bindings::tauri_listen(EVENT_OUTPUT, &on_output).await,
+            crate::bindings::tauri_listen(EVENT_DONE, &on_done).await,
+        ) {
+            on_output.forget();
+            on_done.forget();
+        }
+    });
 
     let run_commit = move |_: leptos::ev::MouseEvent| {
         let msg = draft_message.get_untracked();
@@ -261,10 +293,11 @@ pub fn App() -> impl IntoView {
             set_output_lines.update(|l| l.push("Error: Commit message is empty".to_string()));
             return;
         }
+        let p = active_profile.get_untracked();
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
+        set_current_action.set("Committing save".to_string());
         set_right_panel.set(RightPanel::None);
-        let p = active_profile.get_untracked();
         set_draft_message.set(String::new());
         spawn_local(async move {
             let args = to_js(&RunCommitArgs {
@@ -279,9 +312,14 @@ pub fn App() -> impl IntoView {
     };
 
     let run_checkout = move |commit: String| {
+        let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let p = active_profile.get_untracked();
+        set_current_action.set(format!("Checking out {}", &commit[..commit.len().min(8)]));
         spawn_local(async move {
             let args = to_js(&RunCheckoutArgs {
                 save_dir: p.save_dir.clone(), commit, mc_version: p.mc_version.clone(),
@@ -294,21 +332,30 @@ pub fn App() -> impl IntoView {
     };
 
     let run_pull = move |_: leptos::ev::MouseEvent| {
+        set_current_action.set("Fetching remote history".to_string());
         run_remote_op("run_pull",
             |p| to_js(&RunPullArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() }),
             active_profile, set_output_lines, set_is_running, do_upsert);
     };
+
     let run_push = move |_: leptos::ev::MouseEvent| {
+        set_current_action.set("Pushing history".to_string());
         run_remote_op("run_push",
             |p| to_js(&RunPushArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() }),
             active_profile, set_output_lines, set_is_running, do_upsert);
     };
+
     let run_clone = move |_: leptos::ev::MouseEvent| {
         let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
         if p.remote_url.is_empty() {
             set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
             return;
         }
+        set_current_action.set("Cloning remote repository".to_string());
         run_remote_op("run_clone",
             |p| to_js(&RunCloneArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() }),
             active_profile, set_output_lines, set_is_running, do_upsert);
@@ -341,6 +388,38 @@ pub fn App() -> impl IntoView {
         });
         set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
         cb.forget();
+    };
+
+    let handle_window_minimize = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_minimize", JsValue::NULL).await {
+                log(&format!("minimize failed: {}", js_error_to_string(err)));
+            }
+        });
+    };
+
+    let handle_window_toggle_maximize = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_toggle_maximize", JsValue::NULL).await {
+                log(&format!("toggle maximize failed: {}", js_error_to_string(err)));
+            }
+        });
+    };
+
+    let handle_window_close = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_close", JsValue::NULL).await {
+                log(&format!("close failed: {}", js_error_to_string(err)));
+            }
+        });
+    };
+
+    let handle_window_drag = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_start_dragging", JsValue::NULL).await {
+                log(&format!("start dragging failed: {}", js_error_to_string(err)));
+            }
+        });
     };
 
     view! {
@@ -385,15 +464,66 @@ pub fn App() -> impl IntoView {
                     }
                 }/>
             </Show>
-            <MainContent
-                active_profile=active_profile is_running=is_running
-                right_panel=right_panel set_right_panel=set_right_panel
-                repo_exists=repo_exists commits=commits output_lines=output_lines
-                set_show_profiles=set_show_profiles
-                draft_message=draft_message set_draft_message=set_draft_message
-                run_commit=run_commit run_checkout=run_checkout
-                run_pull=run_pull run_push=run_push run_clone=run_clone
-            />
+
+            // ── Main content ────────────────────────────────────────
+            <div class="main">
+                <div class="window-titlebar">
+                    <div class="window-title-drag" data-tauri-drag-region=true on:mousedown=handle_window_drag>
+                        <span class="window-title">"Superflat - Minecraft Save Backup"</span>
+                    </div>
+                    <div class="window-controls">
+                        <button class="window-btn" on:click=handle_window_minimize title="Minimize">"—"</button>
+                        <button class="window-btn" on:click=handle_window_toggle_maximize title="Maximize / Restore">"□"</button>
+                        <button class="window-btn window-btn-close" on:click=handle_window_close title="Close">"✕"</button>
+                    </div>
+                </div>
+                <MainContent
+                    active_profile=active_profile is_running=is_running
+                    right_panel=right_panel set_right_panel=set_right_panel
+                    repo_exists=repo_exists commits=commits
+                    set_show_profiles=set_show_profiles
+                    draft_message=draft_message set_draft_message=set_draft_message
+                    run_commit=run_commit run_checkout=run_checkout
+                    run_pull=run_pull run_push=run_push run_clone=run_clone
+                />
+                // ── Status bar ──────────────────────────────────
+                <div class="status-bar">
+                    <Show when=move || repo_exists.get() && active_profile.get().remote_url.is_empty()>
+                        <span class="status-bar-item warn">"⚠ No Remote"</span>
+                    </Show>
+                    <Show when=move || is_running.get()>
+                        <button class="status-bar-btn running" on:click=move |_| set_show_log.set(true)>
+                            {move || format!("⟳ {}", current_action.get())}
+                        </button>
+                    </Show>
+                    <Show when=move || !is_running.get() && !output_lines.get().is_empty()>
+                        <button class="status-bar-btn" on:click=move |_| set_show_log.set(true)>
+                            "📋 Last output"
+                        </button>
+                    </Show>
+                </div>
+            </div>
+
+            // ── Log modal ────────────────────────────────────────────
+            <div class="sidebar" class:open=move || show_log.get()>
+                <div class="sidebar-panel-form">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">"Output Log"</span>
+                        <div style="display:flex;gap:6px;align-items:center">
+                            <button
+                                class="sidebar-close"
+                                style="background:#2a5a3a;border-color:#1a3a2a"
+                                on:click=move |_| clipboard_write_text(&output_lines.get_untracked().join("\n"))
+                                title="Copy to clipboard"
+                            >"Copy"</button>
+                            <button class="sidebar-close" on:click=move |_| set_show_log.set(false)>"✕"</button>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:0">
+                        <pre class="log-console" node_ref=log_console_ref>{move || output_lines.get().join("\n")}</pre>
+                    </div>
+                </div>
+            </div>
         </div>
     }
 }

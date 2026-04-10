@@ -16,4 +16,7 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = console)]
     pub fn log(s: &str);
+
+    #[wasm_bindgen(js_namespace = ["navigator", "clipboard"], js_name = writeText)]
+    pub fn clipboard_write_text(s: &str);
 }

@@ -22,6 +22,30 @@ fn set_debug_logging(app: AppHandle, debug: bool) {
     GUI_LOGGER.configure(app, debug);
 }
 
+#[tauri::command]
+fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
 pub fn run() {
     log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
     log::set_max_level(LevelFilter::Info);
@@ -47,6 +71,10 @@ pub fn run() {
             profiles::upsert_profile,
             profiles::delete_profile,
             set_debug_logging,
+            window_minimize,
+            window_toggle_maximize,
+            window_close,
+            window_start_dragging,
             commands::run_commit,
             commands::run_checkout,
             git_ops::check_repo_exists,
