@@ -1,8 +1,5 @@
-use crate::bindings::{clipboard_write_text, invoke, log, set_timeout};
-use crate::handlers::{
-    make_refresh_repo_state, make_upsert_profile, run_remote_op,
-    MainContent,
-};
+use crate::bindings::{invoke, log, set_timeout};
+use crate::handlers::{MainContent, make_refresh_repo_state, make_upsert_profile, run_remote_op};
 use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -19,7 +16,6 @@ fn ProfileCard(
     set_form_save_dir: WriteSignal<String>,
     set_form_branch: WriteSignal<String>,
     set_form_mc_version: WriteSignal<String>,
-    set_form_remote_url: WriteSignal<String>,
     set_profiles: WriteSignal<Vec<Profile>>,
 ) -> impl IntoView {
     let p_edit = p.clone();
@@ -31,29 +27,30 @@ fn ProfileCard(
             set_right_panel.set(RightPanel::None);
         }>
             <div class="profile-card-path">{p.save_dir.clone()}</div>
-            <div class="profile-card-meta">{format!("{} · {}", p.branch, p.mc_version)}</div>
-            <div class="profile-card-actions">
-                <button class="btn-edit" on:click=move |ev| {
-                    ev.stop_propagation();
-                    set_form_save_dir.set(p_edit.save_dir.clone());
-                    set_form_branch.set(p_edit.branch.clone());
-                    set_form_mc_version.set(p_edit.mc_version.clone());
-                    set_form_remote_url.set(p_edit.remote_url.clone());
-                    set_right_panel.set(RightPanel::EditProfile(p_edit.save_dir.clone()));
-                }>"Edit"</button>
-                <button class="btn-remove" on:click=move |ev| {
-                    ev.stop_propagation();
-                    set_profiles.update(|ps| ps.retain(|x| x.save_dir != dir_remove));
-                    let dir = dir_remove.clone();
-                    spawn_local(async move {
-                        let args = to_js(&DeleteProfileArgs { save_dir: dir });
-                        if let Err(err) = invoke("delete_profile", args).await {
-                            crate::bindings::log(&format!(
-                                "delete_profile failed: {}", js_error_to_string(err)
-                            ));
-                        }
-                    });
-                }>"Remove"</button>
+            <div class="profile-card-row">
+                <div class="profile-card-meta">{format!("{} · {}", p.branch, p.mc_version)}</div>
+                <div class="profile-card-actions">
+                    <button class="btn-edit" on:click=move |ev| {
+                        ev.stop_propagation();
+                        set_form_save_dir.set(p_edit.save_dir.clone());
+                        set_form_branch.set(p_edit.branch.clone());
+                        set_form_mc_version.set(p_edit.mc_version.clone());
+                        set_right_panel.set(RightPanel::EditProfile(p_edit.save_dir.clone()));
+                    }>"Edit"</button>
+                    <button class="btn-remove" on:click=move |ev| {
+                        ev.stop_propagation();
+                        set_profiles.update(|ps| ps.retain(|x| x.save_dir != dir_remove));
+                        let dir = dir_remove.clone();
+                        spawn_local(async move {
+                            let args = to_js(&DeleteProfileArgs { save_dir: dir });
+                            if let Err(err) = invoke("delete_profile", args).await {
+                                crate::bindings::log(&format!(
+                                    "delete_profile failed: {}", js_error_to_string(err)
+                                ));
+                            }
+                        });
+                    }>"Remove"</button>
+                </div>
             </div>
         </div>
     }
@@ -71,40 +68,39 @@ fn ProfileListPanel(
     set_form_save_dir: WriteSignal<String>,
     set_form_branch: WriteSignal<String>,
     set_form_mc_version: WriteSignal<String>,
-    set_form_remote_url: WriteSignal<String>,
     set_profiles: WriteSignal<Vec<Profile>>,
     open_add_profile: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
+    open_clone_from_remote: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
 ) -> impl IntoView {
     view! {
         <div class="sidebar"
             class:open=move || show_profiles.get()
-                && !matches!(right_panel.get(), RightPanel::AddProfile | RightPanel::EditProfile(_))
+                && !matches!(right_panel.get(), RightPanel::AddProfile | RightPanel::EditProfile(_) | RightPanel::CloneFromRemote)
             class:no-transition=move || list_instant.get()
         >
             <div class="sidebar-panel-list">
-                <div class="sidebar-header">
-                    <span class="sidebar-title">"Profiles"</span>
-                    <button class="sidebar-close"
-                        on:click=move |_| set_show_profiles.set(false)>"✕"</button>
-                </div>
-                <button class="btn-add-profile" on:click=open_add_profile>"+ Add Profile"</button>
-                <Show when=move || profiles.get().is_empty() fallback=|| view! {}>
-                    <p class="sidebar-empty">"No profiles yet"</p>
-                </Show>
-                <div class="profile-list">
-                    <For each=move || profiles.get() key=|p| p.save_dir.clone()
-                        children=move |p| view! {
-                            <ProfileCard p=p
-                                set_active_profile=set_active_profile
-                                set_show_profiles=set_show_profiles
-                                set_right_panel=set_right_panel
-                                set_form_save_dir=set_form_save_dir
-                                set_form_branch=set_form_branch
-                                set_form_mc_version=set_form_mc_version
-                                set_form_remote_url=set_form_remote_url
-                                set_profiles=set_profiles />
-                        }
-                    />
+                <div class="sidebar-body">
+                    <div class="btn-add-profile-group">
+                        <button class="btn-add-profile" on:click=open_add_profile>"+ Track Local Save"</button>
+                        <button class="btn-add-profile" on:click=open_clone_from_remote>"+ Clone From Remote"</button>
+                    </div>
+                    <Show when=move || profiles.get().is_empty() fallback=|| view! {}>
+                        <p class="sidebar-empty">"No profiles yet"</p>
+                    </Show>
+                    <div class="profile-list">
+                        <For each=move || profiles.get() key=|p| p.save_dir.clone()
+                            children=move |p| view! {
+                                <ProfileCard p=p
+                                    set_active_profile=set_active_profile
+                                    set_show_profiles=set_show_profiles
+                                    set_right_panel=set_right_panel
+                                    set_form_save_dir=set_form_save_dir
+                                    set_form_branch=set_form_branch
+                                    set_form_mc_version=set_form_mc_version
+                                    set_profiles=set_profiles />
+                            }
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -121,11 +117,9 @@ fn ProfileFormPanel(
     form_save_dir: ReadSignal<String>,
     form_branch: ReadSignal<String>,
     form_mc_version: ReadSignal<String>,
-    form_remote_url: ReadSignal<String>,
     set_form_save_dir: WriteSignal<String>,
     set_form_branch: WriteSignal<String>,
     set_form_mc_version: WriteSignal<String>,
-    set_form_remote_url: WriteSignal<String>,
     set_active_profile: WriteSignal<Profile>,
     set_show_profiles: WriteSignal<bool>,
     set_form_closing: WriteSignal<bool>,
@@ -144,6 +138,7 @@ fn ProfileFormPanel(
         set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
         cb.forget();
     };
+    let (track_show_errors, set_track_show_errors) = signal(false);
     view! {
         <div class="sidebar"
             class:open=move || (matches!(right_panel.get(),
@@ -151,59 +146,166 @@ fn ProfileFormPanel(
                 || form_closing.get()) && show_profiles.get()
         >
             <div class="sidebar-panel-form" class:closing=move || form_closing.get()>
-                <div class="sidebar-header">
-                    <span class="sidebar-title">
-                        {move || if right_panel.get() == RightPanel::AddProfile
-                            { "Add Profile" } else { "Edit Profile" }}
-                    </span>
-                    <button class="sidebar-close"
-                        on:click=move |_| do_close(RightPanel::None)>"✕"</button>
-                </div>
-                <div class="panel-body">
-                    <label class="panel-label">
-                        "Save directory"
-                        <div class="panel-dir-row">
-                            <input type="text" prop:value=move || form_save_dir.get()
-                                on:input=move |ev| set_form_save_dir.set(event_target_value(&ev))
-                                placeholder="Path to save directory"
-                                disabled=move || matches!(right_panel.get(), RightPanel::EditProfile(_)) />
-                            <button class="btn-browse" on:click=move |_| {
-                                spawn_local(async move {
-                                    if let Ok(r) = invoke("pick_directory", JsValue::NULL).await {
-                                        if let Some(p) = r.as_string() { set_form_save_dir.set(p); }
+                <div class="sidebar-body">
+                    <div class="panel-body">
+                        <label class="panel-label">
+                            "Save directory"
+                            <div class="panel-dir-row">
+                                <input type="text" prop:value=move || form_save_dir.get()
+                                    on:input=move |ev| {
+                                        set_form_save_dir.set(event_target_value(&ev));
+                                        set_track_show_errors.set(false);
                                     }
+                                    class:invalid=move || track_show_errors.get() && form_save_dir.get().trim().is_empty()
+                                        && !matches!(right_panel.get(), RightPanel::EditProfile(_))
+                                    placeholder=".minecraft/saves/<save-name>/"
+                                    disabled=move || matches!(right_panel.get(), RightPanel::EditProfile(_)) />
+                                <button class="btn-browse" on:click=move |_| {
+                                    spawn_local(async move {
+                                        if let Ok(r) = invoke("pick_directory", JsValue::NULL).await {
+                                            if let Some(p) = r.as_string() { set_form_save_dir.set(p); }
+                                        }
+                                    });
+                                }>"Browse"</button>
+                            </div>
+                        </label>
+                        <label class="panel-label">"Branch"
+                            <input type="text" prop:value=move || form_branch.get()
+                                on:input=move |ev| {
+                                    set_form_branch.set(event_target_value(&ev));
+                                    set_track_show_errors.set(false);
+                                }
+                                class:invalid=move || track_show_errors.get() && form_branch.get().trim().is_empty()
+                                placeholder="main" />
+                        </label>
+                        <label class="panel-label">"MC Version"
+                            <input type="text" prop:value=move || form_mc_version.get()
+                                on:input=move |ev| {
+                                    set_form_mc_version.set(event_target_value(&ev));
+                                    set_track_show_errors.set(false);
+                                }
+                                class:invalid=move || track_show_errors.get() && form_mc_version.get().trim().is_empty()
+                                placeholder="e.g. 1.21.11" />
+                        </label>
+                        <Show when=move || matches!(right_panel.get(), RightPanel::EditProfile(_))>
+                            <button class="btn-load-profile" on:click=move |_| {
+                                set_active_profile.set(Profile {
+                                    save_dir: form_save_dir.get_untracked(),
+                                    branch: form_branch.get_untracked(),
+                                    mc_version: form_mc_version.get_untracked(),
+                                    remote_url: String::new(),
                                 });
-                            }>"Browse"</button>
-                        </div>
-                    </label>
-                    <label class="panel-label">"Branch"
-                        <input type="text" prop:value=move || form_branch.get()
-                            on:input=move |ev| set_form_branch.set(event_target_value(&ev))
-                            placeholder="main" />
-                    </label>
-                    <label class="panel-label">"MC Version"
-                        <input type="text" prop:value=move || form_mc_version.get()
-                            on:input=move |ev| set_form_mc_version.set(event_target_value(&ev))
-                            placeholder="e.g. 1.21.11" />
-                    </label>
-                    <label class="panel-label">"Remote URL"
-                        <input type="text" prop:value=move || form_remote_url.get()
-                            on:input=move |ev| set_form_remote_url.set(event_target_value(&ev))
-                            placeholder="https://..." />
-                    </label>
-                    <Show when=move || matches!(right_panel.get(), RightPanel::EditProfile(_))>
-                        <button class="btn-load-profile" on:click=move |_| {
-                            set_active_profile.set(Profile {
-                                save_dir: form_save_dir.get_untracked(),
-                                branch: form_branch.get_untracked(),
-                                mc_version: form_mc_version.get_untracked(),
-                                remote_url: form_remote_url.get_untracked(),
-                            });
-                            set_show_profiles.set(false);
-                            do_close(RightPanel::None);
-                        }>"Load this profile"</button>
-                    </Show>
-                    <button class="btn-panel-primary" on:click=save_profile_form>"Save"</button>
+                                set_show_profiles.set(false);
+                                do_close(RightPanel::None);
+                            }>"Load this profile"</button>
+                        </Show>
+                        <button class="btn-panel-primary" on:click=move |ev| {
+                            let is_edit = matches!(right_panel.get_untracked(), RightPanel::EditProfile(_));
+                            let dir_ok = is_edit || !form_save_dir.get_untracked().trim().is_empty();
+                            let branch_ok = !form_branch.get_untracked().trim().is_empty();
+                            let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
+                            if dir_ok && branch_ok && ver_ok {
+                                save_profile_form(ev);
+                            } else {
+                                set_track_show_errors.set(true);
+                            }
+                        }>"Track"</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+// ── Clone from remote form panel ────────────────────────────────────────────
+
+#[component]
+fn CloneFromRemoteFormPanel(
+    show_profiles: ReadSignal<bool>,
+    right_panel: ReadSignal<RightPanel>,
+    form_closing: ReadSignal<bool>,
+    form_clone_git_dir: ReadSignal<String>,
+    form_remote_url: ReadSignal<String>,
+    form_branch: ReadSignal<String>,
+    form_mc_version: ReadSignal<String>,
+    set_form_clone_git_dir: WriteSignal<String>,
+    set_form_remote_url: WriteSignal<String>,
+    set_form_branch: WriteSignal<String>,
+    set_form_mc_version: WriteSignal<String>,
+    set_form_closing: WriteSignal<bool>,
+    set_list_instant: WriteSignal<bool>,
+    set_right_panel: WriteSignal<RightPanel>,
+    clone_profile_form: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
+) -> impl IntoView {
+    let _do_close = move |next: RightPanel| {
+        set_form_closing.set(true);
+        set_list_instant.set(true);
+        let cb = Closure::<dyn Fn()>::new(move || {
+            set_right_panel.set(next.clone());
+            set_form_closing.set(false);
+            set_list_instant.set(false);
+        });
+        set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
+        cb.forget();
+    };
+    let (clone_show_errors, set_clone_show_errors) = signal(false);
+    view! {
+        <div class="sidebar"
+            class:open=move || (right_panel.get() == RightPanel::CloneFromRemote
+                || form_closing.get()) && show_profiles.get()
+        >
+            <div class="sidebar-panel-form" class:closing=move || form_closing.get()>
+                <div class="sidebar-body">
+                    <div class="panel-body">
+                        <label class="panel-label">
+                            "Git directory"
+                            <input type="text" prop:value=move || form_clone_git_dir.get()
+                                on:input=move |ev| {
+                                    set_form_clone_git_dir.set(event_target_value(&ev));
+                                    set_clone_show_errors.set(false);
+                                }
+                                class:invalid=move || clone_show_errors.get() && form_clone_git_dir.get().trim().is_empty()
+                                placeholder=".minecraft/backups/<save-name>.git/" />
+                        </label>
+                        <label class="panel-label">"Remote URL"
+                            <input type="text" prop:value=move || form_remote_url.get()
+                                on:input=move |ev| {
+                                    set_form_remote_url.set(event_target_value(&ev));
+                                    set_clone_show_errors.set(false);
+                                }
+                                class:invalid=move || clone_show_errors.get() && form_remote_url.get().trim().is_empty()
+                                placeholder="ssh://..." />
+                        </label>
+                        <label class="panel-label">"Branch"
+                            <input type="text" prop:value=move || form_branch.get()
+                                on:input=move |ev| {
+                                    set_form_branch.set(event_target_value(&ev));
+                                    set_clone_show_errors.set(false);
+                                }
+                                class:invalid=move || clone_show_errors.get() && form_branch.get().trim().is_empty()
+                                placeholder="main" />
+                        </label>
+                        <label class="panel-label">"MC Version"
+                            <input type="text" prop:value=move || form_mc_version.get()
+                                on:input=move |ev| {
+                                    set_form_mc_version.set(event_target_value(&ev));
+                                    set_clone_show_errors.set(false);
+                                }
+                                class:invalid=move || clone_show_errors.get() && form_mc_version.get().trim().is_empty()
+                                placeholder="e.g. 1.21.11" />
+                        </label>
+                        <button class="btn-panel-primary" on:click=move |ev| {
+                            let git_dir_ok = !form_clone_git_dir.get_untracked().trim().is_empty();
+                            let url_ok = !form_remote_url.get_untracked().trim().is_empty();
+                            let branch_ok = !form_branch.get_untracked().trim().is_empty();
+                            let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
+                            if git_dir_ok && url_ok && branch_ok && ver_ok {
+                                clone_profile_form(ev);
+                            } else {
+                                set_clone_show_errors.set(true);
+                            }
+                        }>"Clone"</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -217,7 +319,7 @@ pub fn App() -> impl IntoView {
     let (active_profile, set_active_profile) = signal(Profile {
         save_dir: String::new(),
         branch: DEFAULT_BRANCH.to_string(),
-        mc_version: DEFAULT_MC_VERSION.to_string(),
+        mc_version: String::new(),
         remote_url: String::new(),
     });
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
@@ -232,8 +334,9 @@ pub fn App() -> impl IntoView {
     let (draft_message, set_draft_message) = signal(String::new());
     let (form_save_dir, set_form_save_dir) = signal(String::new());
     let (form_branch, set_form_branch) = signal(DEFAULT_BRANCH.to_string());
-    let (form_mc_version, set_form_mc_version) = signal(DEFAULT_MC_VERSION.to_string());
+    let (form_mc_version, set_form_mc_version) = signal(String::new());
     let (form_remote_url, set_form_remote_url) = signal(String::new());
+    let (form_clone_git_dir, set_form_clone_git_dir) = signal(String::new());
     let (current_action, set_current_action) = signal(String::new());
     let (show_log, set_show_log) = signal(false);
     let log_console_ref = NodeRef::<leptos::html::Pre>::new();
@@ -301,8 +404,10 @@ pub fn App() -> impl IntoView {
         set_draft_message.set(String::new());
         spawn_local(async move {
             let args = to_js(&RunCommitArgs {
-                save_dir: p.save_dir.clone(), branch: p.branch.clone(),
-                message: msg, mc_version: p.mc_version.clone(),
+                save_dir: p.save_dir.clone(),
+                branch: p.branch.clone(),
+                message: msg,
+                mc_version: p.mc_version.clone(),
             });
             if let Err(err) = invoke("run_commit", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
@@ -322,7 +427,9 @@ pub fn App() -> impl IntoView {
         set_current_action.set(format!("Checking out {}", &commit[..commit.len().min(8)]));
         spawn_local(async move {
             let args = to_js(&RunCheckoutArgs {
-                save_dir: p.save_dir.clone(), commit, mc_version: p.mc_version.clone(),
+                save_dir: p.save_dir.clone(),
+                commit,
+                mc_version: p.mc_version.clone(),
             });
             if let Err(err) = invoke("run_checkout", args).await {
                 set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
@@ -333,16 +440,36 @@ pub fn App() -> impl IntoView {
 
     let run_pull = move |_: leptos::ev::MouseEvent| {
         set_current_action.set("Fetching remote history".to_string());
-        run_remote_op("run_pull",
-            |p| to_js(&RunPullArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() }),
-            active_profile, set_output_lines, set_is_running, do_upsert);
+        run_remote_op(
+            "run_pull",
+            |p| {
+                to_js(&RunPullArgs {
+                    save_dir: p.save_dir.clone(),
+                    url: p.remote_url.clone(),
+                })
+            },
+            active_profile,
+            set_output_lines,
+            set_is_running,
+            do_upsert,
+        );
     };
 
     let run_push = move |_: leptos::ev::MouseEvent| {
         set_current_action.set("Pushing history".to_string());
-        run_remote_op("run_push",
-            |p| to_js(&RunPushArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() }),
-            active_profile, set_output_lines, set_is_running, do_upsert);
+        run_remote_op(
+            "run_push",
+            |p| {
+                to_js(&RunPushArgs {
+                    save_dir: p.save_dir.clone(),
+                    url: p.remote_url.clone(),
+                })
+            },
+            active_profile,
+            set_output_lines,
+            set_is_running,
+            do_upsert,
+        );
     };
 
     let run_clone = move |_: leptos::ev::MouseEvent| {
@@ -356,16 +483,25 @@ pub fn App() -> impl IntoView {
             return;
         }
         set_current_action.set("Cloning remote repository".to_string());
-        run_remote_op("run_clone",
-            |p| to_js(&RunCloneArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() }),
-            active_profile, set_output_lines, set_is_running, do_upsert);
+        run_remote_op(
+            "run_clone",
+            |p| {
+                to_js(&RunCloneArgs {
+                    save_dir: p.save_dir.clone(),
+                    url: p.remote_url.clone(),
+                })
+            },
+            active_profile,
+            set_output_lines,
+            set_is_running,
+            do_upsert,
+        );
     };
 
     let open_add_profile = move |_: leptos::ev::MouseEvent| {
         set_form_save_dir.set(String::new());
         set_form_branch.set(DEFAULT_BRANCH.to_string());
-        set_form_mc_version.set(DEFAULT_MC_VERSION.to_string());
-        set_form_remote_url.set(String::new());
+        set_form_mc_version.set(String::new());
         set_right_panel.set(RightPanel::AddProfile);
         set_show_profiles.set(true);
     };
@@ -375,10 +511,38 @@ pub fn App() -> impl IntoView {
             save_dir: form_save_dir.get_untracked(),
             branch: form_branch.get_untracked(),
             mc_version: form_mc_version.get_untracked(),
-            remote_url: form_remote_url.get_untracked(),
+            remote_url: String::new(),
         };
-        if p.save_dir.is_empty() { return; }
+        if p.save_dir.is_empty() {
+            return;
+        }
         do_upsert(p);
+        set_form_closing.set(true);
+        set_list_instant.set(true);
+        let cb = Closure::<dyn Fn()>::new(move || {
+            set_right_panel.set(RightPanel::None);
+            set_form_closing.set(false);
+            set_list_instant.set(false);
+        });
+        set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
+        cb.forget();
+    };
+
+    let open_clone_from_remote = move |_: leptos::ev::MouseEvent| {
+        set_form_clone_git_dir.set(String::new());
+        set_form_remote_url.set(String::new());
+        set_form_branch.set(DEFAULT_BRANCH.to_string());
+        set_form_mc_version.set(String::new());
+        set_right_panel.set(RightPanel::CloneFromRemote);
+        set_show_profiles.set(true);
+    };
+
+    let clone_profile_form = move |_: leptos::ev::MouseEvent| {
+        let git_dir = form_clone_git_dir.get_untracked();
+        let remote_url = form_remote_url.get_untracked();
+        if git_dir.is_empty() || remote_url.is_empty() {
+            return;
+        }
         set_form_closing.set(true);
         set_list_instant.set(true);
         let cb = Closure::<dyn Fn()>::new(move || {
@@ -401,7 +565,10 @@ pub fn App() -> impl IntoView {
     let handle_window_toggle_maximize = move |_: leptos::ev::MouseEvent| {
         spawn_local(async move {
             if let Err(err) = invoke("window_toggle_maximize", JsValue::NULL).await {
-                log(&format!("toggle maximize failed: {}", js_error_to_string(err)));
+                log(&format!(
+                    "toggle maximize failed: {}",
+                    js_error_to_string(err)
+                ));
             }
         });
     };
@@ -417,7 +584,10 @@ pub fn App() -> impl IntoView {
     let handle_window_drag = move |_: leptos::ev::MouseEvent| {
         spawn_local(async move {
             if let Err(err) = invoke("window_start_dragging", JsValue::NULL).await {
-                log(&format!("start dragging failed: {}", js_error_to_string(err)));
+                log(&format!(
+                    "start dragging failed: {}",
+                    js_error_to_string(err)
+                ));
             }
         });
     };
@@ -429,27 +599,39 @@ pub fn App() -> impl IntoView {
                 profiles=profiles set_show_profiles=set_show_profiles
                 set_active_profile=set_active_profile set_right_panel=set_right_panel
                 set_form_save_dir=set_form_save_dir set_form_branch=set_form_branch
-                set_form_mc_version=set_form_mc_version set_form_remote_url=set_form_remote_url
+                set_form_mc_version=set_form_mc_version
                 set_profiles=set_profiles open_add_profile=open_add_profile
+                open_clone_from_remote=open_clone_from_remote
             />
             <ProfileFormPanel
                 show_profiles=show_profiles right_panel=right_panel form_closing=form_closing
                 form_save_dir=form_save_dir form_branch=form_branch
-                form_mc_version=form_mc_version form_remote_url=form_remote_url
+                form_mc_version=form_mc_version
                 set_form_save_dir=set_form_save_dir set_form_branch=set_form_branch
-                set_form_mc_version=set_form_mc_version set_form_remote_url=set_form_remote_url
+                set_form_mc_version=set_form_mc_version
                 set_active_profile=set_active_profile set_show_profiles=set_show_profiles
                 set_form_closing=set_form_closing set_list_instant=set_list_instant
                 set_right_panel=set_right_panel save_profile_form=save_profile_form
             />
-            <Show when=move || show_profiles.get() || right_panel.get() == RightPanel::Commit>
+            <CloneFromRemoteFormPanel
+                show_profiles=show_profiles right_panel=right_panel form_closing=form_closing
+                form_clone_git_dir=form_clone_git_dir form_remote_url=form_remote_url
+                form_branch=form_branch form_mc_version=form_mc_version
+                set_form_clone_git_dir=set_form_clone_git_dir set_form_remote_url=set_form_remote_url
+                set_form_branch=set_form_branch set_form_mc_version=set_form_mc_version
+                set_form_closing=set_form_closing set_list_instant=set_list_instant
+                set_right_panel=set_right_panel clone_profile_form=clone_profile_form
+            />
+            <Show when=move || show_profiles.get() || right_panel.get() == RightPanel::Commit || show_log.get()>
                 <div class="sidebar-overlay" on:click=move |_| {
-                    if right_panel.get_untracked() == RightPanel::Commit {
+                    if show_log.get_untracked() {
+                        set_show_log.set(false);
+                    } else if right_panel.get_untracked() == RightPanel::Commit {
                         set_right_panel.set(RightPanel::None);
                     } else {
                         set_show_profiles.set(false);
                         if matches!(right_panel.get_untracked(),
-                            RightPanel::AddProfile | RightPanel::EditProfile(_))
+                            RightPanel::AddProfile | RightPanel::EditProfile(_) | RightPanel::CloneFromRemote)
                         {
                             set_form_closing.set(true);
                             set_list_instant.set(true);
@@ -469,10 +651,10 @@ pub fn App() -> impl IntoView {
             <div class="main">
                 <div class="window-titlebar">
                     <div class="window-title-drag" data-tauri-drag-region=true on:mousedown=handle_window_drag>
-                        <span class="window-title">"Superflat - Minecraft Save Backup"</span>
+                        <span class="window-title">"Superflat GUI"</span>
                     </div>
                     <div class="window-controls">
-                        <button class="window-btn" on:click=handle_window_minimize title="Minimize">"—"</button>
+                        <button class="window-btn" on:click=handle_window_minimize title="Minimize">"-"</button>
                         <button class="window-btn" on:click=handle_window_toggle_maximize title="Maximize / Restore">"□"</button>
                         <button class="window-btn window-btn-close" on:click=handle_window_close title="Close">"✕"</button>
                     </div>
@@ -498,7 +680,7 @@ pub fn App() -> impl IntoView {
                     </Show>
                     <Show when=move || !is_running.get() && !output_lines.get().is_empty()>
                         <button class="status-bar-btn" on:click=move |_| set_show_log.set(true)>
-                            "📋 Last output"
+                            "📋 Lastest Log"
                         </button>
                     </Show>
                 </div>
@@ -507,19 +689,7 @@ pub fn App() -> impl IntoView {
             // ── Log modal ────────────────────────────────────────────
             <div class="sidebar" class:open=move || show_log.get()>
                 <div class="sidebar-panel-form">
-                    <div class="sidebar-header">
-                        <span class="sidebar-title">"Output Log"</span>
-                        <div style="display:flex;gap:6px;align-items:center">
-                            <button
-                                class="sidebar-close"
-                                style="background:#2a5a3a;border-color:#1a3a2a"
-                                on:click=move |_| clipboard_write_text(&output_lines.get_untracked().join("\n"))
-                                title="Copy to clipboard"
-                            >"Copy"</button>
-                            <button class="sidebar-close" on:click=move |_| set_show_log.set(false)>"✕"</button>
-                        </div>
-                    </div>
-                    <div class="panel-body" style="padding:0">
+                    <div class="sidebar-body">
                         <pre class="log-console" node_ref=log_console_ref>{move || output_lines.get().join("\n")}</pre>
                     </div>
                 </div>

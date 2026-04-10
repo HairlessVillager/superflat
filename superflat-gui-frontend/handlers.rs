@@ -10,11 +10,17 @@ pub fn make_refresh_repo_state(
     set_output_lines: WriteSignal<Vec<String>>,
 ) -> impl Fn(String) + Copy + 'static {
     move |dir: String| {
-        if dir.is_empty() { return; }
+        if dir.is_empty() {
+            return;
+        }
         spawn_local(async move {
-            let args = to_js(&CheckRepoExistsArgs { save_dir: dir.clone() });
+            let args = to_js(&CheckRepoExistsArgs {
+                save_dir: dir.clone(),
+            });
             if let Ok(val) = invoke("check_repo_exists", args).await {
-                if let Some(exists) = val.as_bool() { set_repo_exists.set(exists); }
+                if let Some(exists) = val.as_bool() {
+                    set_repo_exists.set(exists);
+                }
             }
             let args = to_js(&GetCommitsArgs { save_dir: dir });
             match invoke("get_commits", args).await {
@@ -24,7 +30,10 @@ pub fn make_refresh_repo_state(
                     }
                 }
                 Err(err) => set_output_lines.update(|l| {
-                    l.push(format!("Failed to load commits: {}", js_error_to_string(err)))
+                    l.push(format!(
+                        "Failed to load commits: {}",
+                        js_error_to_string(err)
+                    ))
                 }),
             }
         });
@@ -45,12 +54,14 @@ pub fn make_upsert_profile(
         spawn_local(async move {
             let args = to_js(&UpsertProfileArgs { profile: p });
             if let Err(err) = invoke("upsert_profile", args).await {
-                log(&format!("upsert_profile failed: {}", js_error_to_string(err)));
+                log(&format!(
+                    "upsert_profile failed: {}",
+                    js_error_to_string(err)
+                ));
             }
         });
     }
 }
-
 
 pub fn run_remote_op<F: Fn(&Profile) -> JsValue>(
     cmd: &'static str,
@@ -144,7 +155,7 @@ pub fn MainContent(
                 <div class="commit-area">
                     <Show when=move || commits.get().is_empty() fallback=|| view! {}>
                         <div class="commit-empty">
-                            <span>"Select a save directory to view commit history"</span>
+                            <span>"Welcome to Superflat GUI"<br></br><br></br>"Click Menu ☰ to start"</span>
                         </div>
                     </Show>
                     <div class="commit-list">
@@ -176,24 +187,39 @@ pub fn MainContent(
         </div>
         <div class="sidebar" class:open=move || right_panel.get() == RightPanel::Commit>
             <div class="sidebar-panel-form">
-                <div class="sidebar-header">
-                    <span class="sidebar-title">"Commit"</span>
-                    <button class="sidebar-close"
-                        on:click=move |_| set_right_panel.set(RightPanel::None)>"✕"</button>
-                </div>
                 <div class="panel-body">
-                    <label class="panel-label">
-                        "Commit message"
-                        <input type="text"
-                            prop:value=move || draft_message.get()
-                            on:input=move |ev| set_draft_message.set(event_target_value(&ev))
-                            placeholder="" />
-                    </label>
-                    <button class="btn-panel-primary btn-commit-modal"
-                        on:click=run_commit
-                        disabled=move || is_running.get()>
-                        "Commit"
-                    </button>
+                    {
+                        let (commit_show_error, set_commit_show_error) = signal(false);
+                        view! {
+                            <label class="panel-label">
+                                <input type="text"
+                                    prop:value=move || draft_message.get()
+                                    on:input=move |ev| {
+                                        set_draft_message.set(event_target_value(&ev));
+                                        set_commit_show_error.set(false);
+                                    }
+                                    class:invalid=move || commit_show_error.get() && draft_message.get().trim().is_empty()
+                                    placeholder="Commit message" />
+                            </label>
+                            <div class="commit-modal-actions">
+                                <button class="btn-panel-primary btn-commit-modal"
+                                    on:click=move |ev| {
+                                        if draft_message.get_untracked().trim().is_empty() {
+                                            set_commit_show_error.set(true);
+                                        } else {
+                                            run_commit(ev);
+                                        }
+                                    }
+                                    disabled=move || is_running.get()>
+                                    "Commit"
+                                </button>
+                                <button class="btn-panel-primary btn-cancel-modal"
+                                    on:click=move |_| set_right_panel.set(RightPanel::None)>
+                                    "Cancel"
+                                </button>
+                            </div>
+                        }
+                    }
                 </div>
             </div>
         </div>

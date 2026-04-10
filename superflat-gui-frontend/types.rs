@@ -4,7 +4,6 @@ use wasm_bindgen::JsValue;
 use crate::bindings::log;
 
 pub const DEFAULT_BRANCH: &str = "main";
-pub const DEFAULT_MC_VERSION: &str = "1.21.11";
 pub const FORM_CLOSE_ANIMATION_MS: u32 = 200;
 pub const EVENT_OUTPUT: &str = "commit-output";
 pub const EVENT_DONE: &str = "commit-done";
@@ -100,6 +99,7 @@ pub enum RightPanel {
     Commit,
     AddProfile,
     EditProfile(String), // save_dir key
+    CloneFromRemote,
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
