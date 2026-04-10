@@ -1,0 +1,127 @@
+/* ── Panel form body ─────────────────────────────────────── */
+
+.panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+}
+
+.panel-label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    color: #777;
+}
+
+.panel-label input {
+    padding: 7px 10px;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 13px;
+    transition: border-color 0.15s ease;
+}
+
+.panel-label input:hover:not(:disabled) {
+    border-color: #4a4a4a;
+}
+
+.panel-label input:focus {
+    outline: none;
+    border-color: #4da3ff;
+    box-shadow: 0 0 0 1px #4da3ff33;
+}
+
+.panel-label input:disabled {
+    opacity: 0.5;
+}
+
+.panel-dir-row {
+    display: flex;
+    gap: 6px;
+}
+
+.panel-dir-row input {
+    flex: 1;
+    min-width: 0;
+}
+
+.btn-browse {
+    flex-shrink: 0;
+    padding: 7px 12px;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #ccc;
+    font-family: monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.btn-browse:hover {
+    background: #2e2e2e;
+}
+
+.btn-panel-primary {
+    padding: 8px;
+    background: #0d4a8a;
+    border: none;
+    border-radius: 5px;
+    color: #fff;
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.btn-panel-primary:hover:not(:disabled) {
+    background: #1060aa;
+}
+
+.btn-panel-primary:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.btn-load-profile {
+    padding: 7px;
+    background: #1a2e1a;
+    border: 1px solid #3a5a3a;
+    border-radius: 4px;
+    color: #7ecf7e;
+    font-family: monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s ease;
+    text-align: center;
+}
+
+.btn-load-profile:hover {
+    background: #213a21;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #444;
+}

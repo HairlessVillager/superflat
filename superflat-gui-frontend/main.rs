@@ -1,6 +1,9 @@
 mod app;
+mod bindings;
+mod handlers;
+mod types;
 
-use app::*;
+use app::App;
 use leptos::prelude::*;
 
 fn main() {
