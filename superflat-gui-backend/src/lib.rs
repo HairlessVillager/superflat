@@ -206,6 +206,30 @@ fn set_debug_logging(app: AppHandle, debug: bool) {
     GUI_LOGGER.configure(app, debug);
 }
 
+#[tauri::command]
+fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
 /// Apply repo config settings shared by all superflat git repos.
 fn apply_repo_config(git_dir: &Path) -> Result<(), String> {
     let cmd = superflat::utils::cmd::git_cmd(
@@ -665,6 +689,10 @@ pub fn run() {
             upsert_profile,
             delete_profile,
             set_debug_logging,
+            window_minimize,
+            window_toggle_maximize,
+            window_close,
+            window_start_dragging,
             run_commit,
             run_checkout,
             check_repo_exists,

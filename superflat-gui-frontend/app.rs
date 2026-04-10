@@ -19,6 +19,7 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+
 }
 
 const DEFAULT_BRANCH: &str = "main";
@@ -26,6 +27,7 @@ const DEFAULT_MC_VERSION: &str = "1.21.11";
 const FORM_CLOSE_ANIMATION_MS: u32 = 200;
 const EVENT_OUTPUT: &str = "commit-output";
 const EVENT_DONE: &str = "commit-done";
+const DEFAULT_REMOTE_HINT: &str = "https://example.com/your-save.git";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +155,7 @@ pub fn App() -> impl IntoView {
     let (repo_exists, set_repo_exists) = signal(false);
     let (form_closing, set_form_closing) = signal(false);
     let (list_instant, set_list_instant) = signal(false);
+    let (current_action, set_current_action) = signal(String::new());
 
     // Close the Add/Edit form with an exit animation, then switch panel
     let close_form = move |next: RightPanel| {
@@ -182,7 +185,9 @@ pub fn App() -> impl IntoView {
             return;
         }
         spawn_local(async move {
-            let args = to_js(&CheckRepoExistsArgs { save_dir: dir.clone() });
+            let args = to_js(&CheckRepoExistsArgs {
+                save_dir: dir.clone(),
+            });
             if let Ok(val) = invoke("check_repo_exists", args).await {
                 if let Some(exists) = val.as_bool() {
                     set_repo_exists.set(exists);
@@ -197,7 +202,10 @@ pub fn App() -> impl IntoView {
                 }
                 Err(err) => {
                     set_output_lines.update(|l| {
-                        l.push(format!("Failed to load commits: {}", js_error_to_string(err)))
+                        l.push(format!(
+                            "Failed to load commits: {}",
+                            js_error_to_string(err)
+                        ))
                     });
                 }
             }
@@ -232,8 +240,10 @@ pub fn App() -> impl IntoView {
             }
         });
         let set_running = set_is_running;
+        let set_action = set_current_action;
         let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
             set_running.set(false);
+            set_action.set(String::new());
             refresh_repo_state(active_profile.get_untracked().save_dir);
         });
         if let (Ok(_), Ok(_)) = (
@@ -266,6 +276,11 @@ pub fn App() -> impl IntoView {
     };
 
     let run_commit = move |_: leptos::ev::MouseEvent| {
+        let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
         let message_val = draft_message.get_untracked();
         if message_val.is_empty() {
             set_output_lines.update(|l| l.push("Error: Commit message is empty".to_string()));
@@ -273,8 +288,8 @@ pub fn App() -> impl IntoView {
         }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
+        set_current_action.set("Committing save".to_string());
         set_right_panel.set(RightPanel::None);
-        let p = active_profile.get_untracked();
         set_draft_message.set(String::new());
         spawn_local(async move {
             let args = to_js(&RunCommitArgs {
@@ -291,9 +306,14 @@ pub fn App() -> impl IntoView {
     };
 
     let run_checkout = move |commit: String| {
+        let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let p = active_profile.get_untracked();
+        set_current_action.set(format!("Checking out {}", commit));
         spawn_local(async move {
             let args = to_js(&RunCheckoutArgs {
                 save_dir: p.save_dir.clone(),
@@ -308,9 +328,18 @@ pub fn App() -> impl IntoView {
     };
 
     let run_pull = move |_: leptos::ev::MouseEvent| {
+        let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
+        if p.remote_url.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
+            return;
+        }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let p = active_profile.get_untracked();
+        set_current_action.set("Fetching remote history".to_string());
         spawn_local(async move {
             let args = to_js(&RunPullArgs {
                 save_dir: p.save_dir.clone(),
@@ -324,9 +353,18 @@ pub fn App() -> impl IntoView {
     };
 
     let run_push = move |_: leptos::ev::MouseEvent| {
+        let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
+        if p.remote_url.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
+            return;
+        }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        let p = active_profile.get_untracked();
+        set_current_action.set("Pushing history".to_string());
         spawn_local(async move {
             let args = to_js(&RunPushArgs {
                 save_dir: p.save_dir.clone(),
@@ -341,12 +379,17 @@ pub fn App() -> impl IntoView {
 
     let run_clone = move |_: leptos::ev::MouseEvent| {
         let p = active_profile.get_untracked();
+        if p.save_dir.is_empty() {
+            set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            return;
+        }
         if p.remote_url.is_empty() {
             set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
             return;
         }
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
+        set_current_action.set("Cloning remote repository".to_string());
         spawn_local(async move {
             let args = to_js(&RunCloneArgs {
                 save_dir: p.save_dir.clone(),
@@ -380,6 +423,38 @@ pub fn App() -> impl IntoView {
         }
         do_upsert_profile(p);
         close_form(RightPanel::None);
+    };
+
+    let handle_window_minimize = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_minimize", JsValue::NULL).await {
+                log(&format!("minimize failed: {}", js_error_to_string(err)));
+            }
+        });
+    };
+
+    let handle_window_toggle_maximize = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_toggle_maximize", JsValue::NULL).await {
+                log(&format!("toggle maximize failed: {}", js_error_to_string(err)));
+            }
+        });
+    };
+
+    let handle_window_close = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_close", JsValue::NULL).await {
+                log(&format!("close failed: {}", js_error_to_string(err)));
+            }
+        });
+    };
+
+    let handle_window_drag = move |_: leptos::ev::MouseEvent| {
+        spawn_local(async move {
+            if let Err(err) = invoke("window_start_dragging", JsValue::NULL).await {
+                log(&format!("start dragging failed: {}", js_error_to_string(err)));
+            }
+        });
     };
 
     view! {
@@ -514,7 +589,7 @@ pub fn App() -> impl IntoView {
                                 type="text"
                                 prop:value=move || form_remote_url.get()
                                 on:input=move |ev| set_form_remote_url.set(event_target_value(&ev))
-                                placeholder="https://..."
+                                placeholder=DEFAULT_REMOTE_HINT
                             />
                         </label>
                         // Load profile button (only in edit mode)
@@ -558,6 +633,16 @@ pub fn App() -> impl IntoView {
 
             // ── Main content ────────────────────────────────────────
             <div class="main">
+                <div class="window-titlebar">
+                    <div class="window-title-drag" data-tauri-drag-region=true on:mousedown=handle_window_drag>
+                        <span class="window-title">"Superflat - Minecraft Save Backup"</span>
+                    </div>
+                    <div class="window-controls">
+                        <button class="window-btn" on:click=handle_window_minimize title="Minimize">"—"</button>
+                        <button class="window-btn" on:click=handle_window_toggle_maximize title="Maximize / Restore">"□"</button>
+                        <button class="window-btn window-btn-close" on:click=handle_window_close title="Close">"✕"</button>
+                    </div>
+                </div>
 
                 // ── Top bar ─────────────────────────────────────────
                 <div class="topbar">
@@ -583,53 +668,56 @@ pub fn App() -> impl IntoView {
                                 </span>
                             </div>
                         </Show>
+                        <Show when=move || active_profile.get().save_dir.is_empty()>
+                            <div class="topbar-dir-placeholder">
+                                "No profile loaded (click ☰ to create/load)"
+                            </div>
+                        </Show>
                     </div>
-                    <Show when=move || !active_profile.get().save_dir.is_empty()>
-                        <div class="topbar-actions">
+                    <div class="topbar-actions">
+                        <button
+                            class="btn-action btn-commit"
+                            on:click=move |_| {
+                                if right_panel.get_untracked() == RightPanel::Commit {
+                                    set_right_panel.set(RightPanel::None);
+                                } else {
+                                    set_right_panel.set(RightPanel::Commit);
+                                }
+                            }
+                            disabled=move || is_running.get() || active_profile.get().save_dir.is_empty()
+                        >
+                            "Commit"
+                        </button>
+                        <Show
+                            when=move || repo_exists.get()
+                            fallback=move || view! {
+                                <button
+                                    class="btn-action btn-clone"
+                                    on:click=run_clone
+                                    disabled=move || is_running.get() || active_profile.get().save_dir.is_empty()
+                                >
+                                    "Clone"
+                                </button>
+                            }
+                        >
                             <button
-                                class="btn-action btn-commit"
-                                on:click=move |_| {
-                                    if right_panel.get_untracked() == RightPanel::Commit {
-                                        set_right_panel.set(RightPanel::None);
-                                    } else {
-                                        set_right_panel.set(RightPanel::Commit);
-                                    }
-                                }
-                                disabled=move || is_running.get()
+                                class="btn-action btn-pull"
+                                on:click=run_pull
+                                disabled=move || is_running.get() || active_profile.get().save_dir.is_empty()
                             >
-                                "Commit"
+                                "Pull"
                             </button>
-                            <Show
-                                when=move || repo_exists.get()
-                                fallback=move || view! {
-                                    <button
-                                        class="btn-action btn-clone"
-                                        on:click=run_clone
-                                        disabled=move || is_running.get()
-                                    >
-                                        "Clone"
-                                    </button>
-                                }
+                        </Show>
+                        <Show when=move || repo_exists.get()>
+                            <button
+                                class="btn-action btn-push"
+                                on:click=run_push
+                                disabled=move || is_running.get() || active_profile.get().save_dir.is_empty()
                             >
-                                <button
-                                    class="btn-action btn-pull"
-                                    on:click=run_pull
-                                    disabled=move || is_running.get()
-                                >
-                                    "Pull"
-                                </button>
-                            </Show>
-                            <Show when=move || repo_exists.get()>
-                                <button
-                                    class="btn-action btn-push"
-                                    on:click=run_push
-                                    disabled=move || is_running.get()
-                                >
-                                    "Push"
-                                </button>
-                            </Show>
-                        </div>
-                    </Show>
+                                "Push"
+                            </button>
+                        </Show>
+                    </div>
                 </div>
 
                 // ── Body: commit list + right panel ──────────────────
@@ -637,6 +725,28 @@ pub fn App() -> impl IntoView {
 
                     // ── Commit list ─────────────────────────────────
                     <div class="commit-area">
+                        <div class="status-panel">
+                            <div class="status-line">
+                                <span class="status-chip" class:ok=move || repo_exists.get() class:warn=move || !repo_exists.get()>
+                                    {move || if repo_exists.get() { "Repo Ready" } else { "Need Clone / First Commit" }}
+                                </span>
+                                <span class="status-chip" class:ok=move || !active_profile.get().remote_url.is_empty() class:warn=move || active_profile.get().remote_url.is_empty()>
+                                    {move || if active_profile.get().remote_url.is_empty() { "Remote URL Missing" } else { "Remote URL Ready" }}
+                                </span>
+                                <Show when=move || is_running.get()>
+                                    <span class="status-chip running">
+                                        {move || format!("Running: {}", current_action.get())}
+                                    </span>
+                                </Show>
+                            </div>
+                            <div class="mapping-grid">
+                                <div class="mapping-item"><strong>"Commit"</strong>" → sf commit"</div>
+                                <div class="mapping-item"><strong>"Checkout"</strong>" → sf checkout"</div>
+                                <div class="mapping-item"><strong>"Clone"</strong>" → git clone --bare"</div>
+                                <div class="mapping-item"><strong>"Pull"</strong>" → git fetch refs/heads/*"</div>
+                                <div class="mapping-item"><strong>"Push"</strong>" → git push --all"</div>
+                            </div>
+                        </div>
                         <Show
                             when=move || !output_lines.get().is_empty()
                             fallback=|| view! {}
@@ -648,7 +758,7 @@ pub fn App() -> impl IntoView {
                             fallback=|| view! {}
                         >
                             <div class="commit-empty">
-                                <span>"Select a save directory to view commit history"</span>
+                                <span>"Load a profile to view history and operation logs"</span>
                             </div>
                         </Show>
                         <div class="commit-list">
@@ -697,7 +807,7 @@ pub fn App() -> impl IntoView {
                                 type="text"
                                 prop:value=move || draft_message.get()
                                 on:input=move |ev| set_draft_message.set(event_target_value(&ev))
-                                placeholder=""
+                                placeholder="e.g. Auto backup before mining trip"
                             />
                         </label>
                         <button
