@@ -480,7 +480,7 @@ pub fn App() -> impl IntoView {
                 <MainContent
                     active_profile=active_profile is_running=is_running
                     right_panel=right_panel set_right_panel=set_right_panel
-                    repo_exists=repo_exists commits=commits output_lines=output_lines
+                    repo_exists=repo_exists commits=commits
                     set_show_profiles=set_show_profiles
                     draft_message=draft_message set_draft_message=set_draft_message
                     run_commit=run_commit run_checkout=run_checkout

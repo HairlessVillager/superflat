@@ -1,4 +1,4 @@
-use crate::bindings::{invoke, log, tauri_listen};
+use crate::bindings::{invoke, log};
 use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -51,34 +51,6 @@ pub fn make_upsert_profile(
     }
 }
 
-pub fn setup_event_listeners(
-    set_output_lines: WriteSignal<Vec<String>>,
-    set_is_running: WriteSignal<bool>,
-    active_profile: ReadSignal<Profile>,
-    refresh_repo_state: impl Fn(String) + Copy + 'static,
-) {
-    spawn_local(async move {
-        let set_lines = set_output_lines;
-        let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
-            let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
-                .unwrap_or(JsValue::NULL);
-            if let Some(line) = payload.as_string() {
-                set_lines.update(|lines| lines.push(line));
-            }
-        });
-        let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
-            set_is_running.set(false);
-            refresh_repo_state(active_profile.get_untracked().save_dir);
-        });
-        if let (Ok(_), Ok(_)) = (
-            tauri_listen(EVENT_OUTPUT, &on_output).await,
-            tauri_listen(EVENT_DONE, &on_done).await,
-        ) {
-            on_output.forget();
-            on_done.forget();
-        }
-    });
-}
 
 pub fn run_remote_op<F: Fn(&Profile) -> JsValue>(
     cmd: &'static str,
@@ -108,7 +80,6 @@ pub fn MainContent(
     set_right_panel: WriteSignal<RightPanel>,
     repo_exists: ReadSignal<bool>,
     commits: ReadSignal<Vec<CommitInfo>>,
-    output_lines: ReadSignal<Vec<String>>,
     set_show_profiles: WriteSignal<bool>,
     draft_message: ReadSignal<String>,
     set_draft_message: WriteSignal<String>,
@@ -171,11 +142,7 @@ pub fn MainContent(
             </div>
             <div class="body">
                 <div class="commit-area">
-                    <Show when=move || !output_lines.get().is_empty() fallback=|| view! {}>
-                        <pre class="console">{move || output_lines.get().join("\n")}</pre>
-                    </Show>
-                    <Show when=move || commits.get().is_empty() && output_lines.get().is_empty()
-                        fallback=|| view! {}>
+                    <Show when=move || commits.get().is_empty() fallback=|| view! {}>
                         <div class="commit-empty">
                             <span>"Select a save directory to view commit history"</span>
                         </div>
