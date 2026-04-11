@@ -307,13 +307,22 @@ fn CloneFromRemoteFormPanel(
                     <div class="panel-body">
                         <label class="panel-label">
                             "Git directory"
-                            <input type="text" prop:value=move || form_clone_git_dir.get()
-                                on:input=move |ev| {
-                                    set_form_clone_git_dir.set(event_target_value(&ev));
-                                    set_clone_show_errors.set(false);
-                                }
-                                class:invalid=move || clone_show_errors.get() && form_clone_git_dir.get().trim().is_empty()
-                                placeholder=".minecraft/backups/<save-name>.git/" />
+                            <div class="panel-dir-row">
+                                <input type="text" prop:value=move || form_clone_git_dir.get()
+                                    on:input=move |ev| {
+                                        set_form_clone_git_dir.set(event_target_value(&ev));
+                                        set_clone_show_errors.set(false);
+                                    }
+                                    class:invalid=move || clone_show_errors.get() && form_clone_git_dir.get().trim().is_empty()
+                                    placeholder=".minecraft/backups/<save-name>.git/" />
+                                <button class="btn-browse" on:click=move |_| {
+                                    spawn_local(async move {
+                                        if let Ok(r) = invoke("pick_directory", JsValue::NULL).await {
+                                            if let Some(p) = r.as_string() { set_form_clone_git_dir.set(p); }
+                                        }
+                                    });
+                                }>"Browse"</button>
+                            </div>
                         </label>
                         <label class="panel-label">"Remote URL"
                             <input type="text" prop:value=move || form_remote_url.get()
