@@ -163,7 +163,14 @@ pub fn MainContent(
                 <div class="commit-area">
                     <Show when=move || commits.get().is_empty() fallback=|| view! {}>
                         <div class="commit-empty">
-                            <span>"Welcome to Superflat GUI"<br></br><br></br>"Click Menu ☰ to start"</span>
+                            <Show
+                                when=move || active_profile.get().save_dir.is_empty()
+                                fallback=move || view! {
+                                    <span>"No commit yet"</span>
+                                }
+                            >
+                                <span>"Welcome to Superflat GUI"<br></br><br></br>"Click Menu ☰ to start"</span>
+                            </Show>
                         </div>
                     </Show>
                     <div class="commit-list">
