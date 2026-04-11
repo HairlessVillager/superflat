@@ -396,6 +396,8 @@ pub fn App() -> impl IntoView {
         updated_at: String::new(),
     });
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
+    let (last_raw_line, set_last_raw_line) = signal(String::new());
+    let (op_start_ms, set_op_start_ms) = signal(0.0_f64);
     let (is_running, set_is_running) = signal(false);
     let (show_profiles, set_show_profiles) = signal(false);
     let (right_panel, set_right_panel) = signal(RightPanel::None);
@@ -410,7 +412,7 @@ pub fn App() -> impl IntoView {
     let (form_mc_version, set_form_mc_version) = signal(String::new());
     let (form_remote_url, set_form_remote_url) = signal(String::new());
     let (form_clone_git_dir, set_form_clone_git_dir) = signal(String::new());
-    let (current_action, set_current_action) = signal(String::new());
+
     let (show_log, set_show_log) = signal(false);
     let (remote_url_invalid, set_remote_url_invalid) = signal(false);
     let log_console_ref = NodeRef::<leptos::html::Pre>::new();
@@ -446,13 +448,30 @@ pub fn App() -> impl IntoView {
         let on_output = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
             let payload = js_sys::Reflect::get(&event, &JsValue::from_str("payload"))
                 .unwrap_or(JsValue::NULL);
-            if let Some(line) = payload.as_string() {
-                set_lines.update(|lines| lines.push(line));
+            let level = js_sys::Reflect::get(&payload, &JsValue::from_str("level"))
+                .ok()
+                .and_then(|v| v.as_string())
+                .unwrap_or_default();
+            let message = js_sys::Reflect::get(&payload, &JsValue::from_str("message"))
+                .ok()
+                .and_then(|v| v.as_string())
+                .unwrap_or_default();
+            if message.is_empty() {
+                return;
             }
+            let elapsed_ms = js_sys::Date::now() - op_start_ms.get_untracked();
+            let elapsed_s = elapsed_ms / 1000.0;
+            let int_part = elapsed_s.floor() as u64;
+            let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
+            // status bar: [xxxx.xxx] message
+            let status_line = format!("[{:>4}.{:03}] {}", int_part, frac_digits, message);
+            // log modal: [xxxx.xxx] [LEVEL] message
+            let log_line = format!("[{:>4}.{:03}] [{}] {}", int_part, frac_digits, level, message);
+            set_last_raw_line.set(status_line);
+            set_lines.update(|lines| lines.push(log_line));
         });
         let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
             set_is_running.set(false);
-            set_current_action.set(String::new());
             refresh(active_profile.get_untracked().save_dir);
         });
         if let (Ok(_), Ok(_)) = (
@@ -471,10 +490,9 @@ pub fn App() -> impl IntoView {
             return;
         }
         let p = active_profile.get_untracked();
+        set_op_start_ms.set(js_sys::Date::now());
+        set_last_raw_line.set(String::new());
         set_output_lines.set(Vec::new());
-        set_is_running.set(true);
-        set_current_action.set("Committing save".to_string());
-        set_right_panel.set(RightPanel::None);
         set_draft_message.set(String::new());
         spawn_local(async move {
             let args = to_js(&RunCommitArgs {
@@ -496,9 +514,11 @@ pub fn App() -> impl IntoView {
             set_output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
             return;
         }
+        set_op_start_ms.set(js_sys::Date::now());
+        set_last_raw_line.set(String::new());
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        set_current_action.set(format!("Checking out {}", &commit[..commit.len().min(8)]));
+
         spawn_local(async move {
             let args = to_js(&RunCheckoutArgs {
                 save_dir: p.save_dir.clone(),
@@ -513,7 +533,8 @@ pub fn App() -> impl IntoView {
     };
 
     let do_pull = move || {
-        set_current_action.set("Fetching remote history".to_string());
+        set_op_start_ms.set(js_sys::Date::now());
+        set_last_raw_line.set(String::new());
         set_right_panel.set(RightPanel::None);
         run_remote_op(
             "run_pull",
@@ -549,7 +570,8 @@ pub fn App() -> impl IntoView {
     };
 
     let do_push = move || {
-        set_current_action.set("Pushing history".to_string());
+        set_op_start_ms.set(js_sys::Date::now());
+        set_last_raw_line.set(String::new());
         set_right_panel.set(RightPanel::None);
         run_remote_op(
             "run_push",
@@ -594,7 +616,8 @@ pub fn App() -> impl IntoView {
             set_output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
             return;
         }
-        set_current_action.set("Cloning remote repository".to_string());
+        set_op_start_ms.set(js_sys::Date::now());
+        set_last_raw_line.set(String::new());
         run_remote_op(
             "run_clone",
             |p| {
@@ -673,9 +696,10 @@ pub fn App() -> impl IntoView {
         };
         set_active_profile.set(p.clone());
         do_upsert(p.clone());
+        set_op_start_ms.set(js_sys::Date::now());
+        set_last_raw_line.set(String::new());
         set_output_lines.set(Vec::new());
         set_is_running.set(true);
-        set_current_action.set("Cloning remote repository".to_string());
         spawn_local(async move {
             let args = to_js(&RunCloneArgs {
                 save_dir,
@@ -821,17 +845,14 @@ pub fn App() -> impl IntoView {
                 />
                 // ── Status bar ──────────────────────────────────
                 <div class="status-bar">
-                    <Show when=move || repo_exists.get() && active_profile.get().remote_url.is_empty()>
-                        <span class="status-bar-item warn">"⚠ No Remote"</span>
-                    </Show>
-                    <Show when=move || is_running.get()>
-                        <button class="status-bar-btn running" on:click=move |_| set_show_log.set(true)>
-                            {move || format!("⟳ {}", current_action.get())}
-                        </button>
-                    </Show>
-                    <Show when=move || !is_running.get() && !output_lines.get().is_empty()>
-                        <button class="status-bar-btn" on:click=move |_| set_show_log.set(true)>
-                            "📋 Lastest Log"
+                    <span class="status-bar-latest-log">
+                        {move || last_raw_line.get()}
+                    </span>
+                    <Show when=move || is_running.get() || !output_lines.get().is_empty()>
+                        <button class="status-bar-btn status-bar-log-btn"
+                            class:running=move || is_running.get()
+                            on:click=move |_| set_show_log.set(true)>
+                            "📋 Latest Log"
                         </button>
                     </Show>
                 </div>

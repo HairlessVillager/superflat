@@ -304,6 +304,22 @@ body::after {
     flex-shrink: 0;
 }
 
+.status-bar-latest-log {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-family: monospace;
+    color: #7a9a6a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-bar-log-btn {
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
 .status-bar-item {
     font-size: 11px;
     font-family: monospace;

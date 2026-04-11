@@ -3,11 +3,17 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
-use chrono::Local;
 use log::{Level, LevelFilter, Log, Metadata, Record};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::EVENT_OUTPUT;
+
+#[derive(Serialize, Clone)]
+pub struct LogPayload {
+    pub level: &'static str,
+    pub message: String,
+}
 
 pub struct GuiLogger {
     level: AtomicU8,
@@ -72,22 +78,19 @@ impl Log for GuiLogger {
             return;
         }
 
-        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let line = format!(
-            "{} [{}] {}",
-            timestamp,
-            match record.level() {
+        let payload = LogPayload {
+            level: match record.level() {
                 Level::Error => "ERROR",
                 Level::Warn => "WARN",
                 Level::Info => "INFO",
                 Level::Debug => "DEBUG",
                 Level::Trace => "TRACE",
             },
-            record.args()
-        );
+            message: record.args().to_string(),
+        };
 
         if let Some(app) = self.app.lock().expect("gui logger mutex is poisoned").clone() {
-            let _ = app.emit(EVENT_OUTPUT, line);
+            let _ = app.emit(EVENT_OUTPUT, payload);
         }
     }
 
