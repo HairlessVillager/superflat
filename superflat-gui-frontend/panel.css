@@ -20,7 +20,7 @@
     background: #10180d;
     border: 2px solid #172111;
     color: #e4f7d8;
-    font-family: "Monocraft", "Consolas", monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     transition: border-color 0.15s ease;
 }
@@ -42,7 +42,7 @@
     background: #10180d;
     border: 2px solid #172111;
     color: #e4f7d8;
-    font-family: "Monocraft", "Consolas", monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     resize: vertical;
     line-height: 1.5;
