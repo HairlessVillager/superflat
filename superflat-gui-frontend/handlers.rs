@@ -180,7 +180,7 @@ pub fn MainContent(
                                         </div>
                                         <button class="btn-checkout"
                                             disabled=move || is_running.get()
-                                            on:click=move |_| run_checkout(hash.clone())>
+                                            on:click=move |_| set_right_panel.set(RightPanel::Checkout(hash.clone()))>
                                             "Checkout"
                                         </button>
                                     </div>
@@ -215,22 +215,56 @@ pub fn MainContent(
                                     placeholder="type(scope): subject\n\nbody (optional)"
                                     rows="4" />
                             </label>
-                            <button class="btn-panel-primary btn-commit-modal"
-                                on:click=move |ev| {
-                                    if draft_message.get_untracked().trim().is_empty() {
-                                        set_commit_show_error.set(false);
-                                        let cb = Closure::<dyn Fn()>::new(move || set_commit_show_error.set(true));
-                                        set_timeout(&cb, 0);
-                                        cb.forget();
-                                    } else {
-                                        run_commit(ev);
+                            <div class="commit-modal-actions">
+                                <button class="btn-cancel-modal"
+                                    on:click=move |_| set_right_panel.set(RightPanel::None)>
+                                    "Cancel"
+                                </button>
+                                <button class="btn-commit-modal"
+                                    on:click=move |ev| {
+                                        if draft_message.get_untracked().trim().is_empty() {
+                                            set_commit_show_error.set(false);
+                                            let cb = Closure::<dyn Fn()>::new(move || set_commit_show_error.set(true));
+                                            set_timeout(&cb, 0);
+                                            cb.forget();
+                                        } else {
+                                            run_commit(ev);
+                                        }
                                     }
-                                }
-                                disabled=move || is_running.get()>
-                                "Commit"
-                            </button>
+                                    disabled=move || is_running.get()>
+                                    "Commit"
+                                </button>
+                            </div>
                         }
                     }
+                </div>
+            </div>
+        </div>
+        <div class="sidebar" class:open=move || matches!(right_panel.get(), RightPanel::Checkout(_))>
+            <div class="sidebar-panel-form">
+                <div class="panel-body">
+                    <div class="panel-label">
+                        "Checkout this commit?"
+                        <div class="commit-checkout-hash">{move || {
+                            if let RightPanel::Checkout(h) = right_panel.get() { h } else { String::new() }
+                        }}</div>
+                    </div>
+                    <div class="commit-modal-actions">
+                        <button class="btn-cancel-modal"
+                            on:click=move |_| set_right_panel.set(RightPanel::None)>
+                            "Cancel"
+                        </button>
+                        <button class="btn-checkout-confirm"
+                            disabled=move || is_running.get()
+                            on:click=move |_| {
+                                if let RightPanel::Checkout(h) = right_panel.get_untracked() {
+                                    set_right_panel.set(RightPanel::None);
+                                    run_checkout(h);
+                                }
+                            }>
+                            "Checkout"
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

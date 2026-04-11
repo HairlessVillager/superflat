@@ -155,6 +155,7 @@ body::after {
 .btn-panel-primary,
 .btn-load-profile,
 .btn-checkout,
+.btn-checkout-confirm,
 .btn-add-profile,
 .btn-commit-modal,
 .btn-cancel-modal,
@@ -173,6 +174,13 @@ body::after {
         inset 2px 2px 0 rgba(255, 255, 255, 0.08);
 }
 
+/* topbar & commit-list buttons keep larger size */
+.btn-menu,
+.btn-action,
+.btn-checkout {
+    font-size: 14px;
+}
+
 .btn-menu:hover,
 .btn-action:hover,
 .btn-edit:hover,
@@ -181,6 +189,7 @@ body::after {
 .btn-panel-primary:hover,
 .btn-load-profile:hover,
 .btn-checkout:hover,
+.btn-checkout-confirm:hover,
 .btn-add-profile:hover,
 .btn-commit-modal:hover,
 .btn-cancel-modal:hover,
@@ -196,6 +205,7 @@ body::after {
 .btn-panel-primary:active,
 .btn-load-profile:active,
 .btn-checkout:active,
+.btn-checkout-confirm:active,
 .btn-add-profile:active,
 .btn-commit-modal:active,
 .btn-cancel-modal:active,
@@ -206,6 +216,7 @@ body::after {
 .btn-menu:disabled,
 .btn-action:disabled,
 .btn-checkout:disabled,
+.btn-checkout-confirm:disabled,
 .btn-panel-primary:disabled,
 .btn-commit-modal:disabled {
     opacity: 0.45;
@@ -483,12 +494,25 @@ body::after {
     text-overflow: ellipsis;
 }
 
+.btn-checkout-confirm {
+    flex: 1;
+    padding: 8px;
+    background: #4d7e36;
+    color: #f4ffe9;
+}
+
 .btn-checkout {
     height: 34px;
     padding: 0 14px;
-    font-size: 14px;
     background: #4d7e36;
     color: #f4ffe9;
+}
+
+.commit-checkout-hash {
+    color: #9cb58b;
+    font-size: 11px;
+    word-break: break-all;
+    padding: 6px 0 2px;
 }
 
 .sidebar {
@@ -681,11 +705,13 @@ body::after {
     background: #4d7e36;
     color: #fff8ee;
     flex: 1;
+    padding: 8px;
 }
 .btn-cancel-modal {
     background: #4a4a3a;
     color: #c8c8b8;
     flex: 1;
+    padding: 8px;
 }
 
 .commit-modal-actions {

@@ -98,6 +98,7 @@ pub struct CommitInfo {
 pub enum RightPanel {
     None,
     Commit,
+    Checkout(String), // full commit hash
     AddProfile,
     EditProfile(String), // save_dir key
     CloneFromRemote,

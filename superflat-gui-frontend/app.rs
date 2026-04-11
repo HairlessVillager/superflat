@@ -736,11 +736,11 @@ pub fn App() -> impl IntoView {
                 set_form_closing=set_form_closing set_list_instant=set_list_instant
                 set_right_panel=set_right_panel clone_profile_form=clone_profile_form
             />
-            <Show when=move || show_profiles.get() || right_panel.get() == RightPanel::Commit || show_log.get()>
+            <Show when=move || show_profiles.get() || right_panel.get() == RightPanel::Commit || matches!(right_panel.get(), RightPanel::Checkout(_)) || show_log.get()>
                 <div class="sidebar-overlay" on:click=move |_| {
                     if show_log.get_untracked() {
                         set_show_log.set(false);
-                    } else if right_panel.get_untracked() == RightPanel::Commit {
+                    } else if matches!(right_panel.get_untracked(), RightPanel::Commit | RightPanel::Checkout(_)) {
                         set_right_panel.set(RightPanel::None);
                     } else {
                         set_show_profiles.set(false);
