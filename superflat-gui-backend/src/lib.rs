@@ -94,11 +94,11 @@ mod tests {
     #[test]
     fn normalize_profiles_filters_empty_save_dirs_and_keeps_first_duplicate() {
         let normalized = normalize_profiles(vec![
-            Profile { save_dir: "/b".into(), mc_version: "1.20.1".into(), branch: "main".into(), remote_url: String::new() },
-            Profile { save_dir: "".into(), mc_version: "1.21.1".into(), branch: "empty".into(), remote_url: String::new() },
-            Profile { save_dir: "   ".into(), mc_version: "1.21.2".into(), branch: "blank".into(), remote_url: String::new() },
-            Profile { save_dir: "/a".into(), mc_version: "1.19.4".into(), branch: "stable".into(), remote_url: String::new() },
-            Profile { save_dir: "/b".into(), mc_version: "1.21.4".into(), branch: "newer".into(), remote_url: String::new() },
+            Profile { save_dir: "/b".into(), mc_version: "1.20.1".into(), branch: "main".into(), remote_url: String::new(), updated_at: String::new() },
+            Profile { save_dir: "".into(), mc_version: "1.21.1".into(), branch: "empty".into(), remote_url: String::new(), updated_at: String::new() },
+            Profile { save_dir: "   ".into(), mc_version: "1.21.2".into(), branch: "blank".into(), remote_url: String::new(), updated_at: String::new() },
+            Profile { save_dir: "/a".into(), mc_version: "1.19.4".into(), branch: "stable".into(), remote_url: String::new(), updated_at: String::new() },
+            Profile { save_dir: "/b".into(), mc_version: "1.21.4".into(), branch: "newer".into(), remote_url: String::new(), updated_at: String::new() },
         ]);
 
         assert_eq!(normalized.len(), 2);
