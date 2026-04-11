@@ -57,20 +57,31 @@
     outline: none;
 }
 
+.panel-label input.invalid {
+    border-color: #9b2020;
+    animation: shake 0.35s ease;
+}
+
+.panel-label input.invalid:focus {
+    border-color: #c0392b;
+}
+
 .panel-label textarea.invalid {
     border-color: #9b2020;
+    animation: shake 0.35s ease;
 }
 
 .panel-label textarea.invalid:focus {
     border-color: #c0392b;
 }
 
-.panel-label input.invalid {
-    border-color: #9b2020;
-}
-
-.panel-label input.invalid:focus {
-    border-color: #c0392b;
+@keyframes shake {
+    0%   { transform: translateX(0); }
+    20%  { transform: translateX(-6px); }
+    40%  { transform: translateX(5px); }
+    60%  { transform: translateX(-4px); }
+    80%  { transform: translateX(3px); }
+    100% { transform: translateX(0); }
 }
 
 .panel-dir-row {

@@ -1,4 +1,4 @@
-use crate::bindings::{invoke, log};
+use crate::bindings::{invoke, log, set_timeout};
 use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -196,6 +196,12 @@ pub fn MainContent(
                 <div class="panel-body">
                     {
                         let (commit_show_error, set_commit_show_error) = signal(false);
+                        Effect::new(move |_| {
+                            // 面板每次打开时重置错误状态
+                            if right_panel.get() == RightPanel::Commit {
+                                set_commit_show_error.set(false);
+                            }
+                        });
                         view! {
                             <label class="panel-label">
                                 "Commit message"
@@ -212,7 +218,10 @@ pub fn MainContent(
                             <button class="btn-panel-primary btn-commit-modal"
                                 on:click=move |ev| {
                                     if draft_message.get_untracked().trim().is_empty() {
-                                        set_commit_show_error.set(true);
+                                        set_commit_show_error.set(false);
+                                        let cb = Closure::<dyn Fn()>::new(move || set_commit_show_error.set(true));
+                                        set_timeout(&cb, 0);
+                                        cb.forget();
                                     } else {
                                         run_commit(ev);
                                     }

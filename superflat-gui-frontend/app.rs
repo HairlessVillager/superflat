@@ -195,7 +195,10 @@ fn AddProfilePanel(
                             if dir_ok && branch_ok && ver_ok {
                                 save_profile_form(ev);
                             } else {
-                                set_show_errors.set(true);
+                                set_show_errors.set(false);
+                                let cb = Closure::<dyn Fn()>::new(move || set_show_errors.set(true));
+                                set_timeout(&cb, 0);
+                                cb.forget();
                             }
                         }>"Add"</button>
                     </div>
@@ -270,7 +273,10 @@ fn EditProfilePanel(
                             if branch_ok && ver_ok {
                                 save_profile_form(ev);
                             } else {
-                                set_show_errors.set(true);
+                                set_show_errors.set(false);
+                                let cb = Closure::<dyn Fn()>::new(move || set_show_errors.set(true));
+                                set_timeout(&cb, 0);
+                                cb.forget();
                             }
                         }>"OK"</button>
                     </div>
@@ -374,7 +380,10 @@ fn CloneFromRemoteFormPanel(
                             if git_dir_ok && url_ok && branch_ok && ver_ok {
                                 clone_profile_form(ev);
                             } else {
-                                set_clone_show_errors.set(true);
+                                set_clone_show_errors.set(false);
+                                let cb = Closure::<dyn Fn()>::new(move || set_clone_show_errors.set(true));
+                                set_timeout(&cb, 0);
+                                cb.forget();
                             }
                         }>"Clone"</button>
                     </div>
@@ -519,7 +528,10 @@ pub fn App() -> impl IntoView {
             set_form_branch.set(p.branch.clone());
             set_form_mc_version.set(p.mc_version.clone());
             set_form_remote_url.set(String::new());
-            set_remote_url_invalid.set(true);
+            set_remote_url_invalid.set(false);
+            let cb = Closure::<dyn Fn()>::new(move || set_remote_url_invalid.set(true));
+            set_timeout(&cb, 0);
+            cb.forget();
             set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
             set_show_profiles.set(true);
             return;
@@ -547,7 +559,10 @@ pub fn App() -> impl IntoView {
             set_form_branch.set(p.branch.clone());
             set_form_mc_version.set(p.mc_version.clone());
             set_form_remote_url.set(String::new());
-            set_remote_url_invalid.set(true);
+            set_remote_url_invalid.set(false);
+            let cb = Closure::<dyn Fn()>::new(move || set_remote_url_invalid.set(true));
+            set_timeout(&cb, 0);
+            cb.forget();
             set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
             set_show_profiles.set(true);
             return;
