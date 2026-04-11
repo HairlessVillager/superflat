@@ -494,6 +494,8 @@ pub fn App() -> impl IntoView {
         set_op_start_ms.set(js_sys::Date::now());
         set_last_raw_line.set(String::new());
         set_output_lines.set(Vec::new());
+        set_is_running.set(true);
+        set_right_panel.set(RightPanel::None);
         set_draft_message.set(String::new());
         spawn_local(async move {
             let args = to_js(&RunCommitArgs {
