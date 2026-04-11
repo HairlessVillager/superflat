@@ -5,7 +5,7 @@ use tokio::sync::oneshot;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::EVENT_DONE;
-use crate::git_ops::{apply_repo_config, git_init_bare, save_dir_to_git_dir};
+use crate::git_ops::{apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir};
 
 #[tauri::command]
 pub async fn pick_directory(app: AppHandle) -> Option<String> {
@@ -44,6 +44,7 @@ fn resolve_paths(
         .join("backups")
         .join(format!("{}.git", save_name))
         .canonicalize()
+        .map(canonicalize_portable)
         .unwrap_or_else(|_| {
             save_path
                 .join("../..")

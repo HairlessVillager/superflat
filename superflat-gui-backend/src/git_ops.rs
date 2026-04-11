@@ -1,5 +1,59 @@
 use std::path::{Path, PathBuf};
 
+/// Canonicalize a path and strip the `\\?\` verbatim prefix that
+/// [`std::fs::canonicalize`] adds on Windows.  Git for Windows does not
+/// understand the extended-length path syntax and misinterprets it as a
+/// POSIX-style absolute path (e.g. `C:\foo` becomes `/C:/foo`).
+///
+/// Falls back to the original path if canonicalization fails (e.g. the
+/// path does not yet exist on disk).
+pub fn canonicalize_portable(path: PathBuf) -> PathBuf {
+    match path.canonicalize() {
+        Ok(canonical) => strip_verbatim_prefix(canonical),
+        Err(_) => path,
+    }
+}
+
+/// Remove the `\\?\` or `\\?\UNC\` prefix that Windows adds to verbatim
+/// paths returned by [`std::fs::canonicalize`].
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        use std::path::Component;
+        // Verbatim paths start with a Prefix component like `\\?\C:` or
+        // `\\?\UNC\server\share`.  Collect all components after skipping
+        // the verbatim prefix and rebuild a plain path.
+        let mut components = path.components();
+        if let Some(Component::Prefix(prefix)) = components.next() {
+            use std::path::Prefix;
+            match prefix.kind() {
+                Prefix::VerbatimDisk(drive) => {
+                    // \\?\C:\foo  →  C:\foo
+                    let root: PathBuf =
+                        format!("{}:\\", drive as char).into();
+                    return components.fold(root, |acc, c| acc.join(c));
+                }
+                Prefix::VerbatimUNC(host, share) => {
+                    // \\?\UNC\host\share\foo  →  \\host\share\foo
+                    let root: PathBuf =
+                        format!("\\\\{}\\{}", host.to_string_lossy(), share.to_string_lossy()).into();
+                    return components.fold(root, |acc, c| acc.join(c));
+                }
+                Prefix::Verbatim(_) => {
+                    // \\?\foo  →  just skip the verbatim marker
+                    return components.collect();
+                }
+                _ => {}
+            }
+        }
+        path
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
+}
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -19,7 +73,7 @@ pub fn save_dir_to_git_dir(save_path: &Path) -> Option<PathBuf> {
         .join("../..")
         .join("backups")
         .join(format!("{}.git", save_name));
-    Some(path.canonicalize().unwrap_or(path))
+    Some(canonicalize_portable(path))
 }
 
 /// Apply the two repo config settings required by superflat.
