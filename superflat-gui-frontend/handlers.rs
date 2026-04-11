@@ -175,7 +175,7 @@ pub fn MainContent(
                                         <div class="commit-info">
                                             <div class="commit-subject">{c.subject.clone()}</div>
                                             <div class="commit-meta">
-                                                {format!("{} {}  {}", c.timestamp, c.author, c.short_hash)}
+                                                {format!("{} / {} / {}", c.timestamp, c.author, c.short_hash)}
                                             </div>
                                         </div>
                                         <button class="btn-checkout"

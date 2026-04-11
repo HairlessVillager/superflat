@@ -24,10 +24,7 @@ pub fn save_dir_to_git_dir(save_path: &Path) -> Option<PathBuf> {
 
 /// Apply the two repo config settings required by superflat.
 pub fn apply_repo_config(git_dir: &Path) -> Result<(), String> {
-    let cmd = superflat::utils::cmd::git_cmd(
-        git_dir,
-        ["config", "core.logAllRefUpdates", "true"],
-    );
+    let cmd = superflat::utils::cmd::git_cmd(git_dir, ["config", "core.logAllRefUpdates", "true"]);
     superflat::utils::cmd::exec(cmd, None)
         .map(|_| ())
         .map_err(|e| e.to_string())?;
@@ -77,7 +74,8 @@ pub fn get_commits(save_dir: String) -> Result<Vec<CommitInfo>, String> {
     cmd.args([
         "log",
         "--all",
-        "--format=%H\x1f%h\x1f%s\x1f%aN\x1f%ai",
+        "--date=format:%Y-%m-%d %H:%M:%S",
+        "--format=%H\x1f%h\x1f%s\x1f%aN\x1f%ad",
         "-n",
         "50",
     ]);
