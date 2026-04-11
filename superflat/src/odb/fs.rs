@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -15,8 +15,26 @@ impl LocalFsOdb {
     }
 }
 
+/// Validate that an ODB key stays within the root directory.
+///
+/// A key must be a relative path with no `..` components and no absolute
+/// root component so that `root_dir.join(key)` always resolves inside the
+/// sandbox.
+fn assert_safe_key(key: &str) {
+    for component in std::path::Path::new(key).components() {
+        match component {
+            Component::ParentDir => panic!("ODB key contains '..': {key:?}"),
+            Component::RootDir | Component::Prefix(_) => {
+                panic!("ODB key is absolute: {key:?}")
+            }
+            Component::CurDir | Component::Normal(_) => {}
+        }
+    }
+}
+
 impl OdbReader for LocalFsOdb {
     fn get(&self, key: &str) -> Vec<u8> {
+        assert_safe_key(key);
         fs::read(self.root_dir.join(key)).expect("failed to read file from odb")
     }
 
@@ -25,6 +43,7 @@ impl OdbReader for LocalFsOdb {
     }
 
     fn glob(&self, pattern: &str) -> Vec<String> {
+        assert_safe_key(pattern);
         let full_pattern = self.root_dir.join(pattern);
         let root = self.root_dir.clone();
         glob::glob(full_pattern.to_str().expect("glob pattern path is not valid utf-8"))
@@ -41,6 +60,7 @@ impl OdbReader for LocalFsOdb {
 
 impl OdbWriter for LocalFsOdb {
     fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
+        assert_safe_key(key);
         let path = self.root_dir.join(key);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("failed to create parent directory");
@@ -50,9 +70,10 @@ impl OdbWriter for LocalFsOdb {
 
     fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
         entries.into_par_iter().for_each(|(key, value)| {
+            assert_safe_key(&key);
             let path = self.root_dir.join(&key);
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).expect("failed to create parent directory"); // TODO: create dir before par write
+                fs::create_dir_all(parent).expect("failed to create parent directory");
             }
             fs::write(path, value).expect("failed to write file to odb");
         });
