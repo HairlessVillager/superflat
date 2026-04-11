@@ -199,32 +199,28 @@ pub fn MainContent(
                         let (commit_show_error, set_commit_show_error) = signal(false);
                         view! {
                             <label class="panel-label">
-                                <input type="text"
+                                "Commit message"
+                                <textarea
                                     prop:value=move || draft_message.get()
                                     on:input=move |ev| {
                                         set_draft_message.set(event_target_value(&ev));
                                         set_commit_show_error.set(false);
                                     }
                                     class:invalid=move || commit_show_error.get() && draft_message.get().trim().is_empty()
-                                    placeholder="Commit message" />
+                                    placeholder="type(scope): subject\n\nbody (optional)"
+                                    rows="4" />
                             </label>
-                            <div class="commit-modal-actions">
-                                <button class="btn-panel-primary btn-commit-modal"
-                                    on:click=move |ev| {
-                                        if draft_message.get_untracked().trim().is_empty() {
-                                            set_commit_show_error.set(true);
-                                        } else {
-                                            run_commit(ev);
-                                        }
+                            <button class="btn-panel-primary btn-commit-modal"
+                                on:click=move |ev| {
+                                    if draft_message.get_untracked().trim().is_empty() {
+                                        set_commit_show_error.set(true);
+                                    } else {
+                                        run_commit(ev);
                                     }
-                                    disabled=move || is_running.get()>
-                                    "Commit"
-                                </button>
-                                <button class="btn-panel-primary btn-cancel-modal"
-                                    on:click=move |_| set_right_panel.set(RightPanel::None)>
-                                    "Cancel"
-                                </button>
-                            </div>
+                                }
+                                disabled=move || is_running.get()>
+                                "Commit"
+                            </button>
                         }
                     }
                 </div>
