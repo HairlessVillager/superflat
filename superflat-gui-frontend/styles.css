@@ -310,7 +310,7 @@ body::after {
     font-size: 11px;
     font-family: monospace;
     color: #7a9a6a;
-    white-space: nowrap;
+    white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;
 }

@@ -463,10 +463,11 @@ pub fn App() -> impl IntoView {
             let elapsed_s = elapsed_ms / 1000.0;
             let int_part = elapsed_s.floor() as u64;
             let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
+            let time_prefix = format!("[{:>4}.{:03}]", int_part, frac_digits);
             // status bar: [xxxx.xxx] message
-            let status_line = format!("[{:>4}.{:03}] {}", int_part, frac_digits, message);
+            let status_line = format!("{} {}", time_prefix, message);
             // log modal: [xxxx.xxx] [LEVEL] message
-            let log_line = format!("[{:>4}.{:03}] [{}] {}", int_part, frac_digits, level, message);
+            let log_line = format!("{} [{}] {}", time_prefix, level, message);
             set_last_raw_line.set(status_line);
             set_lines.update(|lines| lines.push(log_line));
         });
