@@ -25,6 +25,11 @@
     padding: 0;
 }
 
+::selection {
+    background: #7aff40;
+    color: #0e1a0c;
+}
+
 html,
 body {
     height: 100%;
