@@ -318,7 +318,7 @@ fn CloneFromRemoteFormPanel(
                 <div class="sidebar-body">
                     <div class="panel-body">
                         <label class="panel-label">
-                            "Git directory"
+                            "Save directory"
                             <div class="panel-dir-row">
                                 <input type="text" prop:value=move || form_clone_git_dir.get()
                                     on:input=move |ev| {
@@ -326,7 +326,7 @@ fn CloneFromRemoteFormPanel(
                                         set_clone_show_errors.set(false);
                                     }
                                     class:invalid=move || clone_show_errors.get() && form_clone_git_dir.get().trim().is_empty()
-                                    placeholder=".minecraft/backups/<save-name>.git/" />
+                                    placeholder=".minecraft/saves/<save-name>/" />
                                 <button class="btn-browse" on:click=move |_| {
                                     spawn_local(async move {
                                         if let Ok(r) = invoke("pick_directory", JsValue::NULL).await {
@@ -657,15 +657,41 @@ pub fn App() -> impl IntoView {
     };
 
     let clone_profile_form = move |_: leptos::ev::MouseEvent| {
-        let git_dir = form_clone_git_dir.get_untracked();
+        let save_dir = form_clone_git_dir.get_untracked();
         let remote_url = form_remote_url.get_untracked();
-        if git_dir.is_empty() || remote_url.is_empty() {
+        let branch = form_branch.get_untracked();
+        let mc_version = form_mc_version.get_untracked();
+        if save_dir.is_empty() || remote_url.is_empty() {
             return;
         }
+        let p = Profile {
+            save_dir: save_dir.clone(),
+            branch: branch.clone(),
+            mc_version: mc_version.clone(),
+            remote_url: remote_url.clone(),
+            updated_at: String::new(),
+        };
+        set_active_profile.set(p.clone());
+        do_upsert(p.clone());
+        set_output_lines.set(Vec::new());
+        set_is_running.set(true);
+        set_current_action.set("Cloning remote repository".to_string());
+        spawn_local(async move {
+            let args = to_js(&RunCloneArgs {
+                save_dir,
+                url: remote_url,
+            });
+            if let Err(err) = invoke("run_clone", args).await {
+                set_output_lines
+                    .update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
+            }
+            do_upsert(p);
+        });
         set_form_closing.set(true);
         set_list_instant.set(true);
         let cb = Closure::<dyn Fn()>::new(move || {
             set_right_panel.set(RightPanel::None);
+            set_show_profiles.set(false);
             set_form_closing.set(false);
             set_list_instant.set(false);
         });
