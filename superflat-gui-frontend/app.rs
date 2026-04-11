@@ -106,7 +106,7 @@ fn ProfileListPanel(
                                 let mut ps = profiles.get();
                                 ps.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
                                 ps
-                            } key=|p| p.save_dir.clone()
+                            } key=|p| format!("{}:{}", p.save_dir, p.updated_at)
                             children=move |p| view! {
                                 <ProfileCard p=p
                                     set_active_profile=set_active_profile
@@ -627,6 +627,12 @@ pub fn App() -> impl IntoView {
         };
         if p.save_dir.is_empty() {
             return;
+        }
+        // 如果是编辑模式且当前加载的就是这个 profile，同步更新 active_profile
+        if matches!(right_panel.get_untracked(), RightPanel::EditProfile(_))
+            && active_profile.get_untracked().save_dir == p.save_dir
+        {
+            set_active_profile.set(p.clone());
         }
         do_upsert(p);
         set_form_closing.set(true);
