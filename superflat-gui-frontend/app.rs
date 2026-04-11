@@ -29,7 +29,18 @@ fn ProfileCard(
         }>
             <div class="profile-card-path">{p.save_dir.clone()}</div>
             <div class="profile-card-row">
-                <div class="profile-card-meta">{format!("{} · {}", p.branch, p.mc_version)}</div>
+                <div class="profile-card-meta">{
+                    let date = if p.updated_at.is_empty() {
+                        String::new()
+                    } else {
+                        p.updated_at.get(..10).unwrap_or("").to_string()
+                    };
+                    if date.is_empty() {
+                        p.mc_version.clone()
+                    } else {
+                        format!("{} - {}", p.mc_version, date)
+                    }
+                }</div>
                 <div class="profile-card-actions">
                     <button class="btn-edit" on:click=move |ev| {
                         ev.stop_propagation();
@@ -91,7 +102,11 @@ fn ProfileListPanel(
                         <p class="sidebar-empty">"No profiles yet"</p>
                     </Show>
                     <div class="profile-list">
-                        <For each=move || profiles.get() key=|p| p.save_dir.clone()
+                        <For each=move || {
+                                let mut ps = profiles.get();
+                                ps.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+                                ps
+                            } key=|p| p.save_dir.clone()
                             children=move |p| view! {
                                 <ProfileCard p=p
                                     set_active_profile=set_active_profile
@@ -378,6 +393,7 @@ pub fn App() -> impl IntoView {
         branch: DEFAULT_BRANCH.to_string(),
         mc_version: String::new(),
         remote_url: String::new(),
+        updated_at: String::new(),
     });
     let (output_lines, set_output_lines) = signal(Vec::<String>::new());
     let (is_running, set_is_running) = signal(false);
@@ -592,6 +608,7 @@ pub fn App() -> impl IntoView {
             branch: form_branch.get_untracked(),
             mc_version: form_mc_version.get_untracked(),
             remote_url: form_remote_url.get_untracked(),
+            updated_at: String::new(),
         };
         if p.save_dir.is_empty() {
             return;

@@ -80,6 +80,7 @@ pub struct Profile {
     pub branch: String,
     #[serde(default)]
     pub remote_url: String,
+    pub updated_at: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

@@ -44,13 +44,6 @@ pub fn make_upsert_profile(
     set_profiles: WriteSignal<Vec<Profile>>,
 ) -> impl Fn(Profile) + Copy + 'static {
     move |p: Profile| {
-        set_profiles.update(|ps| {
-            if let Some(existing) = ps.iter_mut().find(|x| x.save_dir == p.save_dir) {
-                *existing = p.clone();
-            } else {
-                ps.push(p.clone());
-            }
-        });
         spawn_local(async move {
             let args = to_js(&UpsertProfileArgs { profile: p });
             if let Err(err) = invoke("upsert_profile", args).await {
@@ -58,6 +51,12 @@ pub fn make_upsert_profile(
                     "upsert_profile failed: {}",
                     js_error_to_string(err)
                 ));
+                return;
+            }
+            if let Ok(result) = invoke("get_profiles", JsValue::NULL).await {
+                if let Ok(ps) = serde_wasm_bindgen::from_value::<Vec<Profile>>(result) {
+                    set_profiles.set(ps);
+                }
             }
         });
     }
