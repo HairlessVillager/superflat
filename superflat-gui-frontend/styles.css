@@ -515,6 +515,19 @@ body::after {
     padding: 6px 0 2px;
 }
 
+.checkout-commit-info {
+    margin-top: 8px;
+    padding: 10px;
+    background: #0e1a0c;
+    border: 1px solid #2a3b21;
+    color: #a8d89a;
+    font-size: 11px;
+    font-family: monospace;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 .sidebar {
     position: fixed;
     top: 50%;

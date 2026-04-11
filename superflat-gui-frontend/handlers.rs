@@ -98,6 +98,8 @@ pub fn MainContent(
     run_pull: impl Fn(leptos::ev::MouseEvent) + Copy + Send + Sync + 'static,
     run_push: impl Fn(leptos::ev::MouseEvent) + Copy + Send + Sync + 'static,
     run_clone: impl Fn(leptos::ev::MouseEvent) + Copy + Send + Sync + 'static,
+    do_pull: impl Fn() + Copy + Send + Sync + 'static,
+    do_push: impl Fn() + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     view! {
         <div class="main">
@@ -169,7 +171,7 @@ pub fn MainContent(
                             each=move || commits.get()
                             key=|c| c.hash.clone()
                             children=move |c| {
-                                let hash = c.hash.clone();
+                                let commit = c.clone();
                                 view! {
                                     <div class="commit-row">
                                         <div class="commit-info">
@@ -180,7 +182,7 @@ pub fn MainContent(
                                         </div>
                                         <button class="btn-checkout"
                                             disabled=move || is_running.get()
-                                            on:click=move |_| set_right_panel.set(RightPanel::Checkout(hash.clone()))>
+                                            on:click=move |_| set_right_panel.set(RightPanel::Checkout(commit.clone()))>
                                             "Checkout"
                                         </button>
                                     </div>
@@ -245,9 +247,14 @@ pub fn MainContent(
                 <div class="panel-body">
                     <div class="panel-label">
                         "Checkout this commit?"
-                        <div class="commit-checkout-hash">{move || {
-                            if let RightPanel::Checkout(h) = right_panel.get() { h } else { String::new() }
-                        }}</div>
+                        <pre class="checkout-commit-info">{move || {
+                            if let RightPanel::Checkout(c) = right_panel.get() {
+                                format!("commit {}\nAuthor: {}\nDate:   {}\n\n    {}",
+                                    c.hash, c.author, c.timestamp, c.subject)
+                            } else {
+                                String::new()
+                            }
+                        }}</pre>
                     </div>
                     <div class="commit-modal-actions">
                         <button class="btn-cancel-modal"
@@ -257,12 +264,52 @@ pub fn MainContent(
                         <button class="btn-checkout-confirm"
                             disabled=move || is_running.get()
                             on:click=move |_| {
-                                if let RightPanel::Checkout(h) = right_panel.get_untracked() {
+                                if let RightPanel::Checkout(c) = right_panel.get_untracked() {
                                     set_right_panel.set(RightPanel::None);
-                                    run_checkout(h);
+                                    run_checkout(c.hash);
                                 }
                             }>
                             "Checkout"
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar" class:open=move || right_panel.get() == RightPanel::ConfirmPull>
+            <div class="sidebar-panel-form">
+                <div class="panel-body">
+                    <div class="panel-label">"Pull from remote?"
+                        <div class="commit-checkout-hash">{move || active_profile.get().remote_url}</div>
+                    </div>
+                    <div class="commit-modal-actions">
+                        <button class="btn-cancel-modal"
+                            on:click=move |_| set_right_panel.set(RightPanel::None)>
+                            "Cancel"
+                        </button>
+                        <button class="btn-checkout-confirm"
+                            disabled=move || is_running.get()
+                            on:click=move |_| do_pull()>
+                            "Pull"
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar" class:open=move || right_panel.get() == RightPanel::ConfirmPush>
+            <div class="sidebar-panel-form">
+                <div class="panel-body">
+                    <div class="panel-label">"Push to remote?"
+                        <div class="commit-checkout-hash">{move || active_profile.get().remote_url}</div>
+                    </div>
+                    <div class="commit-modal-actions">
+                        <button class="btn-cancel-modal"
+                            on:click=move |_| set_right_panel.set(RightPanel::None)>
+                            "Cancel"
+                        </button>
+                        <button class="btn-checkout-confirm"
+                            disabled=move || is_running.get()
+                            on:click=move |_| do_push()>
+                            "Push"
                         </button>
                     </div>
                 </div>

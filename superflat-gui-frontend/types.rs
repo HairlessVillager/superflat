@@ -83,7 +83,7 @@ pub struct Profile {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct CommitInfo {
     pub hash: String,
     pub short_hash: String,
@@ -98,7 +98,9 @@ pub struct CommitInfo {
 pub enum RightPanel {
     None,
     Commit,
-    Checkout(String), // full commit hash
+    Checkout(CommitInfo),
+    ConfirmPull,
+    ConfirmPush,
     AddProfile,
     EditProfile(String), // save_dir key
     CloneFromRemote,

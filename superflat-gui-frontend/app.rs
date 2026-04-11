@@ -512,6 +512,24 @@ pub fn App() -> impl IntoView {
         });
     };
 
+    let do_pull = move || {
+        set_current_action.set("Fetching remote history".to_string());
+        set_right_panel.set(RightPanel::None);
+        run_remote_op(
+            "run_pull",
+            |p| {
+                to_js(&RunPullArgs {
+                    save_dir: p.save_dir.clone(),
+                    url: p.remote_url.clone(),
+                })
+            },
+            active_profile,
+            set_output_lines,
+            set_is_running,
+            do_upsert,
+        );
+    };
+
     let run_pull = move |_: leptos::ev::MouseEvent| {
         let p = active_profile.get_untracked();
         if p.remote_url.is_empty() {
@@ -527,11 +545,16 @@ pub fn App() -> impl IntoView {
             set_show_profiles.set(true);
             return;
         }
-        set_current_action.set("Fetching remote history".to_string());
+        set_right_panel.set(RightPanel::ConfirmPull);
+    };
+
+    let do_push = move || {
+        set_current_action.set("Pushing history".to_string());
+        set_right_panel.set(RightPanel::None);
         run_remote_op(
-            "run_pull",
+            "run_push",
             |p| {
-                to_js(&RunPullArgs {
+                to_js(&RunPushArgs {
                     save_dir: p.save_dir.clone(),
                     url: p.remote_url.clone(),
                 })
@@ -558,20 +581,7 @@ pub fn App() -> impl IntoView {
             set_show_profiles.set(true);
             return;
         }
-        set_current_action.set("Pushing history".to_string());
-        run_remote_op(
-            "run_push",
-            |p| {
-                to_js(&RunPushArgs {
-                    save_dir: p.save_dir.clone(),
-                    url: p.remote_url.clone(),
-                })
-            },
-            active_profile,
-            set_output_lines,
-            set_is_running,
-            do_upsert,
-        );
+        set_right_panel.set(RightPanel::ConfirmPush);
     };
 
     let run_clone = move |_: leptos::ev::MouseEvent| {
@@ -736,11 +746,11 @@ pub fn App() -> impl IntoView {
                 set_form_closing=set_form_closing set_list_instant=set_list_instant
                 set_right_panel=set_right_panel clone_profile_form=clone_profile_form
             />
-            <Show when=move || show_profiles.get() || right_panel.get() == RightPanel::Commit || matches!(right_panel.get(), RightPanel::Checkout(_)) || show_log.get()>
+            <Show when=move || show_profiles.get() || matches!(right_panel.get(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush) || show_log.get()>
                 <div class="sidebar-overlay" on:click=move |_| {
                     if show_log.get_untracked() {
                         set_show_log.set(false);
-                    } else if matches!(right_panel.get_untracked(), RightPanel::Commit | RightPanel::Checkout(_)) {
+                    } else if matches!(right_panel.get_untracked(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush) {
                         set_right_panel.set(RightPanel::None);
                     } else {
                         set_show_profiles.set(false);
@@ -781,6 +791,7 @@ pub fn App() -> impl IntoView {
                     draft_message=draft_message set_draft_message=set_draft_message
                     run_commit=run_commit run_checkout=run_checkout
                     run_pull=run_pull run_push=run_push run_clone=run_clone
+                    do_pull=do_pull do_push=do_push
                 />
                 // ── Status bar ──────────────────────────────────
                 <div class="status-bar">
