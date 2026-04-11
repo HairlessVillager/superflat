@@ -26,6 +26,11 @@ fn resolve_paths(
     app: &AppHandle,
 ) -> Option<(PathBuf, PathBuf)> {
     let save_path = PathBuf::from(save_dir);
+    if save_dir.trim().is_empty() || !save_path.is_absolute() {
+        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        let _ = app.emit(EVENT_DONE, ());
+        return None;
+    }
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_owned(),
         None => {
@@ -195,6 +200,11 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
 #[tauri::command]
 pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
+    if save_dir.trim().is_empty() || !save_path.is_absolute() {
+        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        let _ = app.emit(EVENT_DONE, ());
+        return;
+    }
     let git_dir = match save_dir_to_git_dir(&save_path) {
         Some(d) => d,
         None => {
@@ -243,6 +253,11 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
 #[tauri::command]
 pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
+    if save_dir.trim().is_empty() || !save_path.is_absolute() {
+        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        let _ = app.emit(EVENT_DONE, ());
+        return;
+    }
     let git_dir = match save_dir_to_git_dir(&save_path) {
         Some(d) => d,
         None => {
@@ -277,6 +292,11 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
 #[tauri::command]
 pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
+    if save_dir.trim().is_empty() || !save_path.is_absolute() {
+        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        let _ = app.emit(EVENT_DONE, ());
+        return;
+    }
     let git_dir = match save_dir_to_git_dir(&save_path) {
         Some(d) => d,
         None => {
