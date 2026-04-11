@@ -30,16 +30,7 @@ fn ProfileCard(
             <div class="profile-card-path">{p.save_dir.clone()}</div>
             <div class="profile-card-row">
                 <div class="profile-card-meta">{
-                    let date = if p.updated_at.is_empty() {
-                        String::new()
-                    } else {
-                        p.updated_at.get(..10).unwrap_or("").to_string()
-                    };
-                    if date.is_empty() {
-                        p.mc_version.clone()
-                    } else {
-                        format!("{} - {}", p.mc_version, date)
-                    }
+                    p.mc_version.clone()
                 }</div>
                 <div class="profile-card-actions">
                     <button class="btn-edit" on:click=move |ev| {
