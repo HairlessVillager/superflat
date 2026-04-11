@@ -29,9 +29,8 @@
     border-color: #3a5a2a;
 }
 
-.panel-label input:focus {
+.panel-label input:focus-visible {
     outline: none;
-    border-color: #6eac4b;
 }
 
 .panel-label input:disabled {

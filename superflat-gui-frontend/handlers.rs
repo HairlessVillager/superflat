@@ -141,10 +141,17 @@ pub fn MainContent(
                                     disabled=move || is_running.get()>"Clone"</button>
                             }
                         >
-                            <button class="btn-action btn-pull" on:click=run_pull
-                                disabled=move || is_running.get()>"Pull"</button>
+                            <Show when=move || !active_profile.get().remote_url.is_empty()
+                                fallback=move || view! {
+                                    <button class="btn-action btn-pull" on:click=run_pull
+                                        disabled=move || is_running.get()>"Set Remote"</button>
+                                }
+                            >
+                                <button class="btn-action btn-pull" on:click=run_pull
+                                    disabled=move || is_running.get()>"Pull"</button>
+                            </Show>
                         </Show>
-                        <Show when=move || repo_exists.get()>
+                        <Show when=move || repo_exists.get() && !active_profile.get().remote_url.is_empty()>
                             <button class="btn-action btn-push" on:click=run_push
                                 disabled=move || is_running.get()>"Push"</button>
                         </Show>
