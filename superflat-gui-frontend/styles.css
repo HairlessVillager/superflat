@@ -491,7 +491,7 @@ body::after {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -46%) scale(0.94);
-    width: 400px;
+    width: 450px;
     max-height: 82vh;
     background: #21321c;
     border: 3px solid #10170d;
