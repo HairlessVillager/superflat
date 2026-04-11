@@ -191,7 +191,7 @@ fn AddProfilePanel(
                                 set_timeout(&cb, 0);
                                 cb.forget();
                             }
-                        }>"Add"</button>
+                        }>"Track"</button>
                     </div>
                 </div>
             </div>
