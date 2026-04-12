@@ -19,17 +19,20 @@ pub struct LogPayload {
     pub message: String,
 }
 
+struct LoggerState {
+    app: Option<AppHandle>,
+    file: Option<BufWriter<File>>,
+}
+
 pub struct GuiLogger {
-    app: Mutex<Option<AppHandle>>,
-    file: Mutex<Option<BufWriter<File>>>,
+    state: Mutex<LoggerState>,
     op_start: Mutex<Option<Instant>>,
 }
 
 impl GuiLogger {
     pub const fn new() -> Self {
         Self {
-            app: Mutex::new(None),
-            file: Mutex::new(None),
+            state: Mutex::new(LoggerState { app: None, file: None }),
             op_start: Mutex::new(None),
         }
     }
@@ -47,14 +50,16 @@ impl GuiLogger {
         if let Some(parent) = log_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        match File::create(&log_path) {
-            Ok(f) => {
-                *self.file.lock().expect("gui logger file mutex poisoned") =
-                    Some(BufWriter::new(f));
+        let file = match File::create(&log_path) {
+            Ok(f) => Some(BufWriter::new(f)),
+            Err(e) => {
+                eprintln!("Failed to open log file {:?}: {}", log_path, e);
+                None
             }
-            Err(e) => eprintln!("Failed to open log file {:?}: {}", log_path, e),
-        }
-        *self.app.lock().expect("gui logger mutex is poisoned") = Some(app);
+        };
+        let mut state = self.state.lock().expect("gui logger mutex is poisoned");
+        state.app = Some(app);
+        state.file = file;
     }
 }
 
@@ -77,19 +82,23 @@ impl Log for GuiLogger {
         };
         let message = record.args().to_string();
 
-        // Always write to file
-        if let Ok(mut guard) = self.file.lock() {
-            if let Some(w) = guard.as_mut() {
-                let elapsed_s = self
-                    .op_start
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.map(|t| t.elapsed().as_secs_f64()))
-                    .unwrap_or(0.0);
-                let int_part = elapsed_s.floor() as u64;
-                let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
-                let _ = writeln!(w, "[{:>4}.{:03}] [{}] {}", int_part, frac_digits, level_str, message);
-            }
+        let elapsed_s = self
+            .op_start
+            .lock()
+            .ok()
+            .and_then(|g| g.map(|t| t.elapsed().as_secs_f64()))
+            .unwrap_or(0.0);
+        let int_part = elapsed_s.floor() as u64;
+        let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
+
+        let mut state = match self.state.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+
+        // Write to file
+        if let Some(w) = state.file.as_mut() {
+            let _ = writeln!(w, "[{:>4}.{:03}] [{}] {}", int_part, frac_digits, level_str, message);
         }
 
         // Only forward Info and above to the GUI
@@ -98,14 +107,14 @@ impl Log for GuiLogger {
         }
 
         let payload = LogPayload { level: level_str, message };
-        if let Some(app) = self.app.lock().expect("gui logger mutex is poisoned").clone() {
+        if let Some(app) = state.app.clone() {
             let _ = app.emit(EVENT_OUTPUT, payload);
         }
     }
 
     fn flush(&self) {
-        if let Ok(mut guard) = self.file.lock() {
-            if let Some(w) = guard.as_mut() {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(w) = state.file.as_mut() {
                 let _ = w.flush();
             }
         }

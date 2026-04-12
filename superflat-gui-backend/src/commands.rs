@@ -7,6 +7,10 @@ use tauri_plugin_dialog::DialogExt;
 use crate::EVENT_DONE;
 use crate::git_ops::{apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir};
 
+fn emit_done(app: &AppHandle) {
+    crate::flush_log();
+    let _ = app.emit(EVENT_DONE, ());
+}
 #[tauri::command]
 pub async fn pick_directory(app: AppHandle) -> Option<String> {
     let (tx, rx) = oneshot::channel();
@@ -28,14 +32,14 @@ fn resolve_paths(
     let save_path = PathBuf::from(save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        let _ = app.emit(EVENT_DONE, ());
+        emit_done(&app);
         return None;
     }
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_owned(),
         None => {
             log::error!("Invalid save directory path");
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return None;
         }
     };
@@ -77,7 +81,7 @@ pub async fn run_commit(
     let parents = if init {
         if let Err(e) = std::fs::create_dir_all(&git_dir) {
             log::error!("Failed to create git_dir: {}", e);
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return;
         }
         let git_dir_clone = git_dir.clone();
@@ -85,12 +89,12 @@ pub async fn run_commit(
             Ok(Ok(())) => vec![],
             Ok(Err(e)) => {
                 log::error!("Failed to init repository: {}", e);
-                let _ = app.emit(EVENT_DONE, ());
+                emit_done(&app);
                 return;
             }
             Err(e) => {
                 log::error!("Failed to init repository (task panic): {}", e);
-                let _ = app.emit(EVENT_DONE, ());
+                emit_done(&app);
                 return;
             }
         }
@@ -99,14 +103,14 @@ pub async fn run_commit(
             Ok(hash) => vec![hash],
             Err(e) => {
                 log::error!("{}", e);
-                let _ = app.emit(EVENT_DONE, ());
+                emit_done(&app);
                 return;
             }
         }
     };
 
     do_commit_and_repack(save_path, git_dir, branch, message, mc_version, parents).await;
-    let _ = app.emit(EVENT_DONE, ());
+    emit_done(&app);
 }
 
 async fn resolve_branch_parent(git_dir: &PathBuf, branch: &str) -> Result<String, String> {
@@ -177,13 +181,13 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
         let bak = save_path.with_extension("bak");
         if bak.exists() {
             log::error!("Backup {bak:?} already exists, aborting checkout");
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return;
         }
         log::info!("save_dir {save_path:?} already exists, renaming to {bak:?}");
         if let Err(e) = std::fs::rename(&save_path, &bak) {
             log::error!("Failed to rename save_dir: {e}");
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return;
         }
     }
@@ -197,7 +201,7 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
         Ok(()) => log::info!("Done"),
         Err(e) => log::error!("Error: {e}"),
     }
-    let _ = app.emit(EVENT_DONE, ());
+    emit_done(&app);
 }
 
 #[tauri::command]
@@ -206,14 +210,14 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        let _ = app.emit(EVENT_DONE, ());
+        emit_done(&app);
         return;
     }
     let git_dir = match save_dir_to_git_dir(&save_path) {
         Some(d) => d,
         None => {
             log::error!("Invalid save directory path");
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return;
         }
     };
@@ -251,7 +255,7 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
         Ok(Err(e)) => log::error!("Clone failed: {}", e),
         Err(e) => log::error!("Clone task failed: {}", e),
     }
-    let _ = app.emit(EVENT_DONE, ());
+    emit_done(&app);
 }
 
 #[tauri::command]
@@ -260,14 +264,14 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        let _ = app.emit(EVENT_DONE, ());
+        emit_done(&app);
         return;
     }
     let git_dir = match save_dir_to_git_dir(&save_path) {
         Some(d) => d,
         None => {
             log::error!("Invalid save directory path");
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return;
         }
     };
@@ -291,7 +295,7 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
         Ok(Err(e)) => log::error!("Pull failed: {}", e),
         Err(e) => log::error!("Pull task failed: {}", e),
     }
-    let _ = app.emit(EVENT_DONE, ());
+    emit_done(&app);
 }
 
 #[tauri::command]
@@ -300,14 +304,14 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
     let save_path = PathBuf::from(&save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        let _ = app.emit(EVENT_DONE, ());
+        emit_done(&app);
         return;
     }
     let git_dir = match save_dir_to_git_dir(&save_path) {
         Some(d) => d,
         None => {
             log::error!("Invalid save directory path");
-            let _ = app.emit(EVENT_DONE, ());
+            emit_done(&app);
             return;
         }
     };
@@ -328,5 +332,5 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
         Ok(Err(e)) => log::error!("Push failed: {}", e),
         Err(e) => log::error!("Push task failed: {}", e),
     }
-    let _ = app.emit(EVENT_DONE, ());
+    emit_done(&app);
 }

@@ -46,6 +46,11 @@ fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
 }
 
+pub fn flush_log() {
+    use log::Log;
+    GUI_LOGGER.flush();
+}
+
 pub fn reset_op_start() {
     GUI_LOGGER.reset_op_start();
 }
@@ -70,6 +75,11 @@ pub fn run() {
                 }
             }
             Ok(())
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                log::logger().flush();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::pick_directory,
