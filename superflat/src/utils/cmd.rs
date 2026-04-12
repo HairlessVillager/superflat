@@ -20,7 +20,7 @@ pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
     log::debug!("command: {:?}", cmd);
     let out = if let Some(stdin) = stdin {
         for line in stdin.lines() {
-            log::debug!("stdin: {}", line);
+            log::debug!("stdin: {line:?}");
         }
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -43,12 +43,12 @@ pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
     let stderr = String::from_utf8(out.stderr)
         .with_context(|| format!("failed to encoding stderr by UTF-8"))?;
     for line in stderr.lines() {
-        log::debug!("stderr: {:?}", line);
+        log::debug!("stderr: {line:?}");
     }
     let stdout = String::from_utf8(out.stdout)
         .with_context(|| format!("failed to encoding stdout by UTF-8"))?;
     for line in stdout.lines() {
-        log::debug!("stdout: {:?}", line);
+        log::debug!("stdout: {line:?}");
     }
     anyhow::ensure!(out.status.success(), "Command {cmd:?} status is failed");
     Ok(stdout)
