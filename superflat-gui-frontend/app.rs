@@ -1,4 +1,4 @@
-use crate::bindings::{invoke, log, opener_open_path, set_timeout};
+use crate::bindings::{invoke, log, set_timeout};
 use crate::handlers::{MainContent, make_refresh_repo_state, make_upsert_profile, run_remote_op};
 use crate::types::*;
 use leptos::prelude::*;
@@ -399,6 +399,7 @@ pub fn App() -> impl IntoView {
     let (last_raw_line, set_last_raw_line) = signal(String::new());
     let (op_start_ms, set_op_start_ms) = signal(0.0_f64);
     let (is_running, set_is_running) = signal(false);
+    let (log_exists, set_log_exists) = signal(false);
     let (show_profiles, set_show_profiles) = signal(false);
     let (right_panel, set_right_panel) = signal(RightPanel::None);
     let (profiles, set_profiles) = signal(Vec::<Profile>::new());
@@ -429,6 +430,16 @@ pub fn App() -> impl IntoView {
         if let Ok(result) = invoke("get_profiles", JsValue::NULL).await {
             if let Ok(p) = serde_wasm_bindgen::from_value::<Vec<Profile>>(result) {
                 set_profiles.set(p);
+            }
+        }
+    });
+
+    spawn_local(async move {
+        if let Ok(val) = invoke("log_file_exists", JsValue::NULL).await {
+            if let Ok(exists) = serde_wasm_bindgen::from_value::<bool>(val) {
+                if exists {
+                    set_log_exists.set(true);
+                }
             }
         }
     });
@@ -844,15 +855,12 @@ pub fn App() -> impl IntoView {
                     <span class="status-bar-latest-log">
                         {move || last_raw_line.get()}
                     </span>
-                    <Show when=move || !output_lines.get().is_empty()>
+                    <Show when=move || log_exists.get() || !output_lines.get().is_empty()>
                         <button class="status-bar-btn status-bar-log-btn"
-                            disabled=move || is_running.get()
                             on:click=move |_| {
                                 spawn_local(async move {
-                                    if let Ok(val) = invoke("get_log_path", JsValue::NULL).await {
-                                        if let Ok(p) = serde_wasm_bindgen::from_value::<String>(val) {
-                                            let _ = opener_open_path(&p).await;
-                                        }
+                                    if let Err(e) = invoke("open_log_file", JsValue::NULL).await {
+                                        log(&format!("Failed to open log file: {:?}", e));
                                     }
                                 });
                             }>

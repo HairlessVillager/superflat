@@ -23,6 +23,29 @@ fn get_log_path(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn log_file_exists(app: AppHandle) -> bool {
+    profiles::app_data_file(&app, logger::LOG_FILE)
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn open_log_file(app: AppHandle) -> Result<(), String> {
+    let path = profiles::app_data_file(&app, logger::LOG_FILE)
+        .map_err(|e| e.to_string())?;
+    log::debug!("Opening log file: {:?}", path);
+    // Prefer $VISUAL or $EDITOR over xdg-open to avoid browser opening .log files
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "xdg-open".to_string());
+    std::process::Command::new(&editor)
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open '{}' with '{}': {}", path.display(), editor, e))
+}
+
+#[tauri::command]
 fn window_minimize(window: tauri::Window) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
 }
@@ -87,6 +110,8 @@ pub fn run() {
             profiles::upsert_profile,
             profiles::delete_profile,
             get_log_path,
+            log_file_exists,
+            open_log_file,
             window_minimize,
             window_toggle_maximize,
             window_close,
