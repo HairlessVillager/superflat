@@ -13,15 +13,19 @@ pub fn make_refresh_repo_state(
         if dir.is_empty() {
             return;
         }
+        // Fire both requests concurrently instead of sequentially.
+        // Each spawn_local captures its own dir snapshot, so a profile switch
+        // between the two spawns cannot cause one to use a stale directory.
+        let dir1 = dir.clone();
         spawn_local(async move {
-            let args = to_js(&CheckRepoExistsArgs {
-                save_dir: dir.clone(),
-            });
+            let args = to_js(&CheckRepoExistsArgs { save_dir: dir1 });
             if let Ok(val) = invoke("check_repo_exists", args).await {
                 if let Some(exists) = val.as_bool() {
                     set_repo_exists.set(exists);
                 }
             }
+        });
+        spawn_local(async move {
             let args = to_js(&GetCommitsArgs { save_dir: dir });
             match invoke("get_commits", args).await {
                 Ok(val) => {
