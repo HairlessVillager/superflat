@@ -1,4 +1,4 @@
-use crate::bindings::{invoke, log, set_timeout};
+use crate::bindings::{invoke, log};
 use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -244,9 +244,7 @@ pub fn MainContent(
                                     on:click=move |ev| {
                                         if draft_message.get_untracked().trim().is_empty() {
                                             set_commit_show_error.set(false);
-                                            let cb = Closure::<dyn Fn()>::new(move || set_commit_show_error.set(true));
-                                            set_timeout(&cb, 0);
-                                            cb.forget();
+                                            spawn_local(async move { set_commit_show_error.set(true); });
                                         } else {
                                             run_commit(ev);
                                         }

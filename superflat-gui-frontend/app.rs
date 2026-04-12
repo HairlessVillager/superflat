@@ -1,4 +1,4 @@
-use crate::bindings::{invoke, log, set_timeout};
+use crate::bindings::{invoke, log};
 use crate::handlers::{MainContent, make_refresh_repo_state, make_upsert_profile, run_remote_op};
 use crate::types::*;
 use leptos::prelude::*;
@@ -187,9 +187,7 @@ fn AddProfilePanel(
                                 save_profile_form(ev);
                             } else {
                                 set_show_errors.set(false);
-                                let cb = Closure::<dyn Fn()>::new(move || set_show_errors.set(true));
-                                set_timeout(&cb, 0);
-                                cb.forget();
+                                spawn_local(async move { set_show_errors.set(true); });
                             }
                         }>"Track"</button>
                     </div>
@@ -265,9 +263,7 @@ fn EditProfilePanel(
                                 save_profile_form(ev);
                             } else {
                                 set_show_errors.set(false);
-                                let cb = Closure::<dyn Fn()>::new(move || set_show_errors.set(true));
-                                set_timeout(&cb, 0);
-                                cb.forget();
+                                spawn_local(async move { set_show_errors.set(true); });
                             }
                         }>"OK"</button>
                     </div>
@@ -358,9 +354,7 @@ fn CloneFromRemoteFormPanel(
                                 clone_profile_form(ev);
                             } else {
                                 set_clone_show_errors.set(false);
-                                let cb = Closure::<dyn Fn()>::new(move || set_clone_show_errors.set(true));
-                                set_timeout(&cb, 0);
-                                cb.forget();
+                                spawn_local(async move { set_clone_show_errors.set(true); });
                             }
                         }>"Clone"</button>
                     </div>
@@ -554,9 +548,7 @@ pub fn App() -> impl IntoView {
         set_form_mc_version.set(p.mc_version.clone());
         set_form_remote_url.set(String::new());
         set_remote_url_invalid.set(false);
-        let cb = Closure::<dyn Fn()>::new(move || set_remote_url_invalid.set(true));
-        set_timeout(&cb, 0);
-        cb.forget();
+        spawn_local(async move { set_remote_url_invalid.set(true); });
         set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
         set_show_profiles.set(true);
     };
@@ -653,13 +645,12 @@ pub fn App() -> impl IntoView {
         do_upsert(p);
         set_form_closing.set(true);
         set_list_instant.set(true);
-        let cb = Closure::<dyn Fn()>::new(move || {
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
             set_right_panel.set(RightPanel::None);
             set_form_closing.set(false);
             set_list_instant.set(false);
         });
-        set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
-        cb.forget();
     };
 
     let open_clone_from_remote = move |_: leptos::ev::MouseEvent| {
@@ -705,14 +696,13 @@ pub fn App() -> impl IntoView {
         });
         set_form_closing.set(true);
         set_list_instant.set(true);
-        let cb = Closure::<dyn Fn()>::new(move || {
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
             set_right_panel.set(RightPanel::None);
             set_show_profiles.set(false);
             set_form_closing.set(false);
             set_list_instant.set(false);
         });
-        set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
-        cb.forget();
     };
 
     let handle_window_minimize = move |_: leptos::ev::MouseEvent| {
@@ -798,13 +788,12 @@ pub fn App() -> impl IntoView {
                         {
                             set_form_closing.set(true);
                             set_list_instant.set(true);
-                            let cb = Closure::<dyn Fn()>::new(move || {
+                            spawn_local(async move {
+                                gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
                                 set_right_panel.set(RightPanel::None);
                                 set_form_closing.set(false);
                                 set_list_instant.set(false);
                             });
-                            set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
-                            cb.forget();
                         }
                     }
                 }/>
