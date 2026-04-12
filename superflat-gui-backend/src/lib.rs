@@ -13,13 +13,13 @@ pub use logger::GuiLogger;
 pub const EVENT_OUTPUT: &str = "commit-output";
 pub const EVENT_DONE: &str = "commit-done";
 
-const DEFAULT_DEBUG: bool = false;
-
 static GUI_LOGGER: GuiLogger = GuiLogger::new();
 
 #[tauri::command]
-fn set_debug_logging(app: AppHandle, debug: bool) {
-    GUI_LOGGER.configure(app, debug);
+fn get_log_path(app: AppHandle) -> Result<String, String> {
+    profiles::app_data_file(&app, logger::LOG_FILE)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -48,12 +48,14 @@ fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
 
 pub fn run() {
     log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
-    log::set_max_level(LevelFilter::Info);
+    log::set_max_level(LevelFilter::Debug);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            GUI_LOGGER.configure(app.handle().clone(), DEFAULT_DEBUG);
+            let log_path = profiles::app_data_file(app.handle(), logger::LOG_FILE)
+                .expect("failed to resolve log path");
+            GUI_LOGGER.configure(app.handle().clone(), log_path);
             if let Ok(settings_path) =
                 profiles::app_data_file(app.handle(), "settings.json")
             {
@@ -70,7 +72,7 @@ pub fn run() {
             profiles::get_profiles,
             profiles::upsert_profile,
             profiles::delete_profile,
-            set_debug_logging,
+            get_log_path,
             window_minimize,
             window_toggle_maximize,
             window_close,
@@ -108,3 +110,4 @@ mod tests {
         assert_eq!(normalized[1].branch, "main");
     }
 }
+

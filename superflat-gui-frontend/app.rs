@@ -1,4 +1,4 @@
-use crate::bindings::{invoke, log, set_timeout};
+use crate::bindings::{invoke, log, opener_open_path, set_timeout};
 use crate::handlers::{MainContent, make_refresh_repo_state, make_upsert_profile, run_remote_op};
 use crate::types::*;
 use leptos::prelude::*;
@@ -413,16 +413,7 @@ pub fn App() -> impl IntoView {
     let (form_remote_url, set_form_remote_url) = signal(String::new());
     let (form_clone_git_dir, set_form_clone_git_dir) = signal(String::new());
 
-    let (show_log, set_show_log) = signal(false);
     let (remote_url_invalid, set_remote_url_invalid) = signal(false);
-    let log_console_ref = NodeRef::<leptos::html::Pre>::new();
-
-    Effect::new(move |_| {
-        let _ = output_lines.get();
-        if let Some(el) = log_console_ref.get() {
-            el.set_scroll_top(el.scroll_height());
-        }
-    });
 
     let refresh = make_refresh_repo_state(set_repo_exists, set_commits, set_output_lines);
     let do_upsert = make_upsert_profile(set_profiles);
@@ -464,12 +455,16 @@ pub fn App() -> impl IntoView {
             let int_part = elapsed_s.floor() as u64;
             let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
             let time_prefix = format!("[{:>4}.{:03}]", int_part, frac_digits);
-            // status bar: [xxxx.xxx] message
-            let status_line = format!("{} {}", time_prefix, message);
-            // log modal: [xxxx.xxx] [LEVEL] message
             let log_line = format!("{} [{}] {}", time_prefix, level, message);
+            let status_line = format!("{} {}", time_prefix, message);
             set_last_raw_line.set(status_line);
-            set_lines.update(|lines| lines.push(log_line));
+            set_lines.update(|lines| {
+                lines.push(log_line);
+                // cap at 2000 entries to prevent unbounded memory growth
+                if lines.len() > 2000 {
+                    lines.drain(0..200);
+                }
+            });
         });
         let on_done = Closure::<dyn Fn(JsValue)>::new(move |_: JsValue| {
             set_is_running.set(false);
@@ -799,11 +794,9 @@ pub fn App() -> impl IntoView {
                 set_form_closing=set_form_closing set_list_instant=set_list_instant
                 set_right_panel=set_right_panel clone_profile_form=clone_profile_form
             />
-            <Show when=move || show_profiles.get() || matches!(right_panel.get(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush) || show_log.get()>
+            <Show when=move || show_profiles.get() || matches!(right_panel.get(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush)>
                 <div class="sidebar-overlay" on:click=move |_| {
-                    if show_log.get_untracked() {
-                        set_show_log.set(false);
-                    } else if matches!(right_panel.get_untracked(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush) {
+                    if matches!(right_panel.get_untracked(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush) {
                         set_right_panel.set(RightPanel::None);
                     } else {
                         set_show_profiles.set(false);
@@ -851,22 +844,21 @@ pub fn App() -> impl IntoView {
                     <span class="status-bar-latest-log">
                         {move || last_raw_line.get()}
                     </span>
-                    <Show when=move || is_running.get() || !output_lines.get().is_empty()>
+                    <Show when=move || !output_lines.get().is_empty()>
                         <button class="status-bar-btn status-bar-log-btn"
-                            class:running=move || is_running.get()
-                            on:click=move |_| set_show_log.set(true)>
+                            disabled=move || is_running.get()
+                            on:click=move |_| {
+                                spawn_local(async move {
+                                    if let Ok(val) = invoke("get_log_path", JsValue::NULL).await {
+                                        if let Ok(p) = serde_wasm_bindgen::from_value::<String>(val) {
+                                            let _ = opener_open_path(&p).await;
+                                        }
+                                    }
+                                });
+                            }>
                             "📋 Latest Log"
                         </button>
                     </Show>
-                </div>
-            </div>
-
-            // ── Log modal ────────────────────────────────────────────
-            <div class="sidebar" class:open=move || show_log.get()>
-                <div class="sidebar-panel-form">
-                    <div class="sidebar-body">
-                        <pre class="log-console" node_ref=log_console_ref>{move || output_lines.get().join("\n")}</pre>
-                    </div>
                 </div>
             </div>
         </div>

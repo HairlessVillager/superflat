@@ -19,4 +19,7 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["navigator", "clipboard"], js_name = writeText)]
     pub fn clipboard_write_text(s: &str);
+
+    #[wasm_bindgen(catch, js_namespace = ["window", "__TAURI__", "opener"], js_name = openPath)]
+    pub async fn opener_open_path(path: &str) -> Result<JsValue, JsValue>;
 }

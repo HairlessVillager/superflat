@@ -363,25 +363,6 @@ body::after {
     background: rgba(255, 255, 255, 0.07);
 }
 
-.log-console {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 200px;
-    max-height: 60vh;
-    overflow-y: auto;
-    padding: 10px 12px;
-    margin: 0;
-    background: #0e1a0c;
-    color: #a8d89a;
-    font-size: 11px;
-    font-family: monospace;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-all;
-    scroll-behavior: smooth;
-}
-
 .commit-area {
     flex: 1;
     display: flex;
