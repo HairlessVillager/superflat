@@ -535,6 +535,16 @@ body::after {
     word-break: break-all;
 }
 
+.checkout-bak-error {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #2a0e0e;
+    border: 1px solid #7a2020;
+    color: #e07070;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
 .sidebar {
     position: fixed;
     top: 50%;

@@ -191,6 +191,15 @@ async fn do_commit_and_repack(
 }
 
 #[tauri::command]
+pub fn check_bak_exists(save_dir: String) -> bool {
+    let save_path = PathBuf::from(&save_dir);
+    if save_dir.trim().is_empty() || !save_path.is_absolute() {
+        return false;
+    }
+    save_path.with_extension("bak").exists()
+}
+
+#[tauri::command]
 pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, app: AppHandle) {
     crate::reset_op_start();
     let (save_path, git_dir) = match resolve_paths(&save_dir) {

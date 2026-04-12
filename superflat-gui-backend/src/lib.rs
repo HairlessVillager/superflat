@@ -123,6 +123,7 @@ pub fn run() {
             window_start_dragging,
             commands::run_commit,
             commands::run_checkout,
+            commands::check_bak_exists,
             git_ops::check_repo_exists,
             commands::run_clone,
             commands::run_pull,

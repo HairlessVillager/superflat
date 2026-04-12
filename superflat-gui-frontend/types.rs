@@ -55,6 +55,12 @@ pub struct RunCloneArgs {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CheckBakExistsArgs {
+    pub save_dir: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DeleteProfileArgs {
     pub save_dir: String,
 }

@@ -105,6 +105,7 @@ pub fn MainContent(
     do_pull: impl Fn() + Copy + Send + Sync + 'static,
     do_push: impl Fn() + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
+    let (checkout_bak_error, set_checkout_bak_error) = signal(false);
     view! {
         <div class="main">
             <div class="topbar">
@@ -261,33 +262,58 @@ pub fn MainContent(
         <div class="sidebar" class:open=move || matches!(right_panel.get(), RightPanel::Checkout(_))>
             <div class="sidebar-panel-form">
                 <div class="panel-body">
-                    <div class="panel-label">
-                        "Checkout this commit?"
-                        <pre class="checkout-commit-info">{move || {
-                            if let RightPanel::Checkout(c) = right_panel.get() {
-                                format!("commit {}\nAuthor: {}\nDate:   {}\n\n    {}",
-                                    c.hash, c.author, c.timestamp, c.subject)
-                            } else {
-                                String::new()
+                    {
+                        Effect::new(move |_| {
+                            if matches!(right_panel.get(), RightPanel::Checkout(_)) {
+                                set_checkout_bak_error.set(false);
                             }
-                        }}</pre>
-                    </div>
-                    <div class="commit-modal-actions">
-                        <button class="btn-cancel-modal"
-                            on:click=move |_| set_right_panel.set(RightPanel::None)>
-                            "Cancel"
-                        </button>
-                        <button class="btn-checkout-confirm"
-                            disabled=move || is_running.get()
-                            on:click=move |_| {
-                                if let RightPanel::Checkout(c) = right_panel.get_untracked() {
-                                    set_right_panel.set(RightPanel::None);
-                                    run_checkout(c.hash);
-                                }
-                            }>
-                            "Checkout"
-                        </button>
-                    </div>
+                        });
+                        view! {
+                            <div class="panel-label">
+                                "Checkout this commit?"
+                                <pre class="checkout-commit-info">{move || {
+                                    if let RightPanel::Checkout(c) = right_panel.get() {
+                                        format!("commit {}\nAuthor: {}\nDate:   {}\n\n    {}",
+                                            c.hash, c.author, c.timestamp, c.subject)
+                                    } else {
+                                        String::new()
+                                    }
+                                }}</pre>
+                            </div>
+                            <Show when=move || checkout_bak_error.get()>
+                                <div class="checkout-bak-error">
+                                    "Cannot checkout: a .bak folder already exists. Please remove it first."
+                                </div>
+                            </Show>
+                            <div class="commit-modal-actions">
+                                <button class="btn-cancel-modal"
+                                    on:click=move |_| set_right_panel.set(RightPanel::None)>
+                                    "Cancel"
+                                </button>
+                                <button class="btn-checkout-confirm"
+                                    disabled=move || is_running.get()
+                                    on:click=move |_| {
+                                        if let RightPanel::Checkout(c) = right_panel.get_untracked() {
+                                            let save_dir = active_profile.get_untracked().save_dir;
+                                            spawn_local(async move {
+                                                let args = to_js(&CheckBakExistsArgs { save_dir });
+                                                match invoke("check_bak_exists", args).await {
+                                                    Ok(val) if val.as_bool() == Some(true) => {
+                                                        set_checkout_bak_error.set(true);
+                                                    }
+                                                    _ => {
+                                                        set_right_panel.set(RightPanel::None);
+                                                        run_checkout(c.hash);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }>
+                                    "Checkout"
+                                </button>
+                            </div>
+                        }
+                    }
                 </div>
             </div>
         </div>
