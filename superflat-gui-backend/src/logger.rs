@@ -2,6 +2,7 @@ use std::{
     fs::{self, File},
     io::{BufWriter, Write},
     sync::Mutex,
+    time::Instant,
 };
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
@@ -21,6 +22,7 @@ pub struct LogPayload {
 pub struct GuiLogger {
     app: Mutex<Option<AppHandle>>,
     file: Mutex<Option<BufWriter<File>>>,
+    op_start: Mutex<Option<Instant>>,
 }
 
 impl GuiLogger {
@@ -28,6 +30,14 @@ impl GuiLogger {
         Self {
             app: Mutex::new(None),
             file: Mutex::new(None),
+            op_start: Mutex::new(None),
+        }
+    }
+
+    /// Reset the operation start time. Call this at the beginning of each command.
+    pub fn reset_op_start(&self) {
+        if let Ok(mut guard) = self.op_start.lock() {
+            *guard = Some(Instant::now());
         }
     }
 
@@ -70,7 +80,15 @@ impl Log for GuiLogger {
         // Always write to file
         if let Ok(mut guard) = self.file.lock() {
             if let Some(w) = guard.as_mut() {
-                let _ = writeln!(w, "[{}] {}", level_str, message);
+                let elapsed_s = self
+                    .op_start
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.map(|t| t.elapsed().as_secs_f64()))
+                    .unwrap_or(0.0);
+                let int_part = elapsed_s.floor() as u64;
+                let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
+                let _ = writeln!(w, "[{:>4}.{:03}] [{}] {}", int_part, frac_digits, level_str, message);
             }
         }
 

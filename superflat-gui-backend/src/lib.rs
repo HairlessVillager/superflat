@@ -46,6 +46,10 @@ fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
 }
 
+pub fn reset_op_start() {
+    GUI_LOGGER.reset_op_start();
+}
+
 pub fn run() {
     log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
     log::set_max_level(LevelFilter::Debug);

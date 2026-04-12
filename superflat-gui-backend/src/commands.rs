@@ -62,6 +62,7 @@ pub async fn run_commit(
     mc_version: String,
     app: AppHandle,
 ) {
+    crate::reset_op_start();
     let (save_path, git_dir) = match resolve_paths(&save_dir, &app) {
         Some(p) => p,
         None => return,
@@ -166,6 +167,7 @@ async fn do_commit_and_repack(
 
 #[tauri::command]
 pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, app: AppHandle) {
+    crate::reset_op_start();
     let (save_path, git_dir) = match resolve_paths(&save_dir, &app) {
         Some(p) => p,
         None => return,
@@ -200,6 +202,7 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
 
 #[tauri::command]
 pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
+    crate::reset_op_start();
     let save_path = PathBuf::from(&save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
@@ -253,6 +256,7 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
 
 #[tauri::command]
 pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
+    crate::reset_op_start();
     let save_path = PathBuf::from(&save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
@@ -292,6 +296,7 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
 
 #[tauri::command]
 pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
+    crate::reset_op_start();
     let save_path = PathBuf::from(&save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
