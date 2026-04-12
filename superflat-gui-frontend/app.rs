@@ -546,19 +546,25 @@ pub fn App() -> impl IntoView {
         );
     };
 
+    // Open the edit-profile panel and highlight the remote-url field as invalid.
+    // Used by run_pull and run_push when the active profile has no remote URL.
+    let open_edit_for_remote = move |p: &Profile| {
+        set_form_save_dir.set(p.save_dir.clone());
+        set_form_branch.set(p.branch.clone());
+        set_form_mc_version.set(p.mc_version.clone());
+        set_form_remote_url.set(String::new());
+        set_remote_url_invalid.set(false);
+        let cb = Closure::<dyn Fn()>::new(move || set_remote_url_invalid.set(true));
+        set_timeout(&cb, 0);
+        cb.forget();
+        set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
+        set_show_profiles.set(true);
+    };
+
     let run_pull = move |_: leptos::ev::MouseEvent| {
         let p = active_profile.get_untracked();
         if p.remote_url.is_empty() {
-            set_form_save_dir.set(p.save_dir.clone());
-            set_form_branch.set(p.branch.clone());
-            set_form_mc_version.set(p.mc_version.clone());
-            set_form_remote_url.set(String::new());
-            set_remote_url_invalid.set(false);
-            let cb = Closure::<dyn Fn()>::new(move || set_remote_url_invalid.set(true));
-            set_timeout(&cb, 0);
-            cb.forget();
-            set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
-            set_show_profiles.set(true);
+            open_edit_for_remote(&p);
             return;
         }
         set_right_panel.set(RightPanel::ConfirmPull);
@@ -586,16 +592,7 @@ pub fn App() -> impl IntoView {
     let run_push = move |_: leptos::ev::MouseEvent| {
         let p = active_profile.get_untracked();
         if p.remote_url.is_empty() {
-            set_form_save_dir.set(p.save_dir.clone());
-            set_form_branch.set(p.branch.clone());
-            set_form_mc_version.set(p.mc_version.clone());
-            set_form_remote_url.set(String::new());
-            set_remote_url_invalid.set(false);
-            let cb = Closure::<dyn Fn()>::new(move || set_remote_url_invalid.set(true));
-            set_timeout(&cb, 0);
-            cb.forget();
-            set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
-            set_show_profiles.set(true);
+            open_edit_for_remote(&p);
             return;
         }
         set_right_panel.set(RightPanel::ConfirmPush);
