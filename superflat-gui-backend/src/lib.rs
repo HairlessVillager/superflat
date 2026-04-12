@@ -31,18 +31,23 @@ fn log_file_exists(app: AppHandle) -> bool {
 
 #[tauri::command]
 fn open_log_file(app: AppHandle) -> Result<(), String> {
+    use log::Log;
+    use tauri_plugin_opener::OpenerExt;
+    GUI_LOGGER.flush();
     let path = profiles::app_data_file(&app, logger::LOG_FILE)
         .map_err(|e| e.to_string())?;
     log::debug!("Opening log file: {:?}", path);
-    // Prefer $VISUAL or $EDITOR over xdg-open to avoid browser opening .log files
-    let editor = std::env::var("VISUAL")
-        .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "xdg-open".to_string());
-    std::process::Command::new(&editor)
-        .arg(&path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to open '{}' with '{}': {}", path.display(), editor, e))
+    // On Linux/macOS prefer $VISUAL or $EDITOR; fall back to opener plugin
+    // (which uses xdg-open on Linux, ShellExecute on Windows, open on macOS)
+    if let Ok(editor) = std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")) {
+        if let Ok(child) = std::process::Command::new(&editor).arg(&path).spawn() {
+            drop(child);
+            return Ok(());
+        }
+    }
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
