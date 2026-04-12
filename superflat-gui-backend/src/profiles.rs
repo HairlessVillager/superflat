@@ -20,48 +20,7 @@ pub struct Profile {
 }
 
 fn now_iso() -> String {
-    // Use JS-compatible ISO 8601 format via std time
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let (y, mo, d, h, mi, s) = epoch_to_ymd_hms(secs);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, d, h, mi, s)
-}
-
-fn epoch_to_ymd_hms(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
-    let s = secs % 60;
-    let mi = (secs / 60) % 60;
-    let h = (secs / 3600) % 24;
-    let days = secs / 86400;
-    // Compute year/month/day from days since epoch
-    let mut year = 1970u64;
-    let mut remaining = days;
-    loop {
-        let leap = is_leap(year);
-        let days_in_year = if leap { 366 } else { 365 };
-        if remaining < days_in_year {
-            break;
-        }
-        remaining -= days_in_year;
-        year += 1;
-    }
-    let leap = is_leap(year);
-    let months = [31u64, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut month = 1u64;
-    for &dim in &months {
-        if remaining < dim {
-            break;
-        }
-        remaining -= dim;
-        month += 1;
-    }
-    (year, month, remaining + 1, h, mi, s)
-}
-
-fn is_leap(y: u64) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+    chrono::Utc::now().to_rfc3339()
 }
 
 pub fn normalize_profiles(profiles: Vec<Profile>) -> Vec<Profile> {
