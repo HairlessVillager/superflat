@@ -11,6 +11,7 @@ fn emit_done(app: &AppHandle) {
     crate::flush_log();
     let _ = app.emit(EVENT_DONE, ());
 }
+
 #[tauri::command]
 pub async fn pick_directory(app: AppHandle) -> Option<String> {
     let (tx, rx) = oneshot::channel();
@@ -24,8 +25,8 @@ pub async fn pick_directory(app: AppHandle) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Resolve the save path and git dir from a save_dir string.
-/// Returns an error message string on failure; caller is responsible for emit_done.
+/// Resolve save_path and git_dir from a save_dir string.
+/// Caller is responsible for emitting EVENT_DONE on None return.
 fn resolve_paths(save_dir: &str) -> Option<(PathBuf, PathBuf)> {
     let save_path = PathBuf::from(save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
@@ -52,6 +53,24 @@ fn resolve_paths(save_dir: &str) -> Option<(PathBuf, PathBuf)> {
                 .join(format!("{}.git", save_name))
         });
     Some((save_path, git_dir))
+}
+
+/// Validate save_dir and derive its corresponding bare git directory.
+/// Logs an error and returns None if the path is invalid.
+/// Caller is responsible for emitting EVENT_DONE on None return.
+fn resolve_git_dir(save_dir: &str) -> Option<PathBuf> {
+    let save_path = PathBuf::from(save_dir);
+    if save_dir.trim().is_empty() || !save_path.is_absolute() {
+        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        return None;
+    }
+    match save_dir_to_git_dir(&save_path) {
+        Some(d) => Some(d),
+        None => {
+            log::error!("Invalid save directory path");
+            None
+        }
+    }
 }
 
 #[tauri::command]
@@ -212,19 +231,9 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
 #[tauri::command]
 pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
     crate::reset_op_start();
-    let save_path = PathBuf::from(&save_dir);
-    if save_dir.trim().is_empty() || !save_path.is_absolute() {
-        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        emit_done(&app);
-        return;
-    }
-    let git_dir = match save_dir_to_git_dir(&save_path) {
+    let git_dir = match resolve_git_dir(&save_dir) {
         Some(d) => d,
-        None => {
-            log::error!("Invalid save directory path");
-            emit_done(&app);
-            return;
-        }
+        None => { emit_done(&app); return; }
     };
 
     log::info!("Cloning {} into {}", url, git_dir.display());
@@ -266,19 +275,9 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
 #[tauri::command]
 pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     crate::reset_op_start();
-    let save_path = PathBuf::from(&save_dir);
-    if save_dir.trim().is_empty() || !save_path.is_absolute() {
-        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        emit_done(&app);
-        return;
-    }
-    let git_dir = match save_dir_to_git_dir(&save_path) {
+    let git_dir = match resolve_git_dir(&save_dir) {
         Some(d) => d,
-        None => {
-            log::error!("Invalid save directory path");
-            emit_done(&app);
-            return;
-        }
+        None => { emit_done(&app); return; }
     };
 
     log::info!("Pulling from {}", url);
@@ -306,19 +305,9 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
 #[tauri::command]
 pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
     crate::reset_op_start();
-    let save_path = PathBuf::from(&save_dir);
-    if save_dir.trim().is_empty() || !save_path.is_absolute() {
-        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        emit_done(&app);
-        return;
-    }
-    let git_dir = match save_dir_to_git_dir(&save_path) {
+    let git_dir = match resolve_git_dir(&save_dir) {
         Some(d) => d,
-        None => {
-            log::error!("Invalid save directory path");
-            emit_done(&app);
-            return;
-        }
+        None => { emit_done(&app); return; }
     };
 
     log::info!("Pushing to {}", url);
