@@ -1,5 +1,8 @@
 # Whitelisting Superflat GUI in Windows Defender
 
+> [!TIP]
+> English version of screenshots is needed.
+
 If you trust the GUI executable downloaded from this project's Release page, you can add it to Microsoft Defender's exclusions to reduce the overhead from real-time scanning.
 
 This is optional and purely a performance optimization. Only do this if you are confident the executable comes from a trusted source.
