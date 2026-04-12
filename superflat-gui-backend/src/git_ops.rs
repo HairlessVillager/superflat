@@ -123,30 +123,21 @@ pub fn get_commits(save_dir: String) -> Result<Vec<CommitInfo>, String> {
         return Ok(vec![]);
     }
 
-    let mut cmd = std::process::Command::new("git");
-    cmd.arg("--git-dir").arg(&git_dir);
-    cmd.args([
-        "log",
-        "--all",
-        "--date=format:%Y-%m-%d %H:%M:%S",
-        "--format=%H\x1f%h\x1f%s\x1f%aN\x1f%ad",
-        "-n",
-        "50",
-    ]);
+    let cmd = superflat::utils::cmd::git_cmd(
+        &git_dir,
+        [
+            "log",
+            "--all",
+            "--date=format:%Y-%m-%d %H:%M:%S",
+            "--format=%H\x1f%h\x1f%s\x1f%aN\x1f%ad",
+            "-n",
+            "50",
+        ],
+    );
+    let stdout = superflat::utils::cmd::exec(cmd, None)
+        .map_err(|e| format!("git log failed: {e}"))?;
 
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-
-    let out = cmd.output().map_err(|e| format!("git log failed: {e}"))?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("git log exited with {}: {stderr}", out.status));
-    }
-
-    Ok(String::from_utf8_lossy(&out.stdout)
+    Ok(stdout
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.splitn(5, '\x1f').collect();
