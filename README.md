@@ -23,7 +23,9 @@ Superflat is a Minecraft save format conversion tool designed to convert Minecra
 - [ ] `superflat merge`: Implement chunk-level and game-semantic level merging.
 - [x] Reduce dependency on Pumpkin for the Sections Dump feature.
 - [x] Write auto compile GitHub Workflows.
-- [x] Expand support for legacy versions (pre-1.21.11).
+- [ ] Expand version support
+    - [x] Block and biome data version support
+    - [ ] Save directory format support (26.1 and later)
 - [ ] Chunk de-duplication based on Minecraft original terrain generation algorithms (storing only modifications).
 - [ ] Change the project license to the Rust community standard MIT/Apache 2.0 dual-license, to better integrate into the Rust ecosystem and allow more developers and organizations to use and contribute without barriers.
     - [ ] Replace the `pumpkin-nbt` dependency
@@ -38,7 +40,7 @@ Thanks to the [`gitoxide` project](https://github.com/GitoxideLabs/gitoxide) (li
 
 Thanks to Lewis for providing the 4.6GiB real-world test save. In the early stages of development, we lacked a large amount of real experimental data.
 
-## Installation
+## Download and Installation
 
 Ensure [Git](https://git-scm.com/install/) is installed, as `sf commit` and `sf checkout` depend on Git for streaming backup and restoration.
 
@@ -61,31 +63,12 @@ cargo install --path . --bin sf
 
 ### Using the GUI
 
-We provide a GUI build for Windows users. Download the `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` executable from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page.
+We provide a GUI build for Windows users. Download the `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` executable from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page. Simply double-click the `.exe` to run it.
 
 > [!TIP]
-> If you trust the application, see [this document](docs/windows-defender-bypass.md) to whitelist the GUI process in Windows Defender for better performance.
+> If you trust the application, whitelist the GUI process in Windows Defender (see [guide](docs/windows-defender-bypass.md)) for better performance.
 
-Double-click the downloaded file to launch it. You will see an interface like this:
-
-![docs/images/screenshot-2026-04-03-182406.png](docs/images/screenshot-2026-04-03-182406.png)
-
-On first launch, click the `Browse` button on the right side of the first row and select your save folder (the one containing `level.dat`):
-
-![docs/images/screenshot-2026-04-03-182432.png](docs/images/screenshot-2026-04-03-182432.png)
-
-Then click the `Settings` button on the right side of the first row to configure the Minecraft version and other information:
-
-![docs/images/screenshot-2026-04-03-182437.png](docs/images/screenshot-2026-04-03-182437.png)
-
-After setup, you can:
-
-- Backup: enter your own commit message in the first input box on the second row (or keep the default timestamp), click `Commit`, and wait until the console below prints `Done`.
-- Restore: change the time in the second input box on the second row (or enter the commit ID to restore, or a [revision expression](https://git-scm.com/docs/revisions)), click `Checkout`, and wait until the console below prints `Done`. The original save will be automatically backed up to `saves/<save-name>.bak/`, which you can delete after confirming that the restore succeeded.
-
-Later, you can open saved histories and configurations from `Profiles`:
-
-![docs/images/screenshot-2026-04-03-182423.png](docs/images/screenshot-2026-04-03-182423.png)
+See [this guide](docs/gui-guide.md) for instructions on using the GUI. The GUI aims to provide a WYSIWYG interface for basic operations (`sf commit`, `sf checkout`, and some Git commands); for advanced operations, please use the CLI.
 
 ### Using the CLI
 

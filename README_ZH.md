@@ -23,7 +23,9 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - [ ] `superflat merge`: 实现区块 / 游戏语义级合并
 - [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
 - [x] 构建自动编译 GitHub 工作流
-- [x] 扩展历史版本支持 (1.21.11 之前)
+- [ ] 扩展版本支持
+    - [x] 方块与群系数据版本支持
+    - [ ] 存档目录格式支持（26.1 及之后）
 - [ ] 基于 Minecraft 原版地形生成算法的区块去冗余（仅存储修改量）
 - [ ] 将项目许可变更为 Rust 社区标准的 MIT/Apache 2.0 双授权，这是为了更好地融入 Rust 生态系统，并让更多的开发者和组织能够无障碍地使用和贡献
     - [ ] 替换 `pumpkin-nbt` 依赖
@@ -38,7 +40,7 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 
 感谢 lewis 提供的共计 4.6GiB 的存档。在早期开发阶段我们非常缺少大量真实的实验数据。
 
-## 安装
+## 下载与安装
 
 请确保系统中已安装 [Git](https://git-scm.com/install/)，`sf commit` 和 `sf checkout` 依赖 Git 进程提供流式备份与还原。
 
@@ -61,34 +63,12 @@ cargo install --path . --bin sf
 
 ### 基于 GUI
 
-我们为 Windows 用户准备了 GUI 版本的程序。在 [GitHub Release 页面](https://github.com/HairlessVillager/superflat/releases) 下载 `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` 可执行文件。
-
-> [!IMPORTANT]
-> 本节剩余内容需要更新。
+我们为 Windows 用户准备了 GUI 版本的程序。在 [GitHub Release 页面](https://github.com/HairlessVillager/superflat/releases) 下载 `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` 可执行文件。下载后双击运行 `.exe` 即可运行。
 
 > [!TIP]
-> 如果您信任我们的程序，请参考 [这篇文档](docs/windows-defender-bypass.md) 把 GUI 进程加入 Window Defender 白名单，从而获得更好的性能。
+> 如果您信任我们的程序，请把 GUI 进程加入 Window Defender 白名单（[中文教程](docs/windows-defender-bypass-zh.md)），从而获得更好的性能。
 
-双击运行下载的文件，您将看到这样的界面：
-
-![docs/images/screenshot-2026-04-03-182406.png](docs/images/screenshot-2026-04-03-182406.png)
-
-对于首次运行，点击第一行右侧的 `Browse` 按钮选择存档文件夹（包含 `level.dat` 文件）：
-
-![docs/images/screenshot-2026-04-03-182432.png](docs/images/screenshot-2026-04-03-182432.png)
-
-然后点击第一行右侧的 `Settings` 按钮配置游戏版本等信息：
-
-![docs/images/screenshot-2026-04-03-182437.png](docs/images/screenshot-2026-04-03-182437.png)
-
-设置完毕后，你可以：
-
-- 备份：在第二行第一个输入框输入自己的提交信息（或保持默认的时间戳），点击 `Commit` 按钮备份，等待下方控制台输出 Done 即完成备份。
-- 恢复：在第二行第二个输入框修改要恢复备份的时间（或者输入要恢复的 Commit ID 或 [Revision 表达式](https://git-scm.com/docs/revisions)），点击 `Checkout` 按钮恢复，等待下方控制台输出 Done 即完成恢复。恢复时原存档会自动备份在 `saves/<save-name>.bak/` 目录下，确认恢复成功后可删除。
-
-之后您可以从 `Profiles` 打开历史存档和配置：
-
-![docs/images/screenshot-2026-04-03-182423.png](docs/images/screenshot-2026-04-03-182423.png)
+点击 [此处](docs/gui-guide-zh.md) 查看 GUI 程序的使用指引。GUI 程序致力于给基础操作（`sf commit`、`sf checkout` 以及一部分 Git 命令）提供一个所见即所得的用户界面，对于高级操作请使用 CLI 程序。
 
 ### 基于 CLI
 

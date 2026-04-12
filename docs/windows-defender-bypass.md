@@ -1,53 +1,53 @@
-# 将 Superflat GUI 加入 Windows Defender 白名单
+# Whitelisting Superflat GUI in Windows Defender
 
-如果你信任从本项目 Release 页面下载的 GUI 可执行文件，可以把它加入 Microsoft Defender 的排除项，减少实时扫描带来的额外开销。
+If you trust the GUI executable downloaded from this project's Release page, you can add it to Microsoft Defender's exclusions to reduce the overhead from real-time scanning.
 
-这不是必须步骤，只是性能优化。只有在你确认该可执行文件来源可信时才建议这样做。
+This is optional and purely a performance optimization. Only do this if you are confident the executable comes from a trusted source.
 
-## 为什么要这样做
+## Why Bother
 
-Superflat 在备份和恢复时会频繁读取、写入大量小文件。Windows Defender 的实时扫描可能会重复检查这些文件访问，导致：
+Superflat reads and writes a large number of small files rapidly during backup and restore operations. Windows Defender's real-time scanning may repeatedly inspect these file accesses, leading to:
 
-- GUI 中的备份或恢复速度变慢
-- 控制台输出已经开始，但磁盘占用持续偏高
-- 首次运行或大存档操作时卡顿更明显
+- Slower backup or restore speeds in the GUI
+- Console output has started, but disk usage remains persistently high
+- More noticeable lag on first run or with large saves
 
-将 GUI 进程加入排除项后，Defender 不会再对这个进程触发的相关文件操作进行同样强度的扫描，通常能改善性能。
+After adding the GUI process to the exclusions, Defender will no longer scan file operations triggered by that process at the same intensity, which typically improves performance.
 
-## 操作步骤
+## Steps
 
-以下截图来自 Windows 11 中文界面。Windows 10 的名称可能略有差异，但路径基本一致。
+The screenshots below are from a Windows 11 interface. Windows 10 may use slightly different names, but the paths are essentially the same.
 
-### 1. 打开 Windows 安全中心
+### 1. Open Windows Security
 
-打开 `Windows 安全中心`，进入主页：
+Open `Windows Security` and go to the home page:
 
-![Windows 安全中心主页](images/screenshot-2026-04-03-182603.png)
+![Windows Security home](images/screenshot-2026-04-03-182603.png)
 
-### 2. 进入“病毒和威胁防护”
+### 2. Go to Virus & Threat Protection
 
-在左侧点击 `病毒和威胁防护`：
+Click `Virus & threat protection` in the left sidebar:
 
-![病毒和威胁防护](images/screenshot-2026-04-03-182613.png)
+![Virus & threat protection](images/screenshot-2026-04-03-182613.png)
 
-然后向下滚动，找到 `“病毒和威胁防护”设置`，点击其中的 `管理设置`。
+Scroll down to find `Virus & threat protection settings` and click `Manage settings`.
 
-### 3. 打开排除项设置
+### 3. Open Exclusions Settings
 
-继续向下滚动到 `排除项` 一节，点击 `添加或删除排除项`：
+Continue scrolling to the `Exclusions` section and click `Add or remove exclusions`:
 
-![排除项入口](images/screenshot-2026-04-03-182629.png)
+![Exclusions entry](images/screenshot-2026-04-03-182629.png)
 
-### 4. 添加 GUI 进程
+### 4. Add the GUI Process
 
-在排除项页面点击 `添加排除项`，选择 `进程`，然后输入 `superflat-gui` 的可执行文件名或完整路径。
+On the exclusions page, click `Add an exclusion`, select `Process`, then enter the executable name or full path of `superflat-gui`.
 
-例如，若你直接运行 Release 下载的文件，可以输入类似下面的路径：
+For example, if you run the file downloaded directly from the Release page, you can enter a path like:
 
-`C:\Users\<你的用户名>\Downloads\superflat-gui-v0.5.0-x86_64-pc-windows-msvc.exe`
+`C:\Users\<your-username>\Downloads\superflat-gui-v0.5.0-x86_64-pc-windows-msvc.exe`
 
-界面示例如下：
+Example interface:
 
-![添加进程排除项](images/screenshot-2026-04-03-182725.png)
+![Add process exclusion](images/screenshot-2026-04-03-182725.png)
 
-输入完成后点击 `添加` 即可。
+Click `Add` when done.
