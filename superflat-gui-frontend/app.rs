@@ -136,7 +136,7 @@ fn AddProfilePanel(
     view! {
         <div class="sidebar"
             class:open=move || (right_panel.get() == RightPanel::AddProfile
-                || (form_closing.get() && right_panel.get() != RightPanel::EditProfile(String::new())))
+                || (form_closing.get() && !matches!(right_panel.get(), RightPanel::EditProfile(_))))
                 && show_profiles.get()
         >
             <div class="sidebar-panel-form" class:closing=move || form_closing.get()>
