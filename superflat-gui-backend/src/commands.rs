@@ -24,22 +24,18 @@ pub async fn pick_directory(app: AppHandle) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Resolve the save name and git dir from a save_dir string, emitting EVENT_DONE on error.
-fn resolve_paths(
-    save_dir: &str,
-    app: &AppHandle,
-) -> Option<(PathBuf, PathBuf)> {
+/// Resolve the save path and git dir from a save_dir string.
+/// Returns an error message string on failure; caller is responsible for emit_done.
+fn resolve_paths(save_dir: &str) -> Option<(PathBuf, PathBuf)> {
     let save_path = PathBuf::from(save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
         log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
-        emit_done(&app);
         return None;
     }
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_owned(),
         None => {
             log::error!("Invalid save directory path");
-            emit_done(&app);
             return None;
         }
     };
@@ -67,9 +63,12 @@ pub async fn run_commit(
     app: AppHandle,
 ) {
     crate::reset_op_start();
-    let (save_path, git_dir) = match resolve_paths(&save_dir, &app) {
+    let (save_path, git_dir) = match resolve_paths(&save_dir) {
         Some(p) => p,
-        None => return,
+        None => {
+            emit_done(&app);
+            return;
+        }
     };
 
     let init = !git_dir.exists();
@@ -175,9 +174,12 @@ async fn do_commit_and_repack(
 #[tauri::command]
 pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, app: AppHandle) {
     crate::reset_op_start();
-    let (save_path, git_dir) = match resolve_paths(&save_dir, &app) {
+    let (save_path, git_dir) = match resolve_paths(&save_dir) {
         Some(p) => p,
-        None => return,
+        None => {
+            emit_done(&app);
+            return;
+        }
     };
 
     if save_path.exists() {
