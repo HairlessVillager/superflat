@@ -73,13 +73,59 @@ pub fn git_repo_exists(git_dir: &str) -> Result<PathBuf> {
     Ok(git_dir)
 }
 
-pub fn git_count_objects(git_dir: impl AsRef<OsStr>) -> Result<()> {
-    let cmd = git_cmd(git_dir, ["count-objects", "-vH"]);
+pub struct RepoStats {
+    pub count: u64,
+    pub size_mib: f64,
+    pub in_pack: u64,
+    pub packs: u64,
+    pub size_pack_mib: f64,
+    pub prune_packable: u64,
+    pub garbage: u64,
+    pub size_garbage_mib: f64,
+}
+
+impl RepoStats {
+    pub fn total_size_mib(&self) -> f64 {
+        self.size_mib + self.size_pack_mib + self.size_garbage_mib
+    }
+}
+
+pub fn git_count_objects(git_dir: impl AsRef<OsStr>) -> Result<RepoStats> {
+    let cmd = git_cmd(git_dir, ["count-objects", "-v"]);
     let result = exec(cmd, None)?;
+
+    let mut stats = RepoStats {
+        count: 0,
+        size_mib: 0.0,
+        in_pack: 0,
+        packs: 0,
+        size_pack_mib: 0.0,
+        prune_packable: 0,
+        garbage: 0,
+        size_garbage_mib: 0.0,
+    };
+
     for line in result.lines() {
+        if let Some((key, val)) = line.split_once(": ") {
+            let val = val.trim();
+            match key {
+                "count" => stats.count = val.parse().unwrap_or(0),
+                "size" => stats.size_mib = val.parse::<f64>().unwrap_or(0.0) / 1024.0,
+                "in-pack" => stats.in_pack = val.parse().unwrap_or(0),
+                "packs" => stats.packs = val.parse().unwrap_or(0),
+                "size-pack" => stats.size_pack_mib = val.parse::<f64>().unwrap_or(0.0) / 1024.0,
+                "prune-packable" => stats.prune_packable = val.parse().unwrap_or(0),
+                "garbage" => stats.garbage = val.parse().unwrap_or(0),
+                "size-garbage" => {
+                    stats.size_garbage_mib = val.parse::<f64>().unwrap_or(0.0) / 1024.0
+                }
+                _ => {}
+            }
+        }
         log::info!("git-count-objects: {line}");
     }
-    Ok(())
+
+    Ok(stats)
 }
 
 pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) -> Result<()> {

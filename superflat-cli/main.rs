@@ -179,7 +179,8 @@ fn main() {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
 
-            git_count_objects(git_dir.to_owned()).expect("failed to count git objects");
+            let stats = git_count_objects(git_dir.to_owned()).expect("failed to count git objects");
+            log::info!("Done. Repo total size: {:.2} MiB", stats.total_size_mib());
         }
         CliSubcommand::Checkout {
             save_dir,
@@ -192,7 +193,8 @@ fn main() {
                 log::warn!("save_dir {save_dir:?} already exists, renaming to {bak:?}");
                 std::fs::rename(&save_dir, &bak).expect("failed to rename save directory");
             }
-            checkout(save_dir, git_dir, commit, &mc_version)
+            checkout(save_dir, git_dir, commit, &mc_version);
+            log::info!("Done");
         }
 
         CliSubcommand::Utils { action } => match action {

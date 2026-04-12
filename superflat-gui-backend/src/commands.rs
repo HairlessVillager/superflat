@@ -154,13 +154,16 @@ async fn do_commit_and_repack(
                     .map_err(|e| e.to_string())?;
                 superflat::utils::cmd::git_repack_ad(&git_dir_clone, 4095, 2)
                     .map_err(|e| e.to_string())?;
-                superflat::utils::cmd::git_count_objects(&git_dir_clone)
+                let stats = superflat::utils::cmd::git_count_objects(&git_dir_clone)
                     .map_err(|e| e.to_string())?;
-                Ok::<(), String>(())
+                Ok::<_, String>(stats)
             })
             .await;
             match repack {
-                Ok(Ok(())) => log::info!("Done"),
+                Ok(Ok(stats)) => log::info!(
+                    "Done. Repo total size: {:.2} MiB",
+                    stats.total_size_mib()
+                ),
                 Ok(Err(e)) => log::error!("Commit succeeded but repack failed: {}", e),
                 Err(e) => log::error!("Commit succeeded but repack task failed: {}", e),
             }
