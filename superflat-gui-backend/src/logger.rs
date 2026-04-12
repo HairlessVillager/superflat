@@ -107,7 +107,9 @@ impl Log for GuiLogger {
         }
 
         let payload = LogPayload { level: level_str, message };
-        if let Some(app) = state.app.clone() {
+        let app = state.app.clone();
+        drop(state);
+        if let Some(app) = app {
             let _ = app.emit(EVENT_OUTPUT, payload);
         }
     }
