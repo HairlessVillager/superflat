@@ -5,8 +5,8 @@ use crate::bindings::log;
 
 pub const DEFAULT_BRANCH: &str = "main";
 pub const FORM_CLOSE_ANIMATION_MS: u32 = 200;
-pub const EVENT_OUTPUT: &str = "commit-output";
-pub const EVENT_DONE: &str = "commit-done";
+pub const EVENT_OUTPUT: &str = "sf-log";
+pub const EVENT_DONE: &str = "sf-done";
 
 // ── Arg structs ────────────────────────────────────────────────────────────
 

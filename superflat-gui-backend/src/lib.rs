@@ -10,8 +10,8 @@ mod profiles;
 
 pub use logger::GuiLogger;
 
-pub const EVENT_OUTPUT: &str = "commit-output";
-pub const EVENT_DONE: &str = "commit-done";
+pub const EVENT_OUTPUT: &str = "sf-log";
+pub const EVENT_DONE: &str = "sf-done";
 
 static GUI_LOGGER: GuiLogger = GuiLogger::new();
 
