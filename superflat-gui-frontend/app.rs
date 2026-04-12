@@ -292,22 +292,8 @@ fn CloneFromRemoteFormPanel(
     set_form_remote_url: WriteSignal<String>,
     set_form_branch: WriteSignal<String>,
     set_form_mc_version: WriteSignal<String>,
-    set_form_closing: WriteSignal<bool>,
-    set_list_instant: WriteSignal<bool>,
-    set_right_panel: WriteSignal<RightPanel>,
     clone_profile_form: impl Fn(leptos::ev::MouseEvent) + Copy + 'static,
 ) -> impl IntoView {
-    let _do_close = move |next: RightPanel| {
-        set_form_closing.set(true);
-        set_list_instant.set(true);
-        let cb = Closure::<dyn Fn()>::new(move || {
-            set_right_panel.set(next.clone());
-            set_form_closing.set(false);
-            set_list_instant.set(false);
-        });
-        set_timeout(&cb, FORM_CLOSE_ANIMATION_MS);
-        cb.forget();
-    };
     let (clone_show_errors, set_clone_show_errors) = signal(false);
     view! {
         <div class="sidebar"
@@ -802,8 +788,7 @@ pub fn App() -> impl IntoView {
                 form_branch=form_branch form_mc_version=form_mc_version
                 set_form_clone_git_dir=set_form_clone_git_dir set_form_remote_url=set_form_remote_url
                 set_form_branch=set_form_branch set_form_mc_version=set_form_mc_version
-                set_form_closing=set_form_closing set_list_instant=set_list_instant
-                set_right_panel=set_right_panel clone_profile_form=clone_profile_form
+                clone_profile_form=clone_profile_form
             />
             <Show when=move || show_profiles.get() || matches!(right_panel.get(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush)>
                 <div class="sidebar-overlay" on:click=move |_| {
