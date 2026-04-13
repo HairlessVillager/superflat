@@ -41,7 +41,7 @@ Superflat is a Minecraft save format conversion tool that converts Java Edition 
     - [ ] Save directory format support (26.1 and later)
 - [ ] Chunk de-duplication based on Minecraft original terrain generation algorithms (storing only modifications)
 - [ ] Change the project license to the Rust community standard MIT/Apache 2.0 dual-license
-    - [ ] Replace the `pumpkin-nbt` dependency
+    - [x] Replace the `pumpkin-nbt` dependency
     - [ ] Re-implement the Sub-chunk Dump (Sections Dump) feature
     - [ ] Remove `src/utils/palette.rs` from Git history entirely and force-push
 

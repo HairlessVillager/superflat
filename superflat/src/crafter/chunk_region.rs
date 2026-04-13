@@ -1,8 +1,9 @@
 use std::io::Cursor;
 
 use anyhow::{Context, Result};
-use pumpkin_nbt::{from_bytes, to_bytes};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use simdnbt::borrow::read;
+use simdnbt::{Deserialize, Serialize};
 
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
@@ -66,9 +67,7 @@ impl Crafter for ChunkRegionCrafter {
                         })?;
                         let other_dump = dump_nbt(sort_nbt(other), other_size)?;
                         let mut sections_dump = Vec::with_capacity(200 * 1024);
-                        // TODO
-                        to_bytes(&sections, &mut sections_dump)
-                            .expect("failed to serialize sections dump");
+                        sections.to_nbt().write(&mut sections_dump);
                         Ok(Some((chunk_x, chunk_z, other_dump, sections_dump)))
                     })
                     .collect::<Result<Vec<_>>>()
@@ -149,7 +148,10 @@ impl Crafter for ChunkRegionCrafter {
                         let other = load_nbt(Cursor::new(&nbt_data))
                             .context("failed to load other nbt")
                             .unwrap();
-                        let sections_dump: SectionsDump = from_bytes(Cursor::new(&dump_data))
+                        let nbt = read(&mut Cursor::new(dump_data.as_slice()))
+                            .expect("failed to read sections dump as nbt")
+                            .unwrap();
+                        let sections_dump: SectionsDump = SectionsDump::from_nbt(&nbt)
                             .expect("failed to deserialize sections dump");
                         let nbt = dump_nbt(
                             restore_chunk(other, sections_dump)

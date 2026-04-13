@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use serde::{Deserialize, Serialize};
-use simdnbt::owned::{BaseNbt, NbtCompound, NbtList, NbtTag};
+use simdnbt::owned::{BaseNbt, NbtCompound, NbtList};
+use simdnbt::{Deserialize, Serialize, borrow, owned};
 use std::io::{Read, Seek, SeekFrom::Start as SeekStart, Write};
 
 use crate::utils::palette::{BiomePalette, BlockPalette};
@@ -173,11 +173,73 @@ pub fn parse_xz(filename: &str) -> Result<(i32, i32)> {
     Ok((x, z))
 }
 
-#[derive(Serialize, Deserialize)]
+fn to_nbt_tag_vec_u8(data: Vec<u8>) -> owned::NbtTag {
+    owned::NbtTag::ByteArray(data)
+}
+
+fn from_nbt_tag_vec_u8(tag: borrow::NbtTag) -> Option<Vec<u8>> {
+    tag.byte_array().map(|x| x.to_owned())
+}
+
+fn to_nbt_tag_vec_u16(data: Vec<u16>) -> owned::NbtTag {
+    owned::NbtTag::List(NbtList::from(
+        data.into_iter().map(|x| x as i16).collect::<Vec<_>>(),
+    ))
+}
+
+fn from_nbt_tag_vec_u16(tag: borrow::NbtTag) -> Option<Vec<u16>> {
+    Some(
+        tag.list()?
+            .shorts()?
+            .into_iter()
+            .map(|x| x as u16)
+            .collect::<Vec<_>>(),
+    )
+}
+
 pub struct Section {
     pub y: i8,
     pub biome: Vec<u8>,
     pub block_state: Vec<u16>,
+}
+
+impl simdnbt::Serialize for Section {
+    fn to_compound(self) -> simdnbt::owned::NbtCompound {
+        let mut nbt = simdnbt::owned::NbtCompound::new();
+        if let Some(item) = simdnbt::ToNbtTag::to_optional_nbt_tag(self.y) {
+            nbt.insert("y", item);
+        }
+        nbt.insert("biome", to_nbt_tag_vec_u8(self.biome));
+        nbt.insert("block_state", to_nbt_tag_vec_u16(self.block_state));
+        nbt
+    }
+}
+
+impl simdnbt::Deserialize for Section {
+    fn from_compound(nbt: simdnbt::borrow::NbtCompound) -> Result<Self, simdnbt::DeserializeError> {
+        let value = Self {
+            y: simdnbt::FromNbtTag::from_optional_nbt_tag(nbt.get("y"))?.ok_or(
+                simdnbt::DeserializeError::MismatchedFieldType("Section::y".to_owned()),
+            )?,
+            biome: {
+                let x = nbt
+                    .get("biome")
+                    .ok_or(simdnbt::DeserializeError::MissingField)?;
+                let x = from_nbt_tag_vec_u8(x).ok_or(
+                    simdnbt::DeserializeError::MismatchedFieldType("Section::biome".to_owned()),
+                )?;
+                Ok(x)
+            }?,
+            block_state: {
+                let x = nbt
+                    .get("block_state")
+                    .ok_or(simdnbt::DeserializeError::MissingField)?;
+                let x = from_nbt_tag_vec_u16(x).ok_or(simdnbt::DeserializeError::MissingField)?;
+                Ok(x)
+            }?,
+        };
+        Ok(value)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -240,16 +302,16 @@ fn load_sections(dump: SectionsDump) -> Result<NbtList> {
         .into_iter()
         .map(|section| {
             let kvs = vec![
-                ("Y".into(), NbtTag::Byte(section.y)),
+                ("Y".into(), owned::NbtTag::Byte(section.y)),
                 (
                     "biomes".into(),
-                    NbtTag::Compound(
+                    owned::NbtTag::Compound(
                         BiomePalette::from_iter(section.biome.into_iter()).to_disk_nbt()?,
                     ),
                 ),
                 (
                     "block_states".into(),
-                    NbtTag::Compound(
+                    owned::NbtTag::Compound(
                         BlockPalette::from_iter(section.block_state.into_iter()).to_disk_nbt()?,
                     ),
                 ),

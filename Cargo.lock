@@ -4871,18 +4871,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-nbt"
-version = "0.1.0-dev+1.21.11"
-source = "git+https://github.com/Pumpkin-MC/Pumpkin.git?rev=e10a45b3db3cf1ecc5909bae6cdc3409cf907099#e10a45b3db3cf1ecc5909bae6cdc3409cf907099"
-dependencies = [
- "bytes",
- "cesu8",
- "flate2",
- "serde",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "quick-xml"
 version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5941,7 +5929,6 @@ dependencies = [
  "glob",
  "log",
  "minecraft-data-rs",
- "pumpkin-nbt",
  "rayon",
  "serde",
  "simdnbt",
