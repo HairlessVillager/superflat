@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
-use crate::utils::nbt::{dump_nbt, load_nbt, sort_nbt};
+use crate::utils::nbt2::{dump_nbt, load_nbt, sort_nbt};
 use crate::utils::region::{parse_xz, read_region, write_region};
 
 const FLATTEN_PATTERNS: &[&str] = &[
@@ -49,11 +49,22 @@ impl Crafter for OtherRegionCrafter {
                     continue;
                 };
                 storage.put(&format!("{key}/timestamp-header"), &timestamp_header);
-                for (chunk_x, chunk_z, nbt) in chunks {
+                for (chunk_x, chunk_z, raw_bytes) in chunks {
                     let nbt = {
-                        let raw = load_nbt(Cursor::new(&nbt), true);
-                        let sorted = sort_nbt(raw);
-                        dump_nbt(sorted, true)
+                        let size = raw_bytes.len();
+                        let raw_nbt = load_nbt(Cursor::new(&raw_bytes))
+                            .context("failed to load chunk nbt")
+                            .unwrap();
+                        let sorted_nbt = sort_nbt(raw_nbt);
+                        let sorted_bytes = dump_nbt(sorted_nbt, size)
+                            .context("failed to dump chunk nbt")
+                            .unwrap();
+                        debug_assert_eq!(
+                            size,
+                            sorted_bytes.len(),
+                            "raw nbt length should equal to sorted"
+                        );
+                        sorted_bytes
                     };
                     storage.put(&format!("{key}/c.{chunk_x}.{chunk_z}.nbt"), &nbt);
                 }
@@ -87,7 +98,9 @@ impl Crafter for OtherRegionCrafter {
                 write_region(
                     region_x,
                     region_z,
-                    &timestamp_header[..4096].try_into().expect("timestamp header must be at least 4096 bytes"),
+                    &timestamp_header[..4096]
+                        .try_into()
+                        .expect("timestamp header must be at least 4096 bytes"),
                     chunks,
                     Cursor::new(&mut mca_buf),
                 )

@@ -16,6 +16,7 @@ pumpkin-nbt = { git = "https://github.com/Pumpkin-MC/Pumpkin.git", rev = "e10a45
 serde = { version = "1.0.228", features = ["derive"] }
 bytes = { version = "1.11.1", features = ["serde"] }
 gix = "0.81.0"
+simdnbt = "0.10.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"

@@ -5731,6 +5731,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
+name = "simd_cesu8"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94f90157bb87cddf702797c5dadfa0be7d266cdf49e22da2fcaa32eff75b2c33"
+dependencies = [
+ "rustc_version",
+ "simdutf8",
+]
+
+[[package]]
+name = "simdnbt"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7893a73842e21e674dde2bb31be1b949c127294f13dd52ee530d2f75a90ffe44"
+dependencies = [
+ "byteorder",
+ "flate2",
+ "serde",
+ "simd_cesu8",
+ "simdnbt-derive",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "simdnbt-derive"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4518807f59223e4e9c6765b7fb98d1eb70799a2dcee7db485a45cc422870afdb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
 name = "siphasher"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5903,6 +5944,7 @@ dependencies = [
  "pumpkin-nbt",
  "rayon",
  "serde",
+ "simdnbt",
  "tempfile",
 ]
 
