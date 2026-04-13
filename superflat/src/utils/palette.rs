@@ -25,10 +25,13 @@
 //
 // SPDX-License-Identifier: GPL-3.0
 
-use std::{hash::Hash, iter::repeat_n};
+use std::{borrow::Cow, hash::Hash, iter::repeat_n};
 
 use anyhow::{Context, Result};
-use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+use simdnbt::{
+    Mutf8String,
+    owned::{NbtCompound, NbtList, NbtTag},
+};
 
 use super::mc_data::{
     biome_id_from_name, biome_name_from_id, block_name_and_props_from_state_id,
@@ -117,7 +120,11 @@ impl<V: Hash + Eq + Copy + Default, const DIM: usize> PalettedContainer<V, DIM> 
                     .chunks(blocks_per_i64 as usize)
                     .map(|chunk| {
                         chunk.iter().enumerate().fold(0, |acc, (index, key)| {
-                            let key_index = data.palette.iter().position(|&x| x == *key).expect("key not found in palette");
+                            let key_index = data
+                                .palette
+                                .iter()
+                                .position(|&x| x == *key)
+                                .expect("key not found in palette");
                             debug_assert!((1 << bits_per_entry) > key_index);
 
                             let packed_offset_index =
@@ -146,7 +153,8 @@ impl<V: Hash + Eq + Copy + Default, const DIM: usize> PalettedContainer<V, DIM> 
         if palette.len() == 1 {
             return Self::Homogeneous(palette[0]);
         }
-        let packed_data = packed_data.expect("packed data is required when palette has more than one entry");
+        let packed_data =
+            packed_data.expect("packed data is required when palette has more than one entry");
 
         let bits_per_key = encompassing_bits(palette.len()).max(minimum_bits_per_entry);
         let index_mask = (1 << bits_per_key) - 1;
@@ -241,22 +249,21 @@ impl BiomePalette {
     #[must_use]
     pub fn from_disk_nbt(nbt: &NbtCompound) -> Result<Self> {
         let palette = nbt
-            .get_list("palette")
+            .list("palette")
             .with_context(|| format!("missing NBT list 'palette', got: {nbt:#?}"))?
+            .strings()
+            .with_context(|| format!("expect 'palette' is a NBT string list"))?
             .into_iter()
-            .enumerate()
-            .map(|(idx, entry)| {
-                let s = entry.extract_string().with_context(|| {
-                    format!("expect 'palette.{idx}' is a NBT string, got: {entry:#?}")
-                })?;
-                let key = s.strip_prefix("minecraft:").unwrap_or(s);
+            .map(|entry| {
+                let s = entry.to_string_lossy();
+                let key = s.strip_prefix("minecraft:").unwrap_or(&s);
                 biome_id_from_name(key)
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self::from_palette_and_packed_data(
             palette,
-            nbt.get_long_array("data"),
+            nbt.long_array("data"),
             BIOME_DISK_MIN_BITS,
         ))
     }
@@ -267,28 +274,27 @@ impl BiomePalette {
         let bits_per_entry = self.bits_per_entry().max(BIOME_DISK_MIN_BITS);
         let (palette, packed_data) = self.to_palette_and_packed_data(bits_per_entry);
 
-        let palette = NbtTag::List(
+        let palette = NbtTag::List(NbtList::from(
             palette
                 .into_iter()
                 .map(|registry_id| {
-                    Ok(NbtTag::String(format!(
+                    Ok(Mutf8String::from_string(format!(
                         "minecraft:{}",
                         biome_name_from_id(registry_id)?
                     )))
                 })
-                .collect::<Result<_>>()?,
-        );
+                .collect::<Result<Vec<_>>>()?,
+        ));
 
-        Ok(NbtCompound {
-            child_tags: if packed_data.is_empty() {
-                vec![("palette".into(), palette)]
-            } else {
-                vec![
-                    ("data".into(), NbtTag::LongArray(packed_data.to_vec())),
-                    ("palette".into(), palette),
-                ]
-            },
-        })
+        let kvs = if packed_data.is_empty() {
+            vec![("palette".into(), palette)]
+        } else {
+            vec![
+                ("data".into(), NbtTag::LongArray(packed_data.to_vec())),
+                ("palette".into(), palette),
+            ]
+        };
+        Ok(NbtCompound::from_values(kvs))
     }
 }
 
@@ -296,37 +302,49 @@ impl BlockPalette {
     #[must_use]
     pub fn from_disk_nbt(nbt: &NbtCompound) -> Result<Self> {
         let palette = nbt
-            .get_list("palette")
+            .list("palette")
             .with_context(|| format!("missing NBT list 'palette', got: {nbt:#?}"))?
+            .compounds()
+            .with_context(|| format!("expect 'palette' is a NBT compound list"))?
             .into_iter()
             .enumerate()
             .map(|(idx, entry)| {
-                let entry = entry.extract_compound().with_context(|| {
-                    format!("expect 'palette.{idx}' is a NBT compund, got: {entry:#?}")
-                })?;
-                let block_name = entry.get_string("Name").with_context(|| {
+                let block_name = entry.string("Name").with_context(|| {
                     format!("missing NBT string 'palette.{idx}.Name', got: {entry:#?}")
                 })?;
-                let name = block_name.strip_prefix("minecraft:").unwrap_or(block_name);
-                if let Some(props) = entry.get_compound("Properties") {
-                    let props_map = props
-                        .child_tags
+                let name_binding = block_name.to_str();
+                let name = name_binding
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(name_binding.as_ref());
+                if let Some(props) = entry.compound("Properties") {
+                    let props_map: Vec<(Cow<'_, str>, Cow<'_, str>)> = props
                         .iter()
-                        .enumerate()
-                        .map(|(idx2, (key, value))| Ok((key.as_str(), value.extract_string().with_context(|| {
-                            format!("expect 'palette.{idx}.Properties.{idx2}' is a NBT string, got: {value:#?}")
-                        })?)))
+                        .map(|(k, value)| {
+                            let v = value.string().with_context(|| {
+                                format!(
+                                    "expect 'palette.{idx}.Properties.{}' is a NBT string",
+                                    k.to_str()
+                                )
+                            })?;
+                            Ok((k.to_str(), v.to_str()))
+                        })
                         .collect::<Result<Vec<_>>>()?;
-                    block_state_id_from_name_and_props(name, &props_map)
+                    block_state_id_from_name_and_props(
+                        &name,
+                        &props_map
+                            .iter()
+                            .map(|(k, v)| (k.as_ref(), v.as_ref()))
+                            .collect::<Vec<_>>(),
+                    )
                 } else {
-                    block_state_id_from_name_and_props(name, &[])
+                    block_state_id_from_name_and_props(&name, &[])
                 }
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self::from_palette_and_packed_data(
             palette,
-            nbt.get_long_array("data"),
+            nbt.long_array("data"),
             BLOCK_DISK_MIN_BITS,
         ))
     }
@@ -335,50 +353,58 @@ impl BlockPalette {
         let bits_per_entry = self.bits_per_entry().max(BLOCK_DISK_MIN_BITS);
         let (palette, packed_data) = self.to_palette_and_packed_data(bits_per_entry);
 
-        let palette = NbtTag::List(
+        let palette = NbtTag::List(NbtList::from(
             palette
                 .into_iter()
                 .map(|e| {
                     let palette_entry = Self::block_state_id_to_palette_entry(e)?;
                     Ok(NbtTag::Compound(palette_entry))
                 })
-                .collect::<Result<_>>()?,
-        );
+                .collect::<Result<Vec<_>>>()?,
+        ));
 
-        Ok(NbtCompound {
-            child_tags: if packed_data.is_empty() {
-                vec![("palette".into(), palette)]
-            } else {
-                vec![
-                    ("data".into(), NbtTag::LongArray(packed_data.to_vec())),
-                    ("palette".into(), palette),
-                ]
-            },
-        })
+        let kvs = if packed_data.is_empty() {
+            vec![("palette".into(), palette)]
+        } else {
+            vec![
+                ("data".into(), NbtTag::LongArray(packed_data.to_vec())),
+                ("palette".into(), palette),
+            ]
+        };
+        Ok(NbtCompound::from_values(kvs))
     }
 
     fn block_state_id_to_palette_entry(registry_id: u16) -> Result<NbtCompound> {
         let (name, props) = block_name_and_props_from_state_id(registry_id)?;
 
-        let child_tags = if props.is_empty() {
-            vec![("Name".into(), NbtTag::String(format!("minecraft:{name}")))]
+        let kvs = if props.is_empty() {
+            vec![(
+                "Name".into(),
+                NbtTag::String(Mutf8String::from_string(format!("minecraft:{name}"))),
+            )]
         } else {
-            let props_nbt = props
+            let props_kvs = props
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), NbtTag::String(v.to_string())))
+                .map(|(k, v)| {
+                    (
+                        Mutf8String::from_string(k.to_string()),
+                        NbtTag::String(Mutf8String::from_string(v.to_string())),
+                    )
+                })
                 .collect::<Vec<_>>();
             vec![
-                ("Name".into(), NbtTag::String(format!("minecraft:{name}"))),
+                (
+                    "Name".into(),
+                    NbtTag::String(Mutf8String::from_string(format!("minecraft:{name}"))),
+                ),
                 (
                     "Properties".into(),
-                    NbtTag::Compound(NbtCompound {
-                        child_tags: props_nbt,
-                    }),
+                    NbtTag::Compound(NbtCompound::from_values(props_kvs)),
                 ),
             ]
         };
 
-        Ok(NbtCompound { child_tags })
+        Ok(NbtCompound::from_values(kvs))
     }
 }
 

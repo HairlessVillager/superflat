@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
-use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+use simdnbt::owned::{BaseNbt, NbtCompound, NbtList, NbtTag};
 use std::io::{Read, Seek, SeekFrom::Start as SeekStart, Write};
 
 use crate::utils::palette::{BiomePalette, BlockPalette};
@@ -185,26 +185,21 @@ pub struct SectionsDump {
     pub sections: Vec<Section>,
 }
 
-fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
+fn dump_sections(sections: &NbtList) -> Result<SectionsDump> {
     let sections = sections
+        .compounds()
+        .context("expect sections is a NBT compound list, got: {sections:#?}")?
         .iter()
         .enumerate()
         .map(|(idx, section)| {
-            let section = section.extract_compound().with_context(|| {
-                format!("expect sections.{idx} is a NBT compund, got: {section:#?}")
-            })?;
-            let y = section.get_byte("Y").with_context(|| {
+            let y = section.byte("Y").with_context(|| {
                 format!("Missing NBT byte 'sections.{idx}.Y', got: {section:#?}")
             })?;
             let biome_dump = {
-                let Some(biome) = section.get_compound("biomes") else {
+                let Some(biome) = section.compound("biomes") else {
                     log::warn!(
                         "Missing 'sections.{idx}.biomes' (y={y}), all fields got: {:?}",
-                        section
-                            .child_tags
-                            .iter()
-                            .map(|(field, _)| field)
-                            .collect::<Vec<_>>()
+                        section.keys().collect::<Vec<_>>()
                     );
                     return Ok(None);
                 };
@@ -214,14 +209,10 @@ fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
                     .collect::<Vec<_>>()
             };
             let block_dump = {
-                let Some(block_states) = section.get_compound("block_states") else {
+                let Some(block_states) = section.compound("block_states") else {
                     log::warn!(
                         "Missing 'sections.{idx}.block_states' (y={y}), all fields got: {:?}",
-                        section
-                            .child_tags
-                            .iter()
-                            .map(|(field, _)| field)
-                            .collect::<Vec<_>>()
+                        section.keys().collect::<Vec<_>>()
                     );
                     return Ok(None);
                 };
@@ -243,11 +234,12 @@ fn dump_sections(sections: &[NbtTag]) -> Result<SectionsDump> {
     Ok(SectionsDump { sections })
 }
 
-fn load_sections(dump: SectionsDump) -> Result<Vec<NbtTag>> {
-    dump.sections
+fn load_sections(dump: SectionsDump) -> Result<NbtList> {
+    let list = dump
+        .sections
         .into_iter()
         .map(|section| {
-            let child_tags = vec![
+            let kvs = vec![
                 ("Y".into(), NbtTag::Byte(section.y)),
                 (
                     "biomes".into(),
@@ -262,61 +254,47 @@ fn load_sections(dump: SectionsDump) -> Result<Vec<NbtTag>> {
                     ),
                 ),
             ];
-            Ok(NbtTag::Compound(NbtCompound { child_tags }))
+            Ok(NbtCompound::from_values(kvs))
         })
-        .collect::<Result<_>>()
+        .collect::<Result<Vec<_>>>()?;
+    Ok(NbtList::from(list))
 }
 
-/// Split a chunk nbt into (other_nbt, sections_dump, warnings)
-pub fn split_chunk(mut nbt: Nbt) -> Result<(Nbt, SectionsDump)> {
+/// Split a chunk nbt into (other_nbt, sections_dump)
+pub fn split_chunk(nbt: BaseNbt) -> Result<(BaseNbt, SectionsDump)> {
+    let name = nbt.name().to_owned();
+    let mut nbt = nbt.as_compound();
     let sections_dump = {
-        let sections_idx = nbt
-            .root_tag
-            .child_tags
-            .iter()
-            .position(|(field, _)| field == "sections")
-            .with_context(|| {
-                format!(
-                    "Missing 'sections', all fields: {:#?}",
-                    nbt.root_tag
-                        .child_tags
-                        .iter()
-                        .map(|(field, _)| field)
-                        .collect::<Vec<_>>()
-                )
-            })?;
-        let sections = nbt.root_tag.child_tags.swap_remove(sections_idx).1;
+        let sections = nbt.remove("sections").ok_or_else(|| {
+            anyhow::anyhow!(format!(
+                "Missing 'sections', all fields: {:#?}",
+                nbt.keys().collect::<Vec<_>>()
+            ))
+        })?;
         let sections = sections
-            .extract_list()
-            .with_context(|| format!("expect sections is a NBT list, got: {sections:#?}"))?;
+            .list()
+            .ok_or(anyhow::anyhow!("expect sections is a NBT list"))?;
         dump_sections(sections)?
     };
 
     // TODO: extract block/sky light
-    if let Some(is_light_on_idx) = nbt
-        .root_tag
-        .child_tags
-        .iter()
-        .position(|(field, _)| field == "isLightOn")
-    {
-        nbt.root_tag.child_tags[is_light_on_idx].1 = NbtTag::Byte(i8::from(false));
+    if let Some(is_light_on_idx) = nbt.byte_mut("isLightOn") {
+        *is_light_on_idx = i8::from(false);
     } else {
         anyhow::bail!(
             "Missing 'isLightOn', all fields: {:#?}",
-            nbt.root_tag
-                .child_tags
-                .iter()
-                .map(|(field, _)| field)
-                .collect::<Vec<_>>()
+            nbt.keys().collect::<Vec<_>>()
         );
         // nbt.root_tag.put_bool("isLightOn", false);
     }
 
-    Ok((nbt, sections_dump))
+    Ok((BaseNbt::new(name, nbt), sections_dump))
 }
 
 /// Restore a chunk nbt from (other_nbt, sections_dump)
-pub fn restore_chunk(mut other: Nbt, dump: SectionsDump) -> Result<Nbt> {
-    other.root_tag.put_list("sections", load_sections(dump)?);
-    Ok(other)
+pub fn restore_chunk(other: BaseNbt, dump: SectionsDump) -> Result<BaseNbt> {
+    let name = other.name().to_owned();
+    let mut other = other.as_compound();
+    other.insert("sections", load_sections(dump)?);
+    Ok(BaseNbt::new(name, other))
 }

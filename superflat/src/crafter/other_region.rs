@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
-use crate::utils::nbt2::{dump_nbt, load_nbt, sort_nbt};
+use crate::utils::nbt::{dump_nbt, load_nbt, sort_nbt};
 use crate::utils::region::{parse_xz, read_region, write_region};
 
 const FLATTEN_PATTERNS: &[&str] = &[

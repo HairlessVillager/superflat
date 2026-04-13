@@ -271,7 +271,7 @@ fn main() {
                     .iter()
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
                     .expect("chunk not found");
-                let nbt = load_nbt(Cursor::new(nbt_bytes), true);
+                let nbt = load_nbt(Cursor::new(nbt_bytes)).expect("failed to load chunk nbt");
                 let (_, sections_dump) =
                     split_chunk(nbt).expect("failed to load sections dump from chunk nbt");
                 let section = sections_dump

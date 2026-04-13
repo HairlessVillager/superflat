@@ -1,48 +1,50 @@
-use std::io::{Read, Seek};
+use std::io::Cursor;
 
-use bytes::Bytes;
-use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelper, tag::NbtTag};
+use anyhow::Result;
+use simdnbt::owned::{BaseNbt, Nbt, NbtCompound, NbtList, NbtTag, read};
 
-fn sort_nbt_compound(compound: NbtCompound) -> NbtCompound {
-    let mut normalized: Vec<(String, NbtTag)> = compound
-        .child_tags
-        .into_iter()
-        .map(|(field, tag)| (field, sort_nbt_tag(tag)))
-        .collect();
-    normalized.sort_by(|a, b| a.0.cmp(&b.0));
-    NbtCompound {
-        child_tags: normalized,
+pub fn load_nbt(mut data: Cursor<&[u8]>) -> Result<BaseNbt> {
+    if let Nbt::Some(base) = read(&mut data)? {
+        Ok(base)
+    } else {
+        Err(anyhow::anyhow!("nbt data is empty"))
     }
 }
 
-fn sort_nbt_tag(tag: NbtTag) -> NbtTag {
-    match tag {
-        NbtTag::Compound(compound) => NbtTag::Compound(sort_nbt_compound(compound)),
-        NbtTag::List(list) => {
-            let normalized: Vec<NbtTag> = list.into_iter().map(|tag| sort_nbt_tag(tag)).collect();
-            NbtTag::List(normalized)
+pub fn dump_nbt(nbt: BaseNbt, size: usize) -> Result<Vec<u8>> {
+    let mut buf = Vec::with_capacity(size);
+    nbt.write(&mut buf);
+    Ok(buf)
+}
+
+pub fn sort_nbt(nbt: BaseNbt) -> BaseNbt {
+    fn sort_tag(tag: NbtTag) -> NbtTag {
+        match tag {
+            NbtTag::Compound(compound) => NbtTag::Compound(sort_compound(compound)),
+            NbtTag::List(list) => NbtTag::List(sort_list(list)),
+            other => other,
         }
-        other => other,
     }
-}
-
-pub fn sort_nbt(nbt: Nbt) -> Nbt {
-    Nbt::new(nbt.name, sort_nbt_compound(nbt.root_tag))
-}
-
-pub fn load_nbt<R: Read + Seek>(reader: R, named: bool) -> Nbt {
-    let mut helper = NbtReadHelper::new(reader);
-    if named {
-        Nbt::read(&mut helper).expect("failed to read named nbt")
-    } else {
-        Nbt::read_unnamed(&mut helper).expect("failed to read unnamed nbt")
+    fn sort_list(list: NbtList) -> NbtList {
+        match list {
+            NbtList::List(lists) => {
+                NbtList::List(lists.into_iter().map(|list| sort_list(list)).collect())
+            }
+            NbtList::Compound(comps) => {
+                NbtList::Compound(comps.into_iter().map(|comp| sort_compound(comp)).collect())
+            }
+            other => other,
+        }
     }
-}
-
-pub fn dump_nbt(nbt: Nbt, named: bool) -> Bytes {
-    if named {
-        nbt.write()
-    } else {
-        nbt.write_unnamed()
+    fn sort_compound(comp: NbtCompound) -> NbtCompound {
+        let mut kvs = comp
+            .into_iter()
+            .map(|(k, v)| (k, sort_tag(v)))
+            .collect::<Vec<_>>();
+        kvs.sort_unstable_by(|(k1, _), (k2, _)| k1.as_bytes().cmp(k2.as_bytes()));
+        NbtCompound::from_values(kvs)
     }
+    let name = nbt.name().to_owned();
+    let comp = sort_compound(nbt.as_compound());
+    BaseNbt::new(name, comp)
 }

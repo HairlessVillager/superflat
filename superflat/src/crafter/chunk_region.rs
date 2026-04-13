@@ -49,16 +49,26 @@ impl Crafter for ChunkRegionCrafter {
                 let result = chunks
                     .into_par_iter()
                     .map(|(chunk_x, chunk_z, nbt)| {
-                        let nbt = load_nbt(Cursor::new(&nbt), true);
-                        if nbt.get_string("Status").expect("missing Status field in chunk nbt") != "minecraft:full" {
+                        let other_size = nbt.len();
+                        let nbt = load_nbt(Cursor::new(&nbt))
+                            .context("failed to load chunk nbt")
+                            .unwrap();
+                        if nbt
+                            .string("Status")
+                            .expect("missing Status field in chunk nbt")
+                            .to_string_lossy()
+                            != "minecraft:full"
+                        {
                             return Ok(None);
                         }
                         let (other, sections) = split_chunk(nbt).with_context(|| {
                             format!("failed to process chunk ({chunk_x}, {chunk_z}) at file {key}")
                         })?;
-                        let other_dump = dump_nbt(sort_nbt(other), true);
+                        let other_dump = dump_nbt(sort_nbt(other), other_size)?;
                         let mut sections_dump = Vec::with_capacity(200 * 1024);
-                        to_bytes(&sections, &mut sections_dump).expect("failed to serialize sections dump");
+                        // TODO
+                        to_bytes(&sections, &mut sections_dump)
+                            .expect("failed to serialize sections dump");
                         Ok(Some((chunk_x, chunk_z, other_dump, sections_dump)))
                     })
                     .collect::<Result<Vec<_>>>()
@@ -136,15 +146,19 @@ impl Crafter for ChunkRegionCrafter {
                 let chunks = tasks
                     .into_par_iter()
                     .map(|(chunk_x, chunk_z, nbt_data, dump_data)| {
-                        let other = load_nbt(Cursor::new(&nbt_data), true);
-                        let sections_dump: SectionsDump =
-                            from_bytes(Cursor::new(&dump_data)).expect("failed to deserialize sections dump");
+                        let other = load_nbt(Cursor::new(&nbt_data))
+                            .context("failed to load other nbt")
+                            .unwrap();
+                        let sections_dump: SectionsDump = from_bytes(Cursor::new(&dump_data))
+                            .expect("failed to deserialize sections dump");
                         let nbt = dump_nbt(
                             restore_chunk(other, sections_dump)
                                 .with_context(|| format!("failed to restore chunk for {ts_key}"))
                                 .expect("failed to restore chunk"),
-                            true,
-                        );
+                            300 * 1024, // 300 KiB
+                        )
+                        .context("failed to dump other nbt")
+                        .unwrap();
                         (chunk_x, chunk_z, nbt)
                     })
                     .collect::<Vec<_>>();
@@ -153,7 +167,9 @@ impl Crafter for ChunkRegionCrafter {
                 write_region(
                     region_x,
                     region_z,
-                    &timestamp_header[..4096].try_into().expect("timestamp header must be at least 4096 bytes"),
+                    &timestamp_header[..4096]
+                        .try_into()
+                        .expect("timestamp header must be at least 4096 bytes"),
                     chunks,
                     Cursor::new(&mut mca_buf),
                 )
