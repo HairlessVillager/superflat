@@ -1,0 +1,13 @@
+[build]
+target = "./superflat-gui-frontend/index.html"
+
+[watch]
+ignore = [
+    "./superflat",
+    "./superflat-cli",
+    "./superflat-gui-backend",
+]
+
+[serve]
+port = 1420
+open = false

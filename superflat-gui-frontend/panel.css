@@ -1,0 +1,126 @@
+/* ── Panel form body ─────────────────────────────────────── */
+
+.panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+}
+
+.panel-label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    color: #8da87a;
+}
+
+.panel-label input {
+    padding: 7px 10px;
+    background: #10180d;
+    border: 2px solid #172111;
+    color: #e4f7d8;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    transition: border-color 0.15s ease;
+}
+
+.panel-label input:hover:not(:disabled) {
+    border-color: #3a5a2a;
+}
+
+.panel-label input:focus-visible {
+    outline: none;
+}
+
+.panel-label input:disabled {
+    opacity: 0.5;
+}
+
+.panel-label textarea {
+    padding: 7px 10px;
+    background: #10180d;
+    border: 2px solid #172111;
+    color: #e4f7d8;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    resize: vertical;
+    line-height: 1.5;
+    transition: border-color 0.15s ease;
+}
+
+.panel-label textarea:hover {
+    border-color: #3a5a2a;
+}
+
+.panel-label textarea:focus-visible {
+    outline: none;
+}
+
+.panel-label input.invalid {
+    border-color: #9b2020;
+    animation: shake 0.35s ease;
+}
+
+.panel-label input.invalid:focus {
+    border-color: #c0392b;
+}
+
+.panel-label textarea.invalid {
+    border-color: #9b2020;
+    animation: shake 0.35s ease;
+}
+
+.panel-label textarea.invalid:focus {
+    border-color: #c0392b;
+}
+
+@keyframes shake {
+    0% {
+        transform: translateX(0);
+    }
+    20% {
+        transform: translateX(-6px);
+    }
+    40% {
+        transform: translateX(5px);
+    }
+    60% {
+        transform: translateX(-4px);
+    }
+    80% {
+        transform: translateX(3px);
+    }
+    100% {
+        transform: translateX(0);
+    }
+}
+
+.panel-dir-row {
+    display: flex;
+    gap: 6px;
+}
+
+.panel-dir-row input {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0f170c;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #405635;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #5b7a49;
+}

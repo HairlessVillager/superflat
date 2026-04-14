@@ -1,0 +1,31 @@
+[package]
+name = "superflat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+
+flate2 = "1.1.9"
+glob = "0.3.3"
+rayon = "1.11.0"
+minecraft-data-rs = { git = "https://github.com/HairlessVillager/minecraft-data-rs.git", rev = "52f23357b2fec4473b7a2dc0110b2f99cb50a4e4" }
+serde = { version = "1.0.228", features = ["derive"] }
+bytes = { version = "1.11.1", features = ["serde"] }
+gix = "0.81.0"
+simdnbt = "0.10.0"
+bytemuck = { version = "1.25.0", features = ["extern_crate_alloc"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+criterion = { version = "0.8.2" }
+
+[[bench]]
+name = "git_odb"
+harness = false
+
+[[bench]]
+name = "unflatten"
+harness = false

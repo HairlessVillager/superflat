@@ -1,0 +1,32 @@
+[workspace]
+members = [
+    "superflat",
+    "superflat-cli",
+    "superflat-gui-backend",
+    "superflat-gui-frontend",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.6.2"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
+[workspace.dependencies]
+anyhow = "1.0.102"
+log = "0.4.29"
