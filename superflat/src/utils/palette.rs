@@ -61,7 +61,7 @@ pub fn load<T: Copy + Default + Eq, const SIZE: usize>(
 
     for (cube_chunk, row) in flattened_cube.chunks(chunk_size).zip(rows.iter_mut()) {
         *row = 0;
-        for cube_elem in cube_chunk {
+        for cube_elem in cube_chunk.iter().rev() {
             let palette_index = entries.iter().position(|x| x == cube_elem).unwrap() as u64;
             *row <<= bits;
             *row |= palette_index;
