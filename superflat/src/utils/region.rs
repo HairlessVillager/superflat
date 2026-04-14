@@ -5,7 +5,7 @@ use simdnbt::owned::{BaseNbt, NbtCompound, NbtList};
 use simdnbt::{Deserialize, Serialize, borrow, owned};
 use std::io::{Read, Seek, SeekFrom::Start as SeekStart, Write};
 
-use crate::utils::palette::{BiomePalette, BlockPalette};
+use super::palette::{dump_biome, dump_block, load_biome, load_block};
 
 const SECTOR_SIZE: usize = 4096;
 
@@ -265,10 +265,7 @@ fn dump_sections(sections: &NbtList) -> Result<SectionsDump> {
                     );
                     return Ok(None);
                 };
-                BiomePalette::from_disk_nbt(biome)?
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>()
+                dump_biome(biome)?.as_flattened().as_flattened().into()
             };
             let block_dump = {
                 let Some(block_states) = section.compound("block_states") else {
@@ -278,10 +275,10 @@ fn dump_sections(sections: &NbtList) -> Result<SectionsDump> {
                     );
                     return Ok(None);
                 };
-                BlockPalette::from_disk_nbt(block_states)?
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>()
+                dump_block(block_states)?
+                    .as_flattened()
+                    .as_flattened()
+                    .into()
             };
             // TODO: extract block/sky light
             Ok(Some(Section {
@@ -305,15 +302,17 @@ fn load_sections(dump: SectionsDump) -> Result<NbtList> {
                 ("Y".into(), owned::NbtTag::Byte(section.y)),
                 (
                     "biomes".into(),
-                    owned::NbtTag::Compound(
-                        BiomePalette::from_iter(section.biome.into_iter()).to_disk_nbt()?,
-                    ),
+                    owned::NbtTag::Compound(load_biome(bytemuck::cast_box(
+                        Box::<[u8; 64]>::try_from(section.biome.into_boxed_slice())
+                            .map_err(|_| anyhow::anyhow!("Vec length does not match S^3"))?,
+                    ))?),
                 ),
                 (
                     "block_states".into(),
-                    owned::NbtTag::Compound(
-                        BlockPalette::from_iter(section.block_state.into_iter()).to_disk_nbt()?,
-                    ),
+                    owned::NbtTag::Compound(load_block(bytemuck::cast_box(
+                        Box::<[u16; 4096]>::try_from(section.block_state.into_boxed_slice())
+                            .map_err(|_| anyhow::anyhow!("Vec length does not match S^3"))?,
+                    ))?),
                 ),
             ];
             Ok(NbtCompound::from_values(kvs))

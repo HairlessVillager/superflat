@@ -5922,6 +5922,7 @@ name = "superflat"
 version = "0.6.2"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "bytes",
  "criterion",
  "flate2",
