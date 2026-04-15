@@ -308,7 +308,7 @@ body::after {
     flex: 1;
     min-width: 0;
     font-size: 11px;
-    font-family: monospace;
+    font-family: var(--font-mono);
     color: #7a9a6a;
     white-space: pre;
     overflow: hidden;
@@ -322,7 +322,7 @@ body::after {
 
 .status-bar-item {
     font-size: 11px;
-    font-family: monospace;
+    font-family: var(--font-mono);
     color: #7a9a6a;
 }
 
@@ -344,7 +344,7 @@ body::after {
     padding: 0 4px;
     cursor: pointer;
     font-size: 11px;
-    font-family: monospace;
+    font-family: var(--font-mono);
     color: #7a9a6a;
     line-height: 22px;
 }
@@ -529,7 +529,7 @@ body::after {
     border: 1px solid #2a3b21;
     color: #a8d89a;
     font-size: 11px;
-    font-family: monospace;
+    font-family: var(--font-mono);
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-all;
