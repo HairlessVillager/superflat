@@ -1,17 +1,19 @@
 use std::{
-    fs::{self, File},
+    fs::{self, DirEntry, File},
     io::{BufWriter, Write},
     sync::Mutex,
     time::Instant,
 };
 
+use chrono::Utc;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::EVENT_OUTPUT;
 
-pub const LOG_FILE: &str = "latest.log";
+pub const LOG_DIR: &str = "logs";
+const MAX_LOG_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
 
 #[derive(Serialize, Clone)]
 pub struct LogPayload {
@@ -22,6 +24,7 @@ pub struct LogPayload {
 struct LoggerState {
     app: Option<AppHandle>,
     file: Option<BufWriter<File>>,
+    current_log_path: Option<std::path::PathBuf>,
 }
 
 pub struct GuiLogger {
@@ -35,6 +38,7 @@ impl GuiLogger {
             state: Mutex::new(LoggerState {
                 app: None,
                 file: None,
+                current_log_path: None,
             }),
             op_start: Mutex::new(None),
         }
@@ -47,12 +51,24 @@ impl GuiLogger {
         }
     }
 
-    /// Called once at startup to open the log file and wire up the app handle.
-    /// Always writes at Debug level; GUI only receives Info and above.
-    pub fn configure(&self, app: AppHandle, log_path: std::path::PathBuf) {
-        if let Some(parent) = log_path.parent() {
-            let _ = fs::create_dir_all(parent);
+    /// Called once at startup to open a new log file in the logs directory.
+    pub fn configure(&self, app: AppHandle, app_data_dir: std::path::PathBuf) {
+        let log_dir = app_data_dir.join(LOG_DIR);
+        if let Err(e) = fs::create_dir_all(&log_dir) {
+            eprintln!("Failed to create log directory {:?}: {}", log_dir, e);
+            return;
         }
+
+        // Clean up old logs before creating new one
+        if let Err(e) = self.cleanup_old_logs(&log_dir) {
+            eprintln!("Failed to cleanup old logs: {}", e);
+        }
+
+        // Generate timestamp-based filename
+        let timestamp = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let log_filename = format!("{}.log", timestamp);
+        let log_path = log_dir.join(&log_filename);
+
         let file = match File::create(&log_path) {
             Ok(f) => Some(BufWriter::new(f)),
             Err(e) => {
@@ -60,9 +76,57 @@ impl GuiLogger {
                 None
             }
         };
+
         let mut state = self.state.lock().expect("gui logger mutex is poisoned");
         state.app = Some(app);
         state.file = file;
+        state.current_log_path = Some(log_path);
+    }
+
+    /// Get the path to the current log file for the frontend to display
+    pub fn get_current_log_path(&self) -> Option<std::path::PathBuf> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|s| s.current_log_path.clone())
+    }
+
+    /// Clean up old log files when total size exceeds 10 MiB
+    fn cleanup_old_logs(&self, log_dir: &std::path::Path) -> std::io::Result<()> {
+        let mut entries: Vec<DirEntry> = Vec::new();
+        for entry in fs::read_dir(log_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                if let Some(ext) = entry.path().extension() {
+                    if ext == "log" {
+                        entries.push(entry);
+                    }
+                }
+            }
+        }
+
+        // Sort by modification time (oldest first)
+        entries.sort_by_key(|e| e.metadata().ok().and_then(|m| m.modified().ok()));
+
+        let mut total_size: u64 = 0;
+        for entry in &entries {
+            total_size += entry.metadata()?.len();
+        }
+
+        // Delete oldest files until under threshold
+        for entry in entries {
+            if total_size <= MAX_LOG_SIZE_BYTES {
+                break;
+            }
+            let size = entry.metadata()?.len();
+            if let Err(e) = fs::remove_file(entry.path()) {
+                eprintln!("Failed to delete old log {:?}: {}", entry.path(), e);
+            } else {
+                total_size -= size;
+            }
+        }
+
+        Ok(())
     }
 }
 

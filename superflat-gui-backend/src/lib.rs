@@ -17,23 +17,25 @@ static GUI_LOGGER: LazyLock<GuiLogger> = LazyLock::new(GuiLogger::new);
 
 #[tauri::command]
 fn get_log_path(app: AppHandle) -> Result<String, String> {
-    profiles::app_data_file(&app, logger::LOG_FILE)
+    profiles::app_data_dir(&app)
+        .map(|p| p.join(logger::LOG_DIR))
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn log_file_exists(app: AppHandle) -> bool {
-    profiles::app_data_file(&app, logger::LOG_FILE)
+    let _ = app;
+    GUI_LOGGER.get_current_log_path()
         .map(|p| p.exists())
         .unwrap_or(false)
 }
 
 #[tauri::command]
-fn open_log_file(app: AppHandle) -> Result<(), String> {
+fn open_log_file(_app: AppHandle) -> Result<(), String> {
     use log::Log;
     GUI_LOGGER.flush();
-    let path = profiles::app_data_file(&app, logger::LOG_FILE).map_err(|e| e.to_string())?;
+    let path = GUI_LOGGER.get_current_log_path().ok_or("No log file available")?;
     log::debug!("Opening log file in file manager: {:?}", path);
 
     #[cfg(target_os = "linux")]
@@ -113,6 +115,7 @@ fn open_log_file(app: AppHandle) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
+
     Ok(())
 }
 
@@ -156,9 +159,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let log_path = profiles::app_data_file(app.handle(), logger::LOG_FILE)
-                .expect("failed to resolve log path");
-            GUI_LOGGER.configure(app.handle().clone(), log_path);
+            let app_data_dir = profiles::app_data_dir(app.handle())
+                .expect("failed to resolve app data dir");
+            GUI_LOGGER.configure(app.handle().clone(), app_data_dir);
             if let Ok(settings_path) = profiles::app_data_file(app.handle(), "settings.json") {
                 match fs::remove_file(settings_path) {
                     Ok(()) => {}

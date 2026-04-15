@@ -46,6 +46,12 @@ pub fn app_data_file(app: &AppHandle, file_name: &str) -> io::Result<PathBuf> {
         .map_err(io::Error::other)
 }
 
+pub fn app_data_dir(app: &AppHandle) -> io::Result<PathBuf> {
+    app.path()
+        .resolve("", BaseDirectory::AppData)
+        .map_err(io::Error::other)
+}
+
 pub fn read_profiles_file(path: &Path) -> io::Result<Vec<Profile>> {
     match fs::read(path) {
         Ok(bytes) => serde_json::from_slice::<Vec<Profile>>(&bytes)
