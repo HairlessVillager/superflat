@@ -102,10 +102,11 @@ fn open_log_in_file_manager(path: &std::path::Path) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        // On Windows, use explorer /select to open and select the file
+        let canonical_path = std::fs::canonicalize(&path).unwrap_or(path.into());
+        let arg = format!("/select,{}", canonical_path.to_string_lossy());
+
         std::process::Command::new("explorer")
-            .arg("/select,")
-            .arg(&path)
+            .arg(arg)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
