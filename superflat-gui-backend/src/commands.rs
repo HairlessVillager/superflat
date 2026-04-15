@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
 use tauri::{AppHandle, Emitter};
-use tokio::sync::oneshot;
 use tauri_plugin_dialog::DialogExt;
+use tokio::sync::oneshot;
 
 use crate::EVENT_DONE;
-use crate::git_ops::{apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir};
+use crate::git_ops::{
+    apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir,
+};
 
 fn emit_done(app: &AppHandle) {
     crate::flush_log();
@@ -30,7 +32,10 @@ pub async fn pick_directory(app: AppHandle) -> Option<String> {
 fn resolve_paths(save_dir: &str) -> Option<(PathBuf, PathBuf)> {
     let save_path = PathBuf::from(save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
-        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        log::error!(
+            "save_dir must be a non-empty absolute path, got: {:?}",
+            save_dir
+        );
         return None;
     }
     let save_name = match save_path.file_name().and_then(|n| n.to_str()) {
@@ -61,7 +66,10 @@ fn resolve_paths(save_dir: &str) -> Option<(PathBuf, PathBuf)> {
 fn resolve_git_dir(save_dir: &str) -> Option<PathBuf> {
     let save_path = PathBuf::from(save_dir);
     if save_dir.trim().is_empty() || !save_path.is_absolute() {
-        log::error!("save_dir must be a non-empty absolute path, got: {:?}", save_dir);
+        log::error!(
+            "save_dir must be a non-empty absolute path, got: {:?}",
+            save_dir
+        );
         return None;
     }
     match save_dir_to_git_dir(&save_path) {
@@ -93,7 +101,11 @@ pub async fn run_commit(
     let init = !git_dir.exists();
     log::info!(
         "Commit params: save_dir={} git_dir={} init={} branch={} message={}",
-        save_dir, git_dir.display(), init, branch, message
+        save_dir,
+        git_dir.display(),
+        init,
+        branch,
+        message
     );
 
     let parents = if init {
@@ -160,12 +172,19 @@ async fn do_commit_and_repack(
     let r#ref = format!("refs/heads/{}", branch);
     let git_dir_for_commit = git_dir.clone();
     let result = tokio::task::spawn_blocking(move || {
-        superflat::commit(save_path, git_dir_for_commit, parents, &message, Some(r#ref), &mc_version)
+        superflat::commit(
+            save_path,
+            git_dir_for_commit,
+            parents,
+            &message,
+            Some(r#ref),
+            &mc_version,
+        )
     })
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(Ok(())) => {
             let git_dir_clone = git_dir.clone();
             let repack = tokio::task::spawn_blocking(move || {
                 superflat::utils::cmd::git_count_objects(&git_dir_clone)
@@ -178,14 +197,14 @@ async fn do_commit_and_repack(
             })
             .await;
             match repack {
-                Ok(Ok(stats)) => log::info!(
-                    "Done. Repo total size: {:.2} MiB",
-                    stats.total_size_mib()
-                ),
+                Ok(Ok(stats)) => {
+                    log::info!("Done. Repo total size: {:.2} MiB", stats.total_size_mib())
+                }
                 Ok(Err(e)) => log::error!("Commit succeeded but repack failed: {}", e),
                 Err(e) => log::error!("Commit succeeded but repack task failed: {}", e),
             }
         }
+        Ok(Err(e)) => log::error!("Failed to commit: {}", e),
         Err(e) => log::error!("Failed to commit: {}", e),
     }
 }
@@ -231,7 +250,10 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
     .await;
 
     match result {
-        Ok(()) => log::info!("Done"),
+        Ok(res2) => match res2 {
+            Ok(()) => log::info!("Done"),
+            Err(e) => log::error!("Error: {e}"),
+        },
         Err(e) => log::error!("Error: {e}"),
     }
     emit_done(&app);
@@ -242,7 +264,10 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
     crate::reset_op_start();
     let git_dir = match resolve_git_dir(&save_dir) {
         Some(d) => d,
-        None => { emit_done(&app); return; }
+        None => {
+            emit_done(&app);
+            return;
+        }
     };
 
     log::info!("Cloning {} into {}", url, git_dir.display());
@@ -286,23 +311,26 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     crate::reset_op_start();
     let git_dir = match resolve_git_dir(&save_dir) {
         Some(d) => d,
-        None => { emit_done(&app); return; }
+        None => {
+            emit_done(&app);
+            return;
+        }
     };
 
     log::info!("Pulling from {}", url);
 
     let result = tokio::task::spawn_blocking(move || {
-        let cmd = superflat::utils::cmd::git_cmd(
-            &git_dir,
-            ["fetch", &url, "refs/heads/*:refs/heads/*"],
-        );
+        let cmd =
+            superflat::utils::cmd::git_cmd(&git_dir, ["fetch", &url, "refs/heads/*:refs/heads/*"]);
         superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
 
     match result {
         Ok(Ok(out)) => {
-            for line in out.lines() { log::info!("{}", line); }
+            for line in out.lines() {
+                log::info!("{}", line);
+            }
             log::info!("Pull done");
         }
         Ok(Err(e)) => log::error!("Pull failed: {}", e),
@@ -316,7 +344,10 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
     crate::reset_op_start();
     let git_dir = match resolve_git_dir(&save_dir) {
         Some(d) => d,
-        None => { emit_done(&app); return; }
+        None => {
+            emit_done(&app);
+            return;
+        }
     };
 
     log::info!("Pushing to {}", url);
@@ -329,7 +360,9 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
 
     match result {
         Ok(Ok(out)) => {
-            for line in out.lines() { log::info!("{}", line); }
+            for line in out.lines() {
+                log::info!("{}", line);
+            }
             log::info!("Push done");
         }
         Ok(Err(e)) => log::error!("Push failed: {}", e),

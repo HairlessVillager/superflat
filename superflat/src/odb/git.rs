@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use anyhow::{Context, Result};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
@@ -29,7 +30,9 @@ impl LocalGitOdb {
     }
 
     pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
-        let repo: gix::ThreadSafeRepository = gix::open(&git_dir).expect("failed to open git repository").into();
+        let repo: gix::ThreadSafeRepository = gix::open(&git_dir)
+            .expect("failed to open git repository")
+            .into();
         let path_to_oid = if commit.is_empty() {
             HashMap::new()
         } else {
@@ -60,7 +63,10 @@ impl LocalGitOdb {
         }
         cmd.arg("-m").arg(message);
 
-        let commit = exec(cmd, None).expect("failed to run commit-tree").trim().to_string();
+        let commit = exec(cmd, None)
+            .expect("failed to run commit-tree")
+            .trim()
+            .to_string();
         commit
     }
 }
@@ -114,7 +120,10 @@ fn build_tree(
     }
 
     let cmd = git_cmd(git_dir, ["mktree"]);
-    exec(cmd, Some(mktree_input)).expect("failed to run mktree").trim().to_string()
+    exec(cmd, Some(mktree_input))
+        .expect("failed to run mktree")
+        .trim()
+        .to_string()
 }
 
 /// Build a path → oid map for a commit using `git ls-tree -r`.
@@ -133,55 +142,67 @@ fn build_path_to_oid(git_dir: &PathBuf, commit_sha: &str) -> HashMap<String, gix
 }
 
 impl OdbReader for LocalGitOdb {
-    fn get(&self, key: &str) -> Vec<u8> {
-        let oid = self.path_to_oid.get(key).expect("key not found");
-        self.repo
+    fn get(&self, key: &str) -> Result<Vec<u8>> {
+        let oid = self
+            .path_to_oid
+            .get(key)
+            .with_context(|| format!("key not found: {key}"))?;
+        Ok(self
+            .repo
             .to_thread_local()
             .find_blob(*oid)
-            .expect("failed to find blob in git odb")
+            .with_context(|| format!("failed to find blob for key: {key}"))?
             .data
-            .to_vec()
+            .to_vec())
     }
 
-    fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
+    fn get_par(&self, keys: &[&str]) -> Result<Vec<Vec<u8>>> {
         let repo = self.repo.clone();
         let path_to_oid = &self.path_to_oid;
         keys.into_par_iter()
             .map(|key| {
-                let oid = path_to_oid.get(*key).expect("key not found");
-                repo.to_thread_local()
+                let oid = path_to_oid
+                    .get(*key)
+                    .with_context(|| format!("key not found: {key}"))?;
+                Ok(repo
+                    .to_thread_local()
                     .find_blob(*oid)
-                    .expect("failed to find blob in git odb")
+                    .with_context(|| format!("failed to find blob for key: {key}"))?
                     .data
-                    .to_vec()
+                    .to_vec())
             })
             .collect()
     }
 
-    fn glob(&self, pattern: &str) -> Vec<String> {
-        let pat = glob::Pattern::new(pattern).expect("failed to compile glob pattern");
-        self.path_to_oid
+    fn glob(&self, pattern: &str) -> Result<Vec<String>> {
+        let pat = glob::Pattern::new(pattern).context("failed to compile glob pattern")?;
+        Ok(self
+            .path_to_oid
             .par_iter()
             .map(|(p, _)| p)
             .filter(|p| pat.matches(p.as_str()))
             .cloned()
-            .collect()
+            .collect())
     }
 }
 
 impl OdbWriter for LocalGitOdb {
-    fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
+    fn put(&mut self, key: &str, value: impl AsRef<[u8]>) -> Result<()> {
         let sha1 = self
             .repo
             .to_thread_local()
             .write_blob(value)
-            .expect("failed to write blob to git odb")
+            .with_context(|| format!("failed to write blob for key: {key}"))?
             .to_hex()
             .to_string();
         self.pending.insert(key.to_string(), sha1);
+        Ok(())
     }
 
-    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
+    fn put_par(
+        &mut self,
+        entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>,
+    ) -> Result<()> {
         let ts_repo = self.repo.clone();
         let results: Vec<(String, String)> = entries
             .into_par_iter()
@@ -189,15 +210,16 @@ impl OdbWriter for LocalGitOdb {
                 let repo = ts_repo.to_thread_local();
                 let sha1 = repo
                     .write_blob(value.as_ref())
-                    .expect("failed to write blob to git odb")
+                    .with_context(|| format!("failed to write blob for key: {key}"))?
                     .to_hex()
                     .to_string();
-                (key, sha1)
+                Ok((key, sha1))
             })
-            .collect();
+            .collect::<Result<_>>()?;
         for (key, sha1) in results {
             self.pending.insert(key, sha1);
         }
+        Ok(())
     }
 }
 
@@ -211,17 +233,33 @@ mod tests {
     fn init_bare_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         Command::new("git")
-            .args(["init", "--bare", dir.path().to_str().expect("temp dir path is not valid utf-8")])
+            .args([
+                "init",
+                "--bare",
+                dir.path()
+                    .to_str()
+                    .expect("temp dir path is not valid utf-8"),
+            ])
             .output()
             .expect("failed to run git init");
         // git commit-tree needs author/committer config
         Command::new("git")
-            .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
+            .args([
+                "--git-dir",
+                dir.path()
+                    .to_str()
+                    .expect("temp dir path is not valid utf-8"),
+            ])
             .args(["config", "user.email", "test@test"])
             .output()
             .expect("failed to run git config user.email");
         Command::new("git")
-            .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
+            .args([
+                "--git-dir",
+                dir.path()
+                    .to_str()
+                    .expect("temp dir path is not valid utf-8"),
+            ])
             .args(["config", "user.name", "Test"])
             .output()
             .expect("failed to run git config user.name");
@@ -234,12 +272,12 @@ mod tests {
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
         let data = b"hello git odb".to_vec();
-        odb.put("src/hello.txt", &data);
+        odb.put("src/hello.txt", &data).unwrap();
         let commit_sha = odb.commit(&[] as &[&str], "initial");
         assert_eq!(commit_sha.len(), 40);
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
-        let got = odb.get("src/hello.txt");
+        let got = odb.get("src/hello.txt").unwrap();
         assert_eq!(got, data);
     }
 
@@ -248,13 +286,13 @@ mod tests {
         let repo = init_bare_repo();
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
-        odb.put("a/x.rs", &b"fn x(){}".to_vec());
-        odb.put("a/y.rs", &b"fn y(){}".to_vec());
-        odb.put("b/z.md", &b"# Z".to_vec());
+        odb.put("a/x.rs", &b"fn x(){}".to_vec()).unwrap();
+        odb.put("a/y.rs", &b"fn y(){}".to_vec()).unwrap();
+        odb.put("b/z.md", &b"# Z".to_vec()).unwrap();
         let commit_sha = odb.commit(&[] as &[&str], "add files");
 
         let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
-        let mut matches = odb.glob("a/*.rs");
+        let mut matches = odb.glob("a/*.rs").unwrap();
         matches.sort();
         assert_eq!(matches, vec!["a/x.rs", "a/y.rs"]);
     }
@@ -264,18 +302,21 @@ mod tests {
         let repo = init_bare_repo();
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
 
-        odb.put("a.txt", &b"v1".to_vec());
+        odb.put("a.txt", &b"v1".to_vec()).unwrap();
         let first = odb.commit(&[] as &[&str], "first");
 
         // Second commit only puts b.txt — a.txt is NOT inherited
         let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone());
-        odb.put("b.txt", &b"v2".to_vec());
+        odb.put("b.txt", &b"v2".to_vec()).unwrap();
         let second = odb.commit(&[&first], "second");
 
         // second commit's tree contains only b.txt
         let files: Vec<String> = String::from_utf8(
             Command::new("git")
-                .args(["--git-dir", repo.path().to_str().expect("repo path is not valid utf-8")])
+                .args([
+                    "--git-dir",
+                    repo.path().to_str().expect("repo path is not valid utf-8"),
+                ])
                 .args(["ls-tree", "--name-only", &second])
                 .output()
                 .expect("failed to run git ls-tree")
@@ -290,7 +331,10 @@ mod tests {
         // parent linkage is recorded
         let parent = String::from_utf8(
             Command::new("git")
-                .args(["--git-dir", repo.path().to_str().expect("repo path is not valid utf-8")])
+                .args([
+                    "--git-dir",
+                    repo.path().to_str().expect("repo path is not valid utf-8"),
+                ])
                 .args(["rev-parse", &format!("{second}^1")])
                 .output()
                 .expect("failed to run git rev-parse")

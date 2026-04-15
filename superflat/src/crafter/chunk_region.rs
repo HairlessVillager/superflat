@@ -1,9 +1,8 @@
-use std::io::Cursor;
-
 use anyhow::{Context, Result};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use simdnbt::borrow::read;
 use simdnbt::{Deserialize, Serialize};
+use std::io::Cursor;
 
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
@@ -29,34 +28,33 @@ const UNFLATTEN_PATTERNS: &[&str] = &[
 pub struct ChunkRegionCrafter;
 
 impl Crafter for ChunkRegionCrafter {
-    fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) {
+    fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) -> Result<()> {
         for pattern in FLATTEN_PATTERNS {
-            for key in save.glob(pattern) {
+            for key in save.glob(pattern)? {
                 log::info!("Process chunk region file {key}");
-                let data = save.get(&key);
+                let data = save.get(&key)?;
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename)
                     .with_context(|| format!("failed to parse (x,z) from {key}"))
-                    .expect("failed to parse region coordinates");
+                    .context("failed to parse region coordinates")?;
                 let Some((timestamp_header, chunks)) =
                     read_region(Cursor::new(data), region_x, region_z)
                         .with_context(|| format!("failed to read region from {key}"))
-                        .expect("failed to read region")
+                        .context("failed to read region")?
                 else {
                     continue;
                 };
-                storage.put(&format!("{key}/timestamp-header"), &timestamp_header);
+                storage.put(&format!("{key}/timestamp-header"), &timestamp_header)?;
 
                 let result = chunks
                     .into_par_iter()
                     .map(|(chunk_x, chunk_z, nbt)| {
                         let other_size = nbt.len();
-                        let nbt = load_nbt(Cursor::new(&nbt))
-                            .context("failed to load chunk nbt")
-                            .unwrap();
+                        let nbt =
+                            load_nbt(Cursor::new(&nbt)).context("failed to load chunk nbt")?;
                         if nbt
                             .string("Status")
-                            .expect("missing Status field in chunk nbt")
+                            .context("missing Status field in chunk nbt")?
                             .to_string_lossy()
                             != "minecraft:full"
                         {
@@ -71,7 +69,7 @@ impl Crafter for ChunkRegionCrafter {
                         Ok(Some((chunk_x, chunk_z, other_dump, sections_dump)))
                     })
                     .collect::<Result<Vec<_>>>()
-                    .expect("failed to process chunks")
+                    .context("failed to process chunks")?
                     .into_iter()
                     .flatten()
                     .collect::<Vec<_>>();
@@ -92,14 +90,15 @@ impl Crafter for ChunkRegionCrafter {
                             ]
                         })
                         .collect::<Vec<_>>(),
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
-    fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) {
+    fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) -> Result<()> {
         for pattern in UNFLATTEN_PATTERNS {
-            for ts_key in storage.glob(pattern) {
+            for ts_key in storage.glob(pattern)? {
                 log::info!("Process chunk region file (timestamp header) {ts_key}");
                 let Some(region_key) = ts_key.strip_suffix("/timestamp-header") else {
                     continue;
@@ -107,12 +106,12 @@ impl Crafter for ChunkRegionCrafter {
                 let filename = region_key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename)
                     .with_context(|| format!("failed to parse (x,z) from {ts_key}"))
-                    .expect("failed to parse region coordinates");
-                let timestamp_header = storage.get(&ts_key);
+                    .context("failed to parse region coordinates")?;
+                let timestamp_header = storage.get(&ts_key)?;
 
                 let other_pattern = format!("{region_key}/other/c.*.*.nbt");
 
-                let other_keys: Vec<String> = storage.glob(&other_pattern);
+                let other_keys: Vec<String> = storage.glob(&other_pattern)?;
                 let coords: Vec<(i32, i32)> = other_keys
                     .iter()
                     .map(|k| {
@@ -120,7 +119,7 @@ impl Crafter for ChunkRegionCrafter {
                             .with_context(|| format!("failed to parse (x,z) from {k}"))
                     })
                     .collect::<Result<_>>()
-                    .expect("failed to parse chunk coordinates");
+                    .context("failed to parse chunk coordinates")?;
                 let dump_keys: Vec<String> = coords
                     .iter()
                     .map(|(cx, cz)| format!("{region_key}/sections/c.{cx}.{cz}.dump"))
@@ -131,7 +130,7 @@ impl Crafter for ChunkRegionCrafter {
                     .map(|s| s.as_str())
                     .chain(dump_keys.iter().map(|s| s.as_str()))
                     .collect();
-                let mut all_data = storage.get_par(&all_keys);
+                let mut all_data = storage.get_par(&all_keys)?;
                 let dump_data = all_data.split_off(other_keys.len());
                 let nbt_data = all_data;
 
@@ -145,25 +144,27 @@ impl Crafter for ChunkRegionCrafter {
                 let chunks = tasks
                     .into_par_iter()
                     .map(|(chunk_x, chunk_z, nbt_data, dump_data)| {
-                        let other = load_nbt(Cursor::new(&nbt_data))
-                            .context("failed to load other nbt")
-                            .unwrap();
-                        let nbt = read(&mut Cursor::new(dump_data.as_slice()))
-                            .expect("failed to read sections dump as nbt")
-                            .unwrap();
+                        use simdnbt::borrow::Nbt;
+
+                        let other =
+                            load_nbt(Cursor::new(&nbt_data)).context("failed to load other nbt")?;
+                        let Nbt::Some(nbt) = read(&mut Cursor::new(dump_data.as_slice()))
+                            .context("failed to read sections dump as nbt")?
+                        else {
+                            anyhow::bail!("sections dump is empty");
+                        };
                         let sections_dump: SectionsDump = SectionsDump::from_nbt(&nbt)
-                            .expect("failed to deserialize sections dump");
+                            .context("failed to deserialize sections dump")?;
                         let nbt = dump_nbt(
                             restore_chunk(other, sections_dump)
                                 .with_context(|| format!("failed to restore chunk for {ts_key}"))
-                                .expect("failed to restore chunk"),
+                                .context("failed to restore chunk")?,
                             300 * 1024, // 300 KiB
                         )
-                        .context("failed to dump other nbt")
-                        .unwrap();
-                        (chunk_x, chunk_z, nbt)
+                        .context("failed to dump other nbt")?;
+                        Ok((chunk_x, chunk_z, nbt))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>>>()?;
 
                 let mut mca_buf = Vec::with_capacity(8 * 1024 * 1024); // 8MiB
                 write_region(
@@ -171,14 +172,15 @@ impl Crafter for ChunkRegionCrafter {
                     region_z,
                     &timestamp_header[..4096]
                         .try_into()
-                        .expect("timestamp header must be at least 4096 bytes"),
+                        .context("timestamp header must be at least 4096 bytes")?,
                     chunks,
                     Cursor::new(&mut mca_buf),
                 )
                 .with_context(|| format!("failed to write region for {ts_key}"))
-                .expect("failed to write region");
-                save.put(region_key, &mca_buf);
+                .context("failed to write region")?;
+                save.put(region_key, &mca_buf)?;
             }
         }
+        Ok(())
     }
 }

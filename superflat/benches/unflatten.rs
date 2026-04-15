@@ -12,7 +12,8 @@ fn bench_unflatten(c: &mut Criterion) {
         PathBuf::from(&fixture),
         flattened.path().to_path_buf(),
         &version,
-    );
+    )
+    .unwrap();
 
     c.bench_function("unflatten", |b| {
         b.iter_batched(
@@ -22,7 +23,8 @@ fn bench_unflatten(c: &mut Criterion) {
                     output.path().to_path_buf(),
                     flattened.path().to_path_buf(),
                     &version,
-                );
+                )
+                .unwrap();
                 output
             },
             BatchSize::LargeInput,

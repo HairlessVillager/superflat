@@ -113,7 +113,7 @@ enum UtilsSubcommand {
     },
 }
 
-fn main() {
+fn main() -> Result<(), anyhow::Error> {
     let cli = Cli::parse();
     env_logger::Builder::new()
         .filter_level(cli.verbosity.log_level_filter())
@@ -170,17 +170,18 @@ fn main() {
                 &message,
                 Some(r#ref),
                 &mc_version,
-            );
+            )?;
 
             if use_repack {
                 git_count_objects(&git_dir).expect("failed to count git objects");
-                repack(git_dir.to_owned());
+                repack(git_dir.to_owned())?;
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
 
             let stats = git_count_objects(git_dir.to_owned()).expect("failed to count git objects");
             log::info!("Done. Repo total size: {:.2} MiB", stats.total_size_mib());
+            Ok(())
         }
         CliSubcommand::Checkout {
             save_dir,
@@ -193,11 +194,12 @@ fn main() {
                 log::warn!("save_dir {save_dir:?} already exists, renaming to {bak:?}");
                 std::fs::rename(&save_dir, &bak).expect("failed to rename save directory");
             }
-            checkout(save_dir, git_dir, commit, &mc_version);
+            checkout(save_dir, git_dir, commit, &mc_version)?;
             log::info!("Done");
+            Ok(())
         }
 
-        CliSubcommand::Utils { action } => match action {
+        CliSubcommand::Utils { action } => Ok(match action {
             UtilsSubcommand::Chunk {
                 region_path,
                 chunk_x,
@@ -293,6 +295,6 @@ fn main() {
                         .expect("failed to write to stdout");
                 }
             }
-        },
+        }),
     }
 }

@@ -6,16 +6,32 @@ use superflat::odb::{LocalGitOdb, OdbReader, OdbWriter};
 fn init_bare_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("failed to create temp dir");
     Command::new("git")
-        .args(["init", "--bare", dir.path().to_str().expect("temp dir path is not valid utf-8")])
+        .args([
+            "init",
+            "--bare",
+            dir.path()
+                .to_str()
+                .expect("temp dir path is not valid utf-8"),
+        ])
         .output()
         .expect("failed to run git init");
     Command::new("git")
-        .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
+        .args([
+            "--git-dir",
+            dir.path()
+                .to_str()
+                .expect("temp dir path is not valid utf-8"),
+        ])
         .args(["config", "user.email", "bench@bench"])
         .output()
         .expect("failed to run git config user.email");
     Command::new("git")
-        .args(["--git-dir", dir.path().to_str().expect("temp dir path is not valid utf-8")])
+        .args([
+            "--git-dir",
+            dir.path()
+                .to_str()
+                .expect("temp dir path is not valid utf-8"),
+        ])
         .args(["config", "user.name", "Bench"])
         .output()
         .expect("failed to run git config user.name");
@@ -42,7 +58,7 @@ fn bench_writer(c: &mut Criterion) {
         b.iter(|| {
             let repo = init_bare_repo();
             let mut odb = LocalGitOdb::new(repo.path().to_path_buf());
-            odb.put(&key, &data);
+            odb.put(&key, &data).unwrap();
             odb.commit(&[] as &[&str], "bench");
         });
     });
@@ -55,14 +71,14 @@ fn bench_reader(c: &mut Criterion) {
     let repo = init_bare_repo();
     let commit_sha = {
         let mut odb = LocalGitOdb::new(repo.path().to_path_buf());
-        odb.put(&key, &data);
+        odb.put(&key, &data).unwrap();
         odb.commit(&[] as &[&str], "bench-data")
     };
 
     c.bench_function("get_200KB_blob", |b| {
         b.iter(|| {
             let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha.clone());
-            black_box(odb.get(&key));
+            black_box(odb.get(&key)).unwrap();
         });
     });
 }

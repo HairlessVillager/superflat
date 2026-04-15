@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Component, PathBuf};
 
+use anyhow::{Context, Result};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::odb::{OdbReader, OdbWriter};
@@ -33,50 +34,61 @@ fn assert_safe_key(key: &str) {
 }
 
 impl OdbReader for LocalFsOdb {
-    fn get(&self, key: &str) -> Vec<u8> {
+    fn get(&self, key: &str) -> Result<Vec<u8>> {
         assert_safe_key(key);
-        fs::read(self.root_dir.join(key)).expect("failed to read file from odb")
+        Ok(fs::read(self.root_dir.join(key)).context("failed to read file from odb")?)
     }
 
-    fn get_par(&self, keys: &[&str]) -> Vec<Vec<u8>> {
-        keys.into_par_iter().map(|key| self.get(key)).collect()
+    fn get_par(&self, keys: &[&str]) -> Result<Vec<Vec<u8>>> {
+        Ok(keys
+            .into_par_iter()
+            .map(|key| self.get(key))
+            .collect::<Result<Vec<_>, _>>()?)
     }
 
-    fn glob(&self, pattern: &str) -> Vec<String> {
+    fn glob(&self, pattern: &str) -> Result<Vec<String>> {
         assert_safe_key(pattern);
         let full_pattern = self.root_dir.join(pattern);
         let root = self.root_dir.clone();
-        glob::glob(full_pattern.to_str().expect("glob pattern path is not valid utf-8"))
-            .expect("failed to run glob")
+        Ok(
+            glob::glob(
+                full_pattern
+                    .to_str()
+                    .context("glob pattern path is not valid utf-8")?,
+            )
+            .context("failed to run glob")?
             .filter_map(|e| e.ok())
             .filter_map(|path| {
                 path.strip_prefix(&root)
                     .ok()
                     .and_then(|p| p.to_str().map(|s| s.to_string()))
             })
-            .collect()
+            .collect(),
+        )
     }
 }
 
 impl OdbWriter for LocalFsOdb {
-    fn put(&mut self, key: &str, value: impl AsRef<[u8]>) {
+    fn put(&mut self, key: &str, value: impl AsRef<[u8]>) -> Result<()> {
         assert_safe_key(key);
         let path = self.root_dir.join(key);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("failed to create parent directory");
+            fs::create_dir_all(parent).context("failed to create parent directory")?;
         }
-        fs::write(path, value).expect("failed to write file to odb");
+        fs::write(path, value).context("failed to write file to odb")?;
+        Ok(())
     }
 
-    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) {
-        entries.into_par_iter().for_each(|(key, value)| {
+    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) -> Result<()> {
+        entries.into_par_iter().try_for_each(|(key, value)| {
             assert_safe_key(&key);
             let path = self.root_dir.join(&key);
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).expect("failed to create parent directory");
+                fs::create_dir_all(parent).context("failed to create parent directory")?;
             }
-            fs::write(path, value).expect("failed to write file to odb");
-        });
+            fs::write(path, value).context("failed to write file to odb")?;
+            Ok::<(), anyhow::Error>(())
+        })
     }
 }
 
@@ -89,8 +101,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
         let data = b"hello superflat".to_vec();
-        odb.put("foo/bar.bin", &data);
-        let got = odb.get("foo/bar.bin");
+        odb.put("foo/bar.bin", &data).unwrap();
+        let got = odb.get("foo/bar.bin").unwrap();
         assert_eq!(got, data);
     }
 
@@ -98,10 +110,10 @@ mod tests {
     fn fs_glob_returns_matching_keys() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let mut odb = LocalFsOdb::from_dir(dir.path().to_path_buf());
-        odb.put("a/x.txt", &b"1".to_vec());
-        odb.put("a/y.txt", &b"2".to_vec());
-        odb.put("b/z.bin", &b"3".to_vec());
-        let mut matches = odb.glob("a/*.txt");
+        odb.put("a/x.txt", &b"1".to_vec()).unwrap();
+        odb.put("a/y.txt", &b"2".to_vec()).unwrap();
+        odb.put("b/z.bin", &b"3".to_vec()).unwrap();
+        let mut matches = odb.glob("a/*.txt").unwrap();
         matches.sort();
         assert_eq!(matches, vec!["a/x.txt", "a/y.txt"]);
     }
