@@ -1,4 +1,4 @@
-use std::{fs, io};
+use std::{fs, io, sync::LazyLock};
 
 use log::LevelFilter;
 use tauri::AppHandle;
@@ -13,7 +13,7 @@ pub use logger::GuiLogger;
 pub const EVENT_OUTPUT: &str = "sf-log";
 pub const EVENT_DONE: &str = "sf-done";
 
-static GUI_LOGGER: GuiLogger = GuiLogger::new();
+static GUI_LOGGER: LazyLock<GuiLogger> = LazyLock::new(GuiLogger::new);
 
 #[tauri::command]
 fn get_log_path(app: AppHandle) -> Result<String, String> {
@@ -150,7 +150,7 @@ pub fn reset_op_start() {
 }
 
 pub fn run() {
-    log::set_logger(&GUI_LOGGER).expect("failed to initialize GUI logger");
+    log::set_logger(&*GUI_LOGGER).expect("failed to initialize GUI logger");
     log::set_max_level(LevelFilter::Debug);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

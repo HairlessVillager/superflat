@@ -445,7 +445,7 @@ pub fn App() -> impl IntoView {
             let elapsed_s = elapsed_ms / 1000.0;
             let int_part = elapsed_s.floor() as u64;
             let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
-            let time_prefix = format!("[{:>4}.{:03}]", int_part, frac_digits);
+            let time_prefix = format!("[{:>4}.{:03}s]", int_part, frac_digits);
             let log_line = format!("{} [{}] {}", time_prefix, level, message);
             let status_line = format!("{} {}", time_prefix, message);
             set_last_raw_line.set(status_line);
@@ -548,7 +548,9 @@ pub fn App() -> impl IntoView {
         set_form_mc_version.set(p.mc_version.clone());
         set_form_remote_url.set(String::new());
         set_remote_url_invalid.set(false);
-        spawn_local(async move { set_remote_url_invalid.set(true); });
+        spawn_local(async move {
+            set_remote_url_invalid.set(true);
+        });
         set_right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
         set_show_profiles.set(true);
     };
@@ -689,8 +691,7 @@ pub fn App() -> impl IntoView {
                 url: remote_url,
             });
             if let Err(err) = invoke("run_clone", args).await {
-                set_output_lines
-                    .update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
+                set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
             do_upsert(p);
         });

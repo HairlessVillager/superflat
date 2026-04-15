@@ -30,9 +30,12 @@ pub struct GuiLogger {
 }
 
 impl GuiLogger {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            state: Mutex::new(LoggerState { app: None, file: None }),
+            state: Mutex::new(LoggerState {
+                app: None,
+                file: None,
+            }),
             op_start: Mutex::new(None),
         }
     }
@@ -82,23 +85,19 @@ impl Log for GuiLogger {
         };
         let message = record.args().to_string();
 
-        let elapsed_s = self
-            .op_start
-            .lock()
-            .ok()
-            .and_then(|g| g.map(|t| t.elapsed().as_secs_f64()))
-            .unwrap_or(0.0);
-        let int_part = elapsed_s.floor() as u64;
-        let frac_digits = ((elapsed_s - int_part as f64) * 1000.0).round() as u64;
+        // Get current UTC time for file log
+        let now = chrono::Local::now()
+            .to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
+            .to_string();
 
         let mut state = match self.state.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
 
-        // Write to file
+        // Write to file (all levels, full timestamp)
         if let Some(w) = state.file.as_mut() {
-            let _ = writeln!(w, "[{:>4}.{:03}] [{}] {}", int_part, frac_digits, level_str, message);
+            let _ = writeln!(w, "[{}] [{}] {}", now, level_str, message);
         }
 
         // Only forward Info and above to the GUI
@@ -106,7 +105,10 @@ impl Log for GuiLogger {
             return;
         }
 
-        let payload = LogPayload { level: level_str, message };
+        let payload = LogPayload {
+            level: level_str,
+            message,
+        };
         let app = state.app.clone();
         drop(state);
         if let Some(app) = app {
@@ -122,4 +124,3 @@ impl Log for GuiLogger {
         }
     }
 }
-
