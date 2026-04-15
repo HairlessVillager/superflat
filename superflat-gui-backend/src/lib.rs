@@ -32,22 +32,88 @@ fn log_file_exists(app: AppHandle) -> bool {
 #[tauri::command]
 fn open_log_file(app: AppHandle) -> Result<(), String> {
     use log::Log;
-    use tauri_plugin_opener::OpenerExt;
     GUI_LOGGER.flush();
-    let path = profiles::app_data_file(&app, logger::LOG_FILE)
-        .map_err(|e| e.to_string())?;
-    log::debug!("Opening log file: {:?}", path);
-    // On Linux/macOS prefer $VISUAL or $EDITOR; fall back to opener plugin
-    // (which uses xdg-open on Linux, ShellExecute on Windows, open on macOS)
-    if let Ok(editor) = std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")) {
-        if let Ok(child) = std::process::Command::new(&editor).arg(&path).spawn() {
+    let path = profiles::app_data_file(&app, logger::LOG_FILE).map_err(|e| e.to_string())?;
+    log::debug!("Opening log file in file manager: {:?}", path);
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, try file managers that support selecting files
+        // nautilus (GNOME), dolphin (KDE), thunar (XFCE), pcmanfm (LXDE)
+        let parent = path.parent().ok_or("Failed to get parent directory")?;
+
+        // Try nautilus first (GNOME Files)
+        if let Ok(child) = std::process::Command::new("nautilus")
+            .arg("--select")
+            .arg(&path)
+            .spawn()
+        {
             drop(child);
             return Ok(());
         }
+        // Try dolphin (KDE)
+        if let Ok(child) = std::process::Command::new("dolphin")
+            .arg("--select")
+            .arg(&path)
+            .spawn()
+        {
+            drop(child);
+            return Ok(());
+        }
+        // Try thunar (XFCE)
+        if let Ok(child) = std::process::Command::new("thunar")
+            .arg("--select")
+            .arg(&path)
+            .spawn()
+        {
+            drop(child);
+            return Ok(());
+        }
+        // Try pcmanfm (LXDE/LXQt)
+        if let Ok(child) = std::process::Command::new("pcmanfm")
+            .arg("--select-file")
+            .arg(&path)
+            .spawn()
+        {
+            drop(child);
+            return Ok(());
+        }
+        // Fallback: open the directory without selecting
+        if let Ok(child) = std::process::Command::new("gio")
+            .arg("open")
+            .arg(parent)
+            .spawn()
+        {
+            drop(child);
+            return Ok(());
+        }
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
     }
-    app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| e.to_string())
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use open -R to reveal the file in Finder
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use explorer /select to open and select the file
+        std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -93,9 +159,7 @@ pub fn run() {
             let log_path = profiles::app_data_file(app.handle(), logger::LOG_FILE)
                 .expect("failed to resolve log path");
             GUI_LOGGER.configure(app.handle().clone(), log_path);
-            if let Ok(settings_path) =
-                profiles::app_data_file(app.handle(), "settings.json")
-            {
+            if let Ok(settings_path) = profiles::app_data_file(app.handle(), "settings.json") {
                 match fs::remove_file(settings_path) {
                     Ok(()) => {}
                     Err(err) if err.kind() == io::ErrorKind::NotFound => {}
@@ -141,11 +205,41 @@ mod tests {
     #[test]
     fn normalize_profiles_filters_empty_save_dirs_and_keeps_first_duplicate() {
         let normalized = normalize_profiles(vec![
-            Profile { save_dir: "/b".into(), mc_version: "1.20.1".into(), branch: "main".into(), remote_url: String::new(), updated_at: String::new() },
-            Profile { save_dir: "".into(), mc_version: "1.21.1".into(), branch: "empty".into(), remote_url: String::new(), updated_at: String::new() },
-            Profile { save_dir: "   ".into(), mc_version: "1.21.2".into(), branch: "blank".into(), remote_url: String::new(), updated_at: String::new() },
-            Profile { save_dir: "/a".into(), mc_version: "1.19.4".into(), branch: "stable".into(), remote_url: String::new(), updated_at: String::new() },
-            Profile { save_dir: "/b".into(), mc_version: "1.21.4".into(), branch: "newer".into(), remote_url: String::new(), updated_at: String::new() },
+            Profile {
+                save_dir: "/b".into(),
+                mc_version: "1.20.1".into(),
+                branch: "main".into(),
+                remote_url: String::new(),
+                updated_at: String::new(),
+            },
+            Profile {
+                save_dir: "".into(),
+                mc_version: "1.21.1".into(),
+                branch: "empty".into(),
+                remote_url: String::new(),
+                updated_at: String::new(),
+            },
+            Profile {
+                save_dir: "   ".into(),
+                mc_version: "1.21.2".into(),
+                branch: "blank".into(),
+                remote_url: String::new(),
+                updated_at: String::new(),
+            },
+            Profile {
+                save_dir: "/a".into(),
+                mc_version: "1.19.4".into(),
+                branch: "stable".into(),
+                remote_url: String::new(),
+                updated_at: String::new(),
+            },
+            Profile {
+                save_dir: "/b".into(),
+                mc_version: "1.21.4".into(),
+                branch: "newer".into(),
+                remote_url: String::new(),
+                updated_at: String::new(),
+            },
         ]);
 
         assert_eq!(normalized.len(), 2);
@@ -155,4 +249,3 @@ mod tests {
         assert_eq!(normalized[1].branch, "main");
     }
 }
-
