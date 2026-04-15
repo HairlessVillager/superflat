@@ -65,7 +65,9 @@ impl GuiLogger {
         }
 
         // Generate timestamp-based filename
-        let timestamp = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let timestamp = Utc::now()
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            .replace(":", "_");
         let log_filename = format!("{}.log", timestamp);
         let log_path = log_dir.join(&log_filename);
 
