@@ -54,6 +54,7 @@ impl LocalGitOdb {
     ///
     /// Returns the sha1 of the new commit.
     pub fn commit(self, parents: &[impl AsRef<str>], message: &str) -> String {
+        log::info!("Building Git tree objects");
         let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "");
 
         let mut cmd = git_cmd(self.repo.git_dir(), [] as [&str; 0]);
