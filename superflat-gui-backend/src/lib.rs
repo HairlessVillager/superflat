@@ -26,18 +26,13 @@ fn get_log_path(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn log_file_exists(app: AppHandle) -> bool {
     let _ = app;
-    GUI_LOGGER.get_current_log_path()
+    GUI_LOGGER
+        .get_current_log_path()
         .map(|p| p.exists())
         .unwrap_or(false)
 }
 
-#[tauri::command]
-fn open_log_file(_app: AppHandle) -> Result<(), String> {
-    use log::Log;
-    GUI_LOGGER.flush();
-    let path = GUI_LOGGER.get_current_log_path().ok_or("No log file available")?;
-    log::debug!("Opening log file in file manager: {:?}", path);
-
+fn open_log_in_file_manager(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         // On Linux, try file managers that support selecting files
@@ -115,8 +110,19 @@ fn open_log_file(_app: AppHandle) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
 
-
     Ok(())
+}
+
+#[tauri::command]
+fn open_log_file(_app: AppHandle) -> Result<(), String> {
+    use log::Log;
+    GUI_LOGGER.flush();
+    let path = GUI_LOGGER
+        .get_current_log_path()
+        .ok_or("No log file available")?;
+    log::debug!("Opening log file in file manager: {:?}", path);
+
+    open_log_in_file_manager(&path)
 }
 
 #[tauri::command]
@@ -153,14 +159,35 @@ pub fn reset_op_start() {
 }
 
 pub fn run() {
+    // Set up panic hook to flush logs and open file manager
+    std::panic::set_hook(Box::new(|panic_info| {
+        // Log panic before flushing - this ensures panic info is written to file
+        if let Some(location) = panic_info.location() {
+            log::error!(
+                "PANIC at {}:{}: {}",
+                location.file(),
+                location.line(),
+                panic_info
+            );
+        } else {
+            log::error!("PANIC: {}", panic_info);
+        }
+        log::logger().flush();
+
+        // Open log file in file manager so user can see what happened
+        if let Some(path) = GUI_LOGGER.get_current_log_path() {
+            let _ = open_log_in_file_manager(&path);
+        }
+    }));
+
     log::set_logger(&*GUI_LOGGER).expect("failed to initialize GUI logger");
     log::set_max_level(LevelFilter::Debug);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let app_data_dir = profiles::app_data_dir(app.handle())
-                .expect("failed to resolve app data dir");
+            let app_data_dir =
+                profiles::app_data_dir(app.handle()).expect("failed to resolve app data dir");
             GUI_LOGGER.configure(app.handle().clone(), app_data_dir);
             if let Ok(settings_path) = profiles::app_data_file(app.handle(), "settings.json") {
                 match fs::remove_file(settings_path) {
