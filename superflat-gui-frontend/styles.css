@@ -849,11 +849,3 @@ body::after {
     justify-content: space-between;
     gap: 8px;
 }
-
-/*.btn-panel-secondary {
-    background: #3d2e2e;
-    color: #ffcece;
-    border: 2px solid #1a1212;
-    padding: 8px;
-    flex: 1;
-}*/
