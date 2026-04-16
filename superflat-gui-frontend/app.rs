@@ -128,6 +128,7 @@ fn AddProfilePanel() -> impl IntoView {
 
     // Reusable form closing logic
     let close_form = use_form_closing(state.right_panel, state.form_closing, state.list_instant);
+    let close_form_clone = close_form.clone();
 
     let save_profile_form = move |_: leptos::ev::MouseEvent| {
         let p = Profile {
@@ -141,7 +142,7 @@ fn AddProfilePanel() -> impl IntoView {
             return;
         }
         do_upsert_profile(p, state.profiles);
-        close_form();
+        close_form_clone();
     };
 
     view! {
@@ -190,17 +191,20 @@ fn AddProfilePanel() -> impl IntoView {
                                 class:invalid=move || show_errors.get() && form_mc_version.get().trim().is_empty()
                                 placeholder="e.g. 1.21.11" />
                         </label>
-                        <button class="btn btn-panel-primary" on:click=move |ev| {
-                            let dir_ok = !form_save_dir.get_untracked().trim().is_empty();
-                            let branch_ok = !form_branch.get_untracked().trim().is_empty();
-                            let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
-                            if dir_ok && branch_ok && ver_ok {
-                                save_profile_form(ev);
-                            } else {
-                                set_show_errors.set(false);
-                                spawn_local(async move { set_show_errors.set(true); });
-                            }
-                        }>"Track"</button>
+                        <div class="commit-modal-actions">
+                            <button class="btn btn-panel-secondary" on:click=move |_| close_form()>"Cancel"</button>
+                            <button class="btn btn-panel-primary" on:click=move |ev| {
+                                let dir_ok = !form_save_dir.get_untracked().trim().is_empty();
+                                let branch_ok = !form_branch.get_untracked().trim().is_empty();
+                                let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
+                                if dir_ok && branch_ok && ver_ok {
+                                    save_profile_form(ev);
+                                } else {
+                                    set_show_errors.set(false);
+                                    spawn_local(async move { set_show_errors.set(true); });
+                                }
+                            }>"Track"</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -240,6 +244,7 @@ fn EditProfilePanel() -> impl IntoView {
 
     // Reusable form closing logic
     let close_form = use_form_closing(state.right_panel, state.form_closing, state.list_instant);
+    let close_form_clone = close_form.clone();
 
     let save_profile_form = move |_: leptos::ev::MouseEvent| {
         let p = Profile {
@@ -254,7 +259,7 @@ fn EditProfilePanel() -> impl IntoView {
             state.active_profile.set(p.clone());
         }
         do_upsert_profile(p, state.profiles);
-        close_form();
+        close_form_clone();
     };
 
     view! {
@@ -297,16 +302,19 @@ fn EditProfilePanel() -> impl IntoView {
                                 class:invalid=move || remote_url_invalid.get()
                                 placeholder="ssh://..." />
                         </label>
-                        <button class="btn btn-panel-primary" on:click=move |ev| {
-                            let branch_ok = !form_branch.get_untracked().trim().is_empty();
-                            let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
-                            if branch_ok && ver_ok {
-                                save_profile_form(ev);
-                            } else {
-                                set_show_errors.set(false);
-                                spawn_local(async move { set_show_errors.set(true); });
-                            }
-                        }>"OK"</button>
+                        <div class="commit-modal-actions">
+                            <button class="btn btn-panel-secondary" on:click=move |_| close_form()>"Cancel"</button>
+                            <button class="btn btn-panel-primary" on:click=move |ev| {
+                                let branch_ok = !form_branch.get_untracked().trim().is_empty();
+                                let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
+                                if branch_ok && ver_ok {
+                                    save_profile_form(ev);
+                                } else {
+                                    set_show_errors.set(false);
+                                    spawn_local(async move { set_show_errors.set(true); });
+                                }
+                            }>"OK"</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -332,6 +340,7 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
         state.list_instant,
         move || state.show_profiles.set(false),
     );
+    let close_form_clone = close_form.clone();
 
     let clone_profile_form = move |_: leptos::ev::MouseEvent| {
         let save_dir = form_clone_git_dir.get_untracked();
@@ -366,7 +375,7 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
             }
             do_upsert_profile(p, state.profiles);
         });
-        close_form();
+        close_form_clone();
     };
 
     view! {
@@ -423,18 +432,21 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
                                 class:invalid=move || clone_show_errors.get() && form_mc_version.get().trim().is_empty()
                                 placeholder="e.g. 1.21.11" />
                         </label>
-                        <button class="btn btn-panel-primary" on:click=move |ev| {
-                            let git_dir_ok = !form_clone_git_dir.get_untracked().trim().is_empty();
-                            let url_ok = !form_remote_url.get_untracked().trim().is_empty();
-                            let branch_ok = !form_branch.get_untracked().trim().is_empty();
-                            let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
-                            if git_dir_ok && url_ok && branch_ok && ver_ok {
-                                clone_profile_form(ev);
-                            } else {
-                                set_clone_show_errors.set(false);
-                                spawn_local(async move { set_clone_show_errors.set(true); });
-                            }
-                        }>"Clone"</button>
+                        <div class="commit-modal-actions">
+                            <button class="btn btn-panel-secondary" on:click=move |_| close_form()>"Cancel"</button>
+                            <button class="btn btn-panel-primary" on:click=move |ev| {
+                                let git_dir_ok = !form_clone_git_dir.get_untracked().trim().is_empty();
+                                let url_ok = !form_remote_url.get_untracked().trim().is_empty();
+                                let branch_ok = !form_branch.get_untracked().trim().is_empty();
+                                let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
+                                if git_dir_ok && url_ok && branch_ok && ver_ok {
+                                    clone_profile_form(ev);
+                                } else {
+                                    set_clone_show_errors.set(false);
+                                    spawn_local(async move { set_clone_show_errors.set(true); });
+                                }
+                            }>"Clone"</button>
+                        </div>
                     </div>
                 </div>
             </div>
