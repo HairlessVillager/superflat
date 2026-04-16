@@ -47,11 +47,11 @@ fn ProfileCard(p: Profile) -> impl IntoView {
                     p.mc_version.clone()
                 }</div>
                 <div class="profile-card-actions">
-                    <button class="btn-edit" on:click=move |ev| {
+                    <button class="btn btn-edit" on:click=move |ev| {
                         ev.stop_propagation();
                         state.right_panel.set(RightPanel::EditProfile(p_clone.save_dir.clone()));
                     }>"Edit"</button>
-                    <button class="btn-remove" on:click=move |ev| {
+                    <button class="btn btn-remove" on:click=move |ev| {
                         ev.stop_propagation();
                         let dir = dir_clone.clone();
                         state.profiles.update(|ps| ps.retain(|x| x.save_dir != dir));
@@ -91,8 +91,8 @@ fn ProfileListPanel() -> impl IntoView {
             <div class="sidebar-panel-list">
                 <div class="sidebar-body">
                     <div class="btn-add-profile-group">
-                        <button class="btn-add-profile" on:click=open_add_profile>"+ Track Local Save"</button>
-                        <button class="btn-add-profile" on:click=open_clone_from_remote>"+ Clone From Remote"</button>
+                        <button class="btn btn-add-profile" on:click=open_add_profile>"+ Track Local Save"</button>
+                        <button class="btn btn-add-profile" on:click=open_clone_from_remote>"+ Clone From Remote"</button>
                     </div>
                     <Show when=move || state.profiles.get().is_empty() fallback=|| view! {}>
                         <p class="sidebar-empty">"No profiles yet"</p>
@@ -165,7 +165,7 @@ fn AddProfilePanel() -> impl IntoView {
                                     }
                                     class:invalid=move || show_errors.get() && form_save_dir.get().trim().is_empty()
                                     placeholder=".minecraft/saves/<save-name>/" />
-                                <button class="btn-browse" on:click=move |_| {
+                                <button class="btn btn-browse" on:click=move |_| {
                                     spawn_local(async move {
                                         if let Ok(r) = invoke("pick_directory", JsValue::NULL).await {
                                             if let Some(p) = r.as_string() { set_form_save_dir.set(p); }
@@ -192,7 +192,7 @@ fn AddProfilePanel() -> impl IntoView {
                                 class:invalid=move || show_errors.get() && form_mc_version.get().trim().is_empty()
                                 placeholder="e.g. 1.21.11" />
                         </label>
-                        <button class="btn-panel-primary" on:click=move |ev| {
+                        <button class="btn btn-panel-primary" on:click=move |ev| {
                             let dir_ok = !form_save_dir.get_untracked().trim().is_empty();
                             let branch_ok = !form_branch.get_untracked().trim().is_empty();
                             let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
@@ -303,7 +303,7 @@ fn EditProfilePanel() -> impl IntoView {
                                 class:invalid=move || remote_url_invalid.get()
                                 placeholder="ssh://..." />
                         </label>
-                        <button class="btn-panel-primary" on:click=move |ev| {
+                        <button class="btn btn-panel-primary" on:click=move |ev| {
                             let branch_ok = !form_branch.get_untracked().trim().is_empty();
                             let ver_ok = !form_mc_version.get_untracked().trim().is_empty();
                             if branch_ok && ver_ok {
@@ -393,7 +393,7 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
                                     }
                                     class:invalid=move || clone_show_errors.get() && form_clone_git_dir.get().trim().is_empty()
                                     placeholder=".minecraft/saves/<save-name>/" />
-                                <button class="btn-browse" on:click=move |_| {
+                                <button class="btn btn-browse" on:click=move |_| {
                                     spawn_local(async move {
                                         if let Ok(r) = invoke("pick_directory", JsValue::NULL).await {
                                             if let Some(p) = r.as_string() { set_form_clone_git_dir.set(p); }
@@ -429,7 +429,7 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
                                 class:invalid=move || clone_show_errors.get() && form_mc_version.get().trim().is_empty()
                                 placeholder="e.g. 1.21.11" />
                         </label>
-                        <button class="btn-panel-primary" on:click=move |ev| {
+                        <button class="btn btn-panel-primary" on:click=move |ev| {
                             let git_dir_ok = !form_clone_git_dir.get_untracked().trim().is_empty();
                             let url_ok = !form_remote_url.get_untracked().trim().is_empty();
                             let branch_ok = !form_branch.get_untracked().trim().is_empty();
@@ -506,14 +506,14 @@ fn GitUserConfigPanel() -> impl IntoView {
                                     placeholder="you@example.com" />
                             </label>
                             <div class="panel-row-buttons">
-                                <button class="btn-panel-secondary" on:click=move |_| {
+                                <button class="btn btn-panel-secondary" on:click=move |_| {
                                     spawn_local(async move {
                                         if let Err(err) = invoke("window_close", JsValue::NULL).await {
                                             log(&format!("quit failed: {}", js_error_to_string(err)));
                                         }
                                     });
                                 }>"Quit"</button>
-                                <button class="btn-panel-primary" on:click=move |ev| {
+                                <button class="btn btn-panel-primary" on:click=move |ev| {
                                     let name_ok = !form_git_name.get_untracked().trim().is_empty();
                                     let email_ok = !form_git_email.get_untracked().trim().is_empty();
                                     if name_ok && email_ok {

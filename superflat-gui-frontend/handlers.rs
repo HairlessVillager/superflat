@@ -26,7 +26,7 @@ pub fn MainContent(
     view! {
         <div class="main">
             <div class="topbar">
-                <button class="btn-menu"
+                <button class="btn btn-menu"
                     on:click=move |_| set_show_profiles.update(|v| *v = !*v)
                     disabled=move || is_running.get()>"☰"
                 </button>
@@ -48,7 +48,7 @@ pub fn MainContent(
                 </div>
                 <Show when=move || !active_profile.get().save_dir.is_empty()>
                     <div class="topbar-actions">
-                        <button class="btn-action btn-commit"
+                        <button class="btn btn-action btn-commit"
                             on:click=move |_| {
                                 if right_panel.get_untracked() == RightPanel::Commit {
                                     set_right_panel.set(RightPanel::None);
@@ -62,27 +62,27 @@ pub fn MainContent(
                             fallback=move || view! {
                                 <Show when=move || !active_profile.get().remote_url.is_empty()
                                     fallback=move || view! {
-                                        <button class="btn-action btn-pull" on:click=run_pull
+                                        <button class="btn btn-action btn-pull" on:click=run_pull
                                             disabled=move || is_running.get()>"Set Remote"</button>
                                     }
                                 >
-                                    <button class="btn-action btn-clone" on:click=run_clone
+                                    <button class="btn btn-action btn-clone" on:click=run_clone
                                         disabled=move || is_running.get()>"Clone"</button>
                                 </Show>
                             }
                         >
                             <Show when=move || !active_profile.get().remote_url.is_empty()
                                 fallback=move || view! {
-                                    <button class="btn-action btn-pull" on:click=run_pull
+                                    <button class="btn btn-action btn-pull" on:click=run_pull
                                         disabled=move || is_running.get()>"Set Remote"</button>
                                 }
                             >
-                                <button class="btn-action btn-pull" on:click=run_pull
+                                <button class="btn btn-action btn-pull" on:click=run_pull
                                     disabled=move || is_running.get()>"Pull"</button>
                             </Show>
                         </Show>
                         <Show when=move || repo_exists.get() && !active_profile.get().remote_url.is_empty()>
-                            <button class="btn-action btn-push" on:click=run_push
+                            <button class="btn btn-action btn-push" on:click=run_push
                                 disabled=move || is_running.get()>"Push"</button>
                         </Show>
                     </div>
@@ -116,7 +116,7 @@ pub fn MainContent(
                                                 {format!("{} / {} / {}", c.timestamp, c.author, c.short_hash)}
                                             </div>
                                         </div>
-                                        <button class="btn-checkout"
+                                        <button class="btn btn-checkout"
                                             disabled=move || is_running.get()
                                             on:click=move |_| set_right_panel.set(RightPanel::Checkout(commit.clone()))>
                                             "Checkout"
@@ -154,11 +154,11 @@ pub fn MainContent(
                                     rows="4" />
                             </label>
                             <div class="commit-modal-actions">
-                                <button class="btn-cancel-modal"
+                                <button class="btn btn-cancel-modal"
                                     on:click=move |_| set_right_panel.set(RightPanel::None)>
                                     "Cancel"
                                 </button>
-                                <button class="btn-commit-modal"
+                                <button class="btn btn-commit-modal"
                                     on:click=move |ev| {
                                         if draft_message.get_untracked().trim().is_empty() {
                                             set_commit_show_error.set(false);
@@ -203,11 +203,11 @@ pub fn MainContent(
                                 </div>
                             </Show>
                             <div class="commit-modal-actions">
-                                <button class="btn-cancel-modal"
+                                <button class="btn btn-cancel-modal"
                                     on:click=move |_| set_right_panel.set(RightPanel::None)>
                                     "Cancel"
                                 </button>
-                                <button class="btn-checkout-confirm"
+                                <button class="btn btn-checkout-confirm"
                                     disabled=move || is_running.get()
                                     on:click=move |_| {
                                         if let RightPanel::Checkout(c) = right_panel.get_untracked() {
@@ -241,11 +241,11 @@ pub fn MainContent(
                         <div class="commit-checkout-hash">{move || active_profile.get().remote_url}</div>
                     </div>
                     <div class="commit-modal-actions">
-                        <button class="btn-cancel-modal"
+                        <button class="btn btn-cancel-modal"
                             on:click=move |_| set_right_panel.set(RightPanel::None)>
                             "Cancel"
                         </button>
-                        <button class="btn-checkout-confirm"
+                        <button class="btn btn-checkout-confirm"
                             disabled=move || is_running.get()
                             on:click=move |_| do_pull()>
                             "Pull"
@@ -261,11 +261,11 @@ pub fn MainContent(
                         <div class="commit-checkout-hash">{move || active_profile.get().remote_url}</div>
                     </div>
                     <div class="commit-modal-actions">
-                        <button class="btn-cancel-modal"
+                        <button class="btn btn-cancel-modal"
                             on:click=move |_| set_right_panel.set(RightPanel::None)>
                             "Cancel"
                         </button>
-                        <button class="btn-checkout-confirm"
+                        <button class="btn btn-checkout-confirm"
                             disabled=move || is_running.get()
                             on:click=move |_| do_push()>
                             "Push"

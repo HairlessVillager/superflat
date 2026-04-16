@@ -161,21 +161,8 @@ body::after {
     flex-shrink: 0;
 }
 
-/* ── Button base: shared style for ALL buttons ─────────── */
-.btn-menu,
-.btn-action,
-.btn-edit,
-.btn-remove,
-.btn-browse,
-.btn-panel-primary,
-.btn-panel-secondary,
-.btn-load-profile,
-.btn-checkout,
-.btn-checkout-confirm,
-.btn-add-profile,
-.btn-commit-modal,
-.btn-cancel-modal,
-.sidebar-close {
+/* ── Button base ─────────────────────────────────────────── */
+.btn {
     border: 2px solid #141b11;
     border-radius: 0;
     font-family: var(--font-mono);
@@ -191,56 +178,27 @@ body::after {
 }
 
 /* topbar & commit-list buttons keep larger size */
-.btn-menu,
-.btn-action,
-.btn-checkout {
+.btn.btn-menu,
+.btn.btn-action,
+.btn.btn-checkout {
     font-size: 14px;
 }
 
-.btn-menu:hover,
-.btn-action:hover,
-.btn-edit:hover,
-.btn-remove:hover,
-.btn-browse:hover,
-.btn-panel-primary:hover,
-.btn-load-profile:hover,
-.btn-checkout:hover,
-.btn-checkout-confirm:hover,
-.btn-add-profile:hover,
-.btn-commit-modal:hover,
-.btn-cancel-modal:hover,
-.sidebar-close:hover {
+.btn:hover {
     filter: brightness(1.12);
 }
 
-.btn-menu:active,
-.btn-action:active,
-.btn-edit:active,
-.btn-remove:active,
-.btn-browse:active,
-.btn-panel-primary:active,
-.btn-load-profile:active,
-.btn-checkout:active,
-.btn-checkout-confirm:active,
-.btn-add-profile:active,
-.btn-commit-modal:active,
-.btn-cancel-modal:active,
-.sidebar-close:active {
+.btn:active {
     transform: translateY(1px);
 }
 
-.btn-menu:disabled,
-.btn-action:disabled,
-.btn-checkout:disabled,
-.btn-checkout-confirm:disabled,
-.btn-panel-primary:disabled,
-.btn-commit-modal:disabled {
+.btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
     filter: none;
 }
 
-.btn-menu {
+.btn.btn-menu {
     width: 34px;
     height: 34px;
     background: #5e7f47;
@@ -277,19 +235,19 @@ body::after {
     margin-left: auto;
 }
 
-.btn-action {
+.btn.btn-action {
     height: 34px;
     padding: 0 14px;
     font-size: 14px;
     color: #f1ffe8;
 }
 
-.btn-commit {
+.btn.btn-commit {
     background: var(--btn-success);
 }
-.btn-pull,
-.btn-push,
-.btn-clone {
+.btn.btn-pull,
+.btn.btn-push,
+.btn.btn-clone {
     background: #6f6349;
 }
 
@@ -507,14 +465,14 @@ body::after {
     text-overflow: ellipsis;
 }
 
-.btn-checkout-confirm {
+.btn.btn-checkout-confirm {
     flex: 1;
     padding: 8px;
     background: var(--btn-success);
     color: #f4ffe9;
 }
 
-.btn-checkout {
+.btn.btn-checkout {
     height: 34px;
     padding: 0 14px;
     background: var(--btn-success);
@@ -636,7 +594,7 @@ body::after {
     letter-spacing: 0.05em;
 }
 
-.sidebar-close {
+.btn.sidebar-close {
     background: #563636;
     color: #ffd3d3;
     padding: 5px 12px;
@@ -648,7 +606,7 @@ body::after {
     margin: 12px;
 }
 
-.btn-add-profile {
+.btn.btn-add-profile {
     display: block;
     flex: 1;
     padding: 8px;
@@ -708,44 +666,44 @@ body::after {
     flex-shrink: 0;
 }
 
-.btn-edit,
-.btn-remove {
+.btn.btn-edit,
+.btn.btn-remove {
     padding: 5px 12px;
     font-size: 11px;
     color: #fff;
 }
 
-.btn-edit {
+.btn.btn-edit {
     background: var(--btn-success);
 }
-.btn-remove {
+.btn.btn-remove {
     background: #ba1616;
 }
 
-.btn-browse {
+.btn.btn-browse {
     background: #556f42;
     color: #f3ffe7;
     padding: 0 12px;
 }
-.btn-panel-primary {
+.btn.btn-panel-primary {
     background: #5f9a41;
     color: #f2ffe7;
     padding: 8px;
     flex: 1;
 }
-.btn-load-profile {
+.btn.btn-load-profile {
     background: #4f6fbb;
     color: #ebf0ff;
     padding: 8px;
 }
-.btn-commit-modal {
+.btn.btn-commit-modal {
     background: var(--btn-success);
     color: #fff8ee;
     flex: 1;
     padding: 8px;
 }
-.btn-panel-secondary,
-.btn-cancel-modal {
+.btn.btn-panel-secondary,
+.btn.btn-cancel-modal {
     background: #4a4a3a;
     color: #c8c8b8;
     flex: 1;
