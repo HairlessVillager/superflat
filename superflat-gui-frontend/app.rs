@@ -1,6 +1,6 @@
 use crate::bindings::{invoke, log};
 use crate::handlers::MainContent;
-use crate::hooks::{use_git_event_listeners, use_window_controls};
+use crate::hooks::{use_form_closing, use_form_closing_with_cleanup, use_git_event_listeners, use_window_controls};
 use crate::state::{
     load_initial_data, provide_app_state, setup_profile_change_effect, use_app_state,
 };
@@ -124,6 +124,13 @@ fn AddProfilePanel() -> impl IntoView {
     let (form_mc_version, set_form_mc_version) = signal(String::new());
     let (show_errors, set_show_errors) = signal(false);
 
+    // Reusable form closing logic
+    let close_form = use_form_closing(
+        state.right_panel,
+        state.form_closing,
+        state.list_instant,
+    );
+
     let save_profile_form = move |_: leptos::ev::MouseEvent| {
         let p = Profile {
             save_dir: form_save_dir.get_untracked(),
@@ -136,14 +143,7 @@ fn AddProfilePanel() -> impl IntoView {
             return;
         }
         do_upsert_profile(p, state.profiles);
-        state.form_closing.set(true);
-        state.list_instant.set(true);
-        spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
-            state.right_panel.set(RightPanel::None);
-            state.form_closing.set(false);
-            state.list_instant.set(false);
-        });
+        close_form();
     };
 
     view! {
@@ -240,6 +240,13 @@ fn EditProfilePanel() -> impl IntoView {
         }
     });
 
+    // Reusable form closing logic
+    let close_form = use_form_closing(
+        state.right_panel,
+        state.form_closing,
+        state.list_instant,
+    );
+
     let save_profile_form = move |_: leptos::ev::MouseEvent| {
         let p = Profile {
             save_dir: form_save_dir.get_untracked(),
@@ -253,14 +260,7 @@ fn EditProfilePanel() -> impl IntoView {
             state.active_profile.set(p.clone());
         }
         do_upsert_profile(p, state.profiles);
-        state.form_closing.set(true);
-        state.list_instant.set(true);
-        spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
-            state.right_panel.set(RightPanel::None);
-            state.form_closing.set(false);
-            state.list_instant.set(false);
-        });
+        close_form();
     };
 
     view! {
@@ -331,6 +331,14 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
     let (form_mc_version, set_form_mc_version) = signal(String::new());
     let (clone_show_errors, set_clone_show_errors) = signal(false);
 
+    // Reusable form closing logic with extra cleanup
+    let close_form = use_form_closing_with_cleanup(
+        state.right_panel,
+        state.form_closing,
+        state.list_instant,
+        move || state.show_profiles.set(false),
+    );
+
     let clone_profile_form = move |_: leptos::ev::MouseEvent| {
         let save_dir = form_clone_git_dir.get_untracked();
         let remote_url = form_remote_url.get_untracked();
@@ -364,15 +372,7 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
             }
             do_upsert_profile(p, state.profiles);
         });
-        state.form_closing.set(true);
-        state.list_instant.set(true);
-        spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
-            state.right_panel.set(RightPanel::None);
-            state.show_profiles.set(false);
-            state.form_closing.set(false);
-            state.list_instant.set(false);
-        });
+        close_form();
     };
 
     view! {
@@ -457,6 +457,8 @@ fn GitUserConfigPanel() -> impl IntoView {
     let (form_git_email, set_form_git_email) = signal(String::new());
     let (_form_closing_local, _set_form_closing_local) = signal(false);
 
+    // Note: This panel doesn't use use_form_closing because it needs to wait
+    // for async operation to complete before closing
     let save_git_config = move |_: leptos::ev::MouseEvent| {
         let name = form_git_name.get_untracked();
         let email = form_git_email.get_untracked();
@@ -637,14 +639,11 @@ pub fn App() -> impl IntoView {
                         if matches!(state.right_panel.get_untracked(),
                             RightPanel::AddProfile | RightPanel::EditProfile(_) | RightPanel::CloneFromRemote)
                         {
-                            state.form_closing.set(true);
-                            state.list_instant.set(true);
-                            spawn_local(async move {
-                                gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
-                                state.right_panel.set(RightPanel::None);
-                                state.form_closing.set(false);
-                                state.list_instant.set(false);
-                            });
+                            use_form_closing(
+                                state.right_panel,
+                                state.form_closing,
+                                state.list_instant,
+                            )();
                         }
                     }
                 }/>

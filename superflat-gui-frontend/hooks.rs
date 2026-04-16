@@ -3,7 +3,52 @@ use leptos::task::spawn_local;
 use wasm_bindgen::prelude::*;
 
 use crate::bindings::{invoke, log, tauri_listen};
-use crate::types::{EVENT_OUTPUT, EVENT_DONE, js_error_to_string};
+use crate::types::{EVENT_OUTPUT, EVENT_DONE, js_error_to_string, FORM_CLOSE_ANIMATION_MS};
+
+/// Hook to handle form closing animation.
+/// Returns a closure that, when called, will:
+/// 1. Set form_closing to true to trigger animation
+/// 2. Set list_instant to true to skip transition
+/// 3. After animation, reset all states and close the panel
+pub fn use_form_closing(
+    right_panel: RwSignal<crate::types::RightPanel>,
+    form_closing: RwSignal<bool>,
+    list_instant: RwSignal<bool>,
+) -> impl Fn() + Clone + 'static {
+    move || {
+        form_closing.set(true);
+        list_instant.set(true);
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
+            right_panel.set(crate::types::RightPanel::None);
+            form_closing.set(false);
+            list_instant.set(false);
+        });
+    }
+}
+
+/// Hook to handle form closing animation with extra cleanup callback.
+/// Similar to use_form_closing but allows executing additional cleanup logic
+/// after the animation completes.
+pub fn use_form_closing_with_cleanup(
+    right_panel: RwSignal<crate::types::RightPanel>,
+    form_closing: RwSignal<bool>,
+    list_instant: RwSignal<bool>,
+    on_cleanup: impl Fn() + Clone + Send + 'static,
+) -> impl Fn() + Clone + 'static {
+    move || {
+        form_closing.set(true);
+        list_instant.set(true);
+        let cleanup = on_cleanup.clone();
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
+            right_panel.set(crate::types::RightPanel::None);
+            cleanup();
+            form_closing.set(false);
+            list_instant.set(false);
+        });
+    }
+}
 
 /// Sets up Git event listeners for log output and operation completion.
 /// Returns a future that sets up the listeners.
