@@ -1,102 +1,19 @@
-use crate::bindings::{invoke, log};
+use crate::bindings::invoke;
 use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use wasm_bindgen::prelude::*;
-
-pub fn make_refresh_repo_state(
-    set_repo_exists: WriteSignal<bool>,
-    set_commits: WriteSignal<Vec<CommitInfo>>,
-    set_output_lines: WriteSignal<Vec<String>>,
-) -> impl Fn(String) + Copy + 'static {
-    move |dir: String| {
-        if dir.is_empty() {
-            return;
-        }
-        // Fire both requests concurrently instead of sequentially.
-        // Each spawn_local captures its own dir snapshot, so a profile switch
-        // between the two spawns cannot cause one to use a stale directory.
-        let dir1 = dir.clone();
-        spawn_local(async move {
-            let args = to_js(&CheckRepoExistsArgs { save_dir: dir1 });
-            if let Ok(val) = invoke("check_repo_exists", args).await {
-                if let Some(exists) = val.as_bool() {
-                    set_repo_exists.set(exists);
-                }
-            }
-        });
-        spawn_local(async move {
-            let args = to_js(&GetCommitsArgs { save_dir: dir });
-            match invoke("get_commits", args).await {
-                Ok(val) => {
-                    if let Ok(c) = serde_wasm_bindgen::from_value::<Vec<CommitInfo>>(val) {
-                        set_commits.set(c);
-                    }
-                }
-                Err(err) => set_output_lines.update(|l| {
-                    l.push(format!(
-                        "Failed to load commits: {}",
-                        js_error_to_string(err)
-                    ))
-                }),
-            }
-        });
-    }
-}
-
-pub fn make_upsert_profile(
-    set_profiles: WriteSignal<Vec<Profile>>,
-) -> impl Fn(Profile) + Copy + 'static {
-    move |p: Profile| {
-        spawn_local(async move {
-            let args = to_js(&UpsertProfileArgs { profile: p });
-            if let Err(err) = invoke("upsert_profile", args).await {
-                log(&format!(
-                    "upsert_profile failed: {}",
-                    js_error_to_string(err)
-                ));
-                return;
-            }
-            if let Ok(result) = invoke("get_profiles", JsValue::NULL).await {
-                if let Ok(ps) = serde_wasm_bindgen::from_value::<Vec<Profile>>(result) {
-                    set_profiles.set(ps);
-                }
-            }
-        });
-    }
-}
-
-pub fn run_remote_op<F: Fn(&Profile) -> JsValue>(
-    cmd: &'static str,
-    args_fn: F,
-    active_profile: ReadSignal<Profile>,
-    set_output_lines: WriteSignal<Vec<String>>,
-    set_is_running: WriteSignal<bool>,
-    do_upsert_profile: impl Fn(Profile) + 'static,
-) {
-    set_output_lines.set(Vec::new());
-    set_is_running.set(true);
-    let p = active_profile.get_untracked();
-    let args = args_fn(&p);
-    spawn_local(async move {
-        if let Err(err) = invoke(cmd, args).await {
-            set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
-        }
-        do_upsert_profile(p);
-    });
-}
 
 #[component]
 pub fn MainContent(
-    active_profile: ReadSignal<Profile>,
-    is_running: ReadSignal<bool>,
-    right_panel: ReadSignal<RightPanel>,
-    set_right_panel: WriteSignal<RightPanel>,
-    repo_exists: ReadSignal<bool>,
-    commits: ReadSignal<Vec<CommitInfo>>,
-    set_show_profiles: WriteSignal<bool>,
-    draft_message: ReadSignal<String>,
-    set_draft_message: WriteSignal<String>,
+    active_profile: RwSignal<Profile>,
+    is_running: RwSignal<bool>,
+    right_panel: RwSignal<RightPanel>,
+    set_right_panel: RwSignal<RightPanel>,
+    repo_exists: RwSignal<bool>,
+    commits: RwSignal<Vec<CommitInfo>>,
+    set_show_profiles: RwSignal<bool>,
+    draft_message: RwSignal<String>,
+    set_draft_message: RwSignal<String>,
     run_commit: impl Fn(leptos::ev::MouseEvent) + Copy + Send + Sync + 'static,
     run_checkout: impl Fn(String) + Copy + Send + Sync + 'static,
     run_pull: impl Fn(leptos::ev::MouseEvent) + Copy + Send + Sync + 'static,
