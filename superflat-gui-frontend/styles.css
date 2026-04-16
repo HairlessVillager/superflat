@@ -277,7 +277,7 @@ body::after {
 
 .status-bar {
     height: 22px;
-    background: var(--bg-1);
+    background: var(--line-2);
     border-top: 1px solid var(--bg-0);
     display: flex;
     align-items: center;
@@ -291,7 +291,7 @@ body::after {
     min-width: 0;
     font-size: 11px;
     font-family: var(--font-mono);
-    color: var(--muted-2);
+    color: var(--text-faint);
     white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -327,7 +327,7 @@ body::after {
     cursor: pointer;
     font-size: 11px;
     font-family: var(--font-mono);
-    color: var(--muted-2);
+    color: var(--text-faint);
     line-height: 22px;
 }
 
