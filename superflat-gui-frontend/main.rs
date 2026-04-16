@@ -1,5 +1,6 @@
 mod app;
 mod bindings;
+mod components;
 mod handlers;
 mod hooks;
 mod state;

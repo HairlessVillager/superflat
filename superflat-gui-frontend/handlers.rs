@@ -1,4 +1,5 @@
 use crate::bindings::invoke;
+use crate::components::ConfirmDialog;
 use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -234,45 +235,23 @@ pub fn MainContent(
                 </div>
             </div>
         </div>
-        <div class="sidebar" class:open=move || right_panel.get() == RightPanel::ConfirmPull>
-            <div class="sidebar-panel-form">
-                <div class="panel-body">
-                    <div class="panel-label">"Pull from remote?"
-                        <div class="commit-checkout-hash">{move || active_profile.get().remote_url}</div>
-                    </div>
-                    <div class="commit-modal-actions">
-                        <button class="btn btn-cancel-modal"
-                            on:click=move |_| set_right_panel.set(RightPanel::None)>
-                            "Cancel"
-                        </button>
-                        <button class="btn btn-checkout-confirm"
-                            disabled=move || is_running.get()
-                            on:click=move |_| do_pull()>
-                            "Pull"
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="sidebar" class:open=move || right_panel.get() == RightPanel::ConfirmPush>
-            <div class="sidebar-panel-form">
-                <div class="panel-body">
-                    <div class="panel-label">"Push to remote?"
-                        <div class="commit-checkout-hash">{move || active_profile.get().remote_url}</div>
-                    </div>
-                    <div class="commit-modal-actions">
-                        <button class="btn btn-cancel-modal"
-                            on:click=move |_| set_right_panel.set(RightPanel::None)>
-                            "Cancel"
-                        </button>
-                        <button class="btn btn-checkout-confirm"
-                            disabled=move || is_running.get()
-                            on:click=move |_| do_push()>
-                            "Push"
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <ConfirmDialog
+            is_open=move || right_panel.get() == RightPanel::ConfirmPull
+            title=move || "Pull from remote?".to_string()
+            target=move || active_profile.get().remote_url.clone()
+            confirm_label=move || "Pull".to_string()
+            on_confirm=do_pull
+            on_cancel=move || set_right_panel.set(RightPanel::None)
+            is_running=move || is_running.get()
+        />
+        <ConfirmDialog
+            is_open=move || right_panel.get() == RightPanel::ConfirmPush
+            title=move || "Push to remote?".to_string()
+            target=move || active_profile.get().remote_url.clone()
+            confirm_label=move || "Push".to_string()
+            on_confirm=do_push
+            on_cancel=move || set_right_panel.set(RightPanel::None)
+            is_running=move || is_running.get()
+        />
     }
 }
