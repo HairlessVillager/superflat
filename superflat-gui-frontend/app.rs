@@ -1,8 +1,10 @@
 use crate::bindings::{invoke, log};
 use crate::handlers::MainContent;
-use crate::types::*;
-use crate::state::{provide_app_state, load_initial_data, setup_profile_change_effect, use_app_state};
 use crate::hooks::{use_git_event_listeners, use_window_controls};
+use crate::state::{
+    load_initial_data, provide_app_state, setup_profile_change_effect, use_app_state,
+};
+use crate::types::*;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::prelude::*;
@@ -12,7 +14,10 @@ fn do_upsert_profile(p: Profile, profiles: RwSignal<Vec<Profile>>) {
     spawn_local(async move {
         let args = to_js(&UpsertProfileArgs { profile: p });
         if let Err(err) = invoke("upsert_profile", args).await {
-            log(&format!("upsert_profile failed: {}", js_error_to_string(err)));
+            log(&format!(
+                "upsert_profile failed: {}",
+                js_error_to_string(err)
+            ));
             return;
         }
         if let Ok(result) = invoke("get_profiles", JsValue::NULL).await {
@@ -221,7 +226,12 @@ fn EditProfilePanel() -> impl IntoView {
     // Sync form with active profile when edit panel opens
     Effect::new(move |_| {
         if let RightPanel::EditProfile(ref save_dir) = state.right_panel.get() {
-            if let Some(p) = state.profiles.get().iter().find(|p| &p.save_dir == save_dir) {
+            if let Some(p) = state
+                .profiles
+                .get()
+                .iter()
+                .find(|p| &p.save_dir == save_dir)
+            {
                 form_save_dir.set(p.save_dir.clone());
                 form_branch.set(p.branch.clone());
                 form_mc_version.set(p.mc_version.clone());
@@ -348,7 +358,9 @@ fn CloneFromRemoteFormPanel() -> impl IntoView {
                 url: remote_url,
             });
             if let Err(err) = invoke("run_clone", args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
+                state
+                    .output_lines
+                    .update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             }
             do_upsert_profile(p, state.profiles);
         });
@@ -454,7 +466,9 @@ fn GitUserConfigPanel() -> impl IntoView {
                 email: email.clone(),
             });
             if let Err(err) = invoke("set_git_user_config", args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
+                state
+                    .output_lines
+                    .update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
             } else {
                 state.right_panel.set(RightPanel::None);
             }
@@ -535,7 +549,9 @@ pub fn App() -> impl IntoView {
 
     // Set up git event listeners
     let refresh = move |dir: String| {
-        if dir.is_empty() { return; }
+        if dir.is_empty() {
+            return;
+        }
         let dir1 = dir.clone();
         spawn_local(async move {
             let args = to_js(&CheckRepoExistsArgs { save_dir: dir1 });
@@ -554,7 +570,10 @@ pub fn App() -> impl IntoView {
                     }
                 }
                 Err(err) => state.output_lines.update(|l| {
-                    l.push(format!("Failed to load commits: {}", js_error_to_string(err)))
+                    l.push(format!(
+                        "Failed to load commits: {}",
+                        js_error_to_string(err)
+                    ))
                 }),
             }
         });
@@ -568,144 +587,38 @@ pub fn App() -> impl IntoView {
         refresh,
     );
 
-    // Helper for remote operations
-    let run_remote_op_helper = move |cmd: &'static str, args: JsValue| {
-        state.output_lines.set(Vec::new());
-        state.is_running.set(true);
-        let p = state.active_profile.get_untracked();
-        spawn_local(async move {
-            if let Err(err) = invoke(cmd, args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
-            }
-            // Refresh after operation
-            let dir = p.save_dir.clone();
-            if !dir.is_empty() {
-                let args = to_js(&CheckRepoExistsArgs { save_dir: dir.clone() });
-                if let Ok(val) = invoke("check_repo_exists", args).await {
-                    if let Some(exists) = val.as_bool() {
-                        state.repo_exists.set(exists);
-                    }
-                }
-                let args = to_js(&GetCommitsArgs { save_dir: dir });
-                match invoke("get_commits", args).await {
-                    Ok(val) => {
-                        if let Ok(c) = serde_wasm_bindgen::from_value::<Vec<CommitInfo>>(val) {
-                            state.commits.set(c);
-                        }
-                    }
-                    Err(_) => {}
-                }
-            }
-        });
-    };
-
-    let do_pull = move || {
-        state.op_start_ms.set(js_sys::Date::now());
-        state.last_raw_line.set(String::new());
-        state.right_panel.set(RightPanel::None);
-        let p = state.active_profile.get_untracked();
-        let args = to_js(&RunPullArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() });
-        run_remote_op_helper("run_pull", args);
-    };
-
-    let do_push = move || {
-        state.op_start_ms.set(js_sys::Date::now());
-        state.last_raw_line.set(String::new());
-        state.right_panel.set(RightPanel::None);
-        let p = state.active_profile.get_untracked();
-        let args = to_js(&RunPushArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() });
-        run_remote_op_helper("run_push", args);
-    };
-
-    let run_pull = move |_: leptos::ev::MouseEvent| {
-        let p = state.active_profile.get_untracked();
-        if p.remote_url.is_empty() {
-            state.right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
-            state.show_profiles.set(true);
-            return;
-        }
-        state.right_panel.set(RightPanel::ConfirmPull);
-    };
-
-    let run_push = move |_: leptos::ev::MouseEvent| {
-        let p = state.active_profile.get_untracked();
-        if p.remote_url.is_empty() {
-            state.right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
-            state.show_profiles.set(true);
-            return;
-        }
-        state.right_panel.set(RightPanel::ConfirmPush);
-    };
-
-    let run_clone = move |_: leptos::ev::MouseEvent| {
-        let p = state.active_profile.get_untracked();
-        if p.save_dir.is_empty() {
-            state.output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
-            return;
-        }
-        if p.remote_url.is_empty() {
-            state.output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
-            return;
-        }
-        state.op_start_ms.set(js_sys::Date::now());
-        state.last_raw_line.set(String::new());
-        let args = to_js(&RunCloneArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() });
-        run_remote_op_helper("run_clone", args);
-    };
-
-    // Commit-related state and functions
+    // Commit-related state
     let draft_message = RwSignal::new(String::new());
     let set_draft_message = draft_message;
 
+    // Event handlers that wrap state methods
+    let run_pull = move |_: leptos::ev::MouseEvent| {
+        state.run_pull();
+    };
+
+    let run_push = move |_: leptos::ev::MouseEvent| {
+        state.run_push();
+    };
+
+    let run_clone = move |_: leptos::ev::MouseEvent| {
+        state.run_clone();
+    };
+
     let run_commit = move |_: leptos::ev::MouseEvent| {
         let msg = draft_message.get_untracked();
-        if msg.is_empty() {
-            state.output_lines.update(|l| l.push("Error: Commit message is empty".to_string()));
-            return;
-        }
-        let p = state.active_profile.get_untracked();
-        state.op_start_ms.set(js_sys::Date::now());
-        state.last_raw_line.set(String::new());
-        state.output_lines.set(Vec::new());
-        state.is_running.set(true);
-        state.right_panel.set(RightPanel::None);
-        set_draft_message.set(String::new());
-        spawn_local(async move {
-            let args = to_js(&RunCommitArgs {
-                save_dir: p.save_dir.clone(),
-                branch: p.branch.clone(),
-                message: msg,
-                mc_version: p.mc_version.clone(),
-            });
-            if let Err(err) = invoke("run_commit", args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
-            }
-            do_upsert_profile(p, state.profiles);
-        });
+        state.run_commit(msg, draft_message);
     };
 
     let run_checkout = move |commit: String| {
-        let p = state.active_profile.get_untracked();
-        if p.save_dir.is_empty() {
-            state.output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
-            return;
-        }
-        state.op_start_ms.set(js_sys::Date::now());
-        state.last_raw_line.set(String::new());
-        state.output_lines.set(Vec::new());
-        state.is_running.set(true);
+        state.run_checkout(commit);
+    };
 
-        spawn_local(async move {
-            let args = to_js(&RunCheckoutArgs {
-                save_dir: p.save_dir.clone(),
-                commit,
-                mc_version: p.mc_version.clone(),
-            });
-            if let Err(err) = invoke("run_checkout", args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
-            }
-            do_upsert_profile(p, state.profiles);
-        });
+    let do_pull = move || {
+        state.do_pull();
+    };
+
+    let do_push = move || {
+        state.do_push();
     };
 
     view! {
