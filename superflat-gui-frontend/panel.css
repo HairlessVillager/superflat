@@ -105,22 +105,3 @@
     flex: 1;
     min-width: 0;
 }
-
-/* ── Scrollbar ───────────────────────────────────────────── */
-
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: #0f170c;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #405635;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #5b7a49;
-}
