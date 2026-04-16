@@ -18,15 +18,20 @@
     --bg-0: #10150f;
     --bg-1: #151d12;
     --bg-2: #1f2a18;
+    --bg-3: #1d2c18;
     --panel: #21301d;
     --panel-2: #182514;
     --line: #4f6a3e;
+    --line-2: #2a3b21;
     --line-soft: #384a2e;
     --text: #d5eac8;
     --muted: #8da87a;
+    --muted-2: #7a9a6a;
     --ok: #83f279;
     --warn: #ffd57b;
     --accent: #8de06f;
+    --btn-success: #4d7e36;
+    --info: #5ab4d4;
 }
 
 * {
@@ -280,7 +285,7 @@ body::after {
 }
 
 .btn-commit {
-    background: #4d7e36;
+    background: var(--btn-success);
 }
 .btn-pull,
 .btn-push,
@@ -310,7 +315,7 @@ body::after {
     min-width: 0;
     font-size: 11px;
     font-family: var(--font-mono);
-    color: #7a9a6a;
+    color: var(--muted-2);
     white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -324,7 +329,7 @@ body::after {
 .status-bar-item {
     font-size: 11px;
     font-family: var(--font-mono);
-    color: #7a9a6a;
+    color: var(--muted-2);
 }
 
 .status-bar-item.ok {
@@ -336,7 +341,7 @@ body::after {
 }
 
 .status-bar-item.running {
-    color: #5ab4d4;
+    color: var(--info);
 }
 
 .status-bar-btn {
@@ -346,7 +351,7 @@ body::after {
     cursor: pointer;
     font-size: 11px;
     font-family: var(--font-mono);
-    color: #7a9a6a;
+    color: var(--muted-2);
     line-height: 22px;
 }
 
@@ -356,7 +361,7 @@ body::after {
 }
 
 .status-bar-btn.running {
-    color: #5ab4d4;
+    color: var(--info);
 }
 
 .status-bar-btn.running:hover {
@@ -471,7 +476,7 @@ body::after {
     align-items: center;
     gap: 10px;
     padding: 10px;
-    border: 2px solid #2a3b21;
+    border: 2px solid var(--line-2);
     background: #1f2c18;
 }
 
@@ -505,14 +510,14 @@ body::after {
 .btn-checkout-confirm {
     flex: 1;
     padding: 8px;
-    background: #4d7e36;
+    background: var(--btn-success);
     color: #f4ffe9;
 }
 
 .btn-checkout {
     height: 34px;
     padding: 0 14px;
-    background: #4d7e36;
+    background: var(--btn-success);
     color: #f4ffe9;
 }
 
@@ -527,7 +532,7 @@ body::after {
     margin-top: 8px;
     padding: 10px;
     background: #0e1a0c;
-    border: 1px solid #2a3b21;
+    border: 1px solid var(--line-2);
     color: #a8d89a;
     font-size: 11px;
     font-family: var(--font-mono);
@@ -647,7 +652,7 @@ body::after {
     display: block;
     flex: 1;
     padding: 8px;
-    background: #4d7e36;
+    background: var(--btn-success);
     color: #eaffdd;
 }
 
@@ -666,7 +671,7 @@ body::after {
 }
 
 .profile-card {
-    background: #1d2c18;
+    background: var(--bg-3);
     border: 2px solid #2a3d21;
     padding: 10px;
     display: flex;
@@ -711,7 +716,7 @@ body::after {
 }
 
 .btn-edit {
-    background: #4d7e36;
+    background: var(--btn-success);
 }
 .btn-remove {
     background: #ba1616;
@@ -734,7 +739,7 @@ body::after {
     padding: 8px;
 }
 .btn-commit-modal {
-    background: #4d7e36;
+    background: var(--btn-success);
     color: #fff8ee;
     flex: 1;
     padding: 8px;
