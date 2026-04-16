@@ -126,6 +126,7 @@ pub enum RightPanel {
     EditProfile(String), // save_dir key
     CloneFromRemote,
     GitUserConfig,
+    GitMissing,
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

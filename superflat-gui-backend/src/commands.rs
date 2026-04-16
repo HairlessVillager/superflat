@@ -13,6 +13,21 @@ pub struct GitUserConfig {
     pub email: String,
 }
 
+/// Check if git is available on the system
+#[tauri::command]
+pub fn check_git_available() -> Result<(), String> {
+    let output = std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("Git is missing. [Install Now](https://git-scm.com/install/)".to_string())
+    }
+}
+
 #[tauri::command]
 pub fn get_git_user_config() -> GitUserConfig {
     let name = std::process::Command::new("git")

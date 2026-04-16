@@ -1,6 +1,8 @@
 use crate::bindings::{invoke, log};
 use crate::handlers::MainContent;
-use crate::hooks::{use_form_closing, use_form_closing_with_cleanup, use_git_event_listeners, use_window_controls};
+use crate::hooks::{
+    use_form_closing, use_form_closing_with_cleanup, use_git_event_listeners, use_window_controls,
+};
 use crate::state::{
     load_initial_data, provide_app_state, setup_profile_change_effect, use_app_state,
 };
@@ -125,11 +127,7 @@ fn AddProfilePanel() -> impl IntoView {
     let (show_errors, set_show_errors) = signal(false);
 
     // Reusable form closing logic
-    let close_form = use_form_closing(
-        state.right_panel,
-        state.form_closing,
-        state.list_instant,
-    );
+    let close_form = use_form_closing(state.right_panel, state.form_closing, state.list_instant);
 
     let save_profile_form = move |_: leptos::ev::MouseEvent| {
         let p = Profile {
@@ -241,11 +239,7 @@ fn EditProfilePanel() -> impl IntoView {
     });
 
     // Reusable form closing logic
-    let close_form = use_form_closing(
-        state.right_panel,
-        state.form_closing,
-        state.list_instant,
-    );
+    let close_form = use_form_closing(state.right_panel, state.form_closing, state.list_instant);
 
     let save_profile_form = move |_: leptos::ev::MouseEvent| {
         let p = Profile {
@@ -533,6 +527,28 @@ fn GitUserConfigPanel() -> impl IntoView {
     }
 }
 
+// ── Git missing panel───────────────────────────────────────────────────────
+
+#[component]
+fn GitMissingPanel() -> impl IntoView {
+    let state = use_app_state();
+    view! {
+        <Show when=move || state.right_panel.get() == RightPanel::GitMissing>
+            <div class="sidebar-overlay" on:click=move |_| {}></div>
+            <div class="sidebar" class:open=move || state.right_panel.get() == RightPanel::GitMissing>
+                <div class="sidebar-panel-form">
+                    <div class="sidebar-body">
+                        <div class="panel-body">
+                            <p class="panel-hint">"Git is missing."</p>
+                            <a href="https://git-scm.com/install/" target="_blank" class="btn btn-panel-primary">"Install Now"</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
 // ── App ─────────────────────────────────────────────────────────────────────
 
 #[component]
@@ -629,6 +645,7 @@ pub fn App() -> impl IntoView {
             <AddProfilePanel />
             <EditProfilePanel />
             <GitUserConfigPanel />
+            <GitMissingPanel />
             <CloneFromRemoteFormPanel />
             <Show when=move || state.show_profiles.get() || matches!(state.right_panel.get(), RightPanel::Commit | RightPanel::Checkout(_) | RightPanel::ConfirmPull | RightPanel::ConfirmPush)>
                 <div class="sidebar-overlay" on:click=move |_| {

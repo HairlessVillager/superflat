@@ -226,6 +226,7 @@ pub fn run() {
             git_ops::get_commits,
             commands::get_git_user_config,
             commands::set_git_user_config,
+            commands::check_git_available,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

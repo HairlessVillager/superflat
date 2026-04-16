@@ -229,8 +229,14 @@ pub fn use_app_state() -> AppState {
 pub fn load_initial_data(state: AppState) {
     use leptos::task::spawn_local;
 
-    // Check git user config on startup
+    // Check git is available first
     spawn_local(async move {
+        if let Err(_) = invoke("check_git_available", JsValue::NULL).await {
+            state.right_panel.set(RightPanel::GitMissing);
+            return;
+        }
+
+        // Check git user config on startup
         if let Ok(result) = invoke("get_git_user_config", JsValue::NULL).await {
             if let Ok(config) =
                 serde_wasm_bindgen::from_value::<crate::types::GitUserConfig>(result)
