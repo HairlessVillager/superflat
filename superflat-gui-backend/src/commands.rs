@@ -1,10 +1,69 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
 use crate::EVENT_DONE;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitUserConfig {
+    pub name: String,
+    pub email: String,
+}
+
+#[tauri::command]
+pub fn get_git_user_config() -> GitUserConfig {
+    let name = std::process::Command::new("git")
+        .args(["config", "--global", "user.name"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(o) } else { None })
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let email = std::process::Command::new("git")
+        .args(["config", "--global", "user.email"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(o) } else { None })
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    GitUserConfig { name, email }
+}
+
+#[tauri::command]
+pub fn set_git_user_config(name: String, email: String) -> Result<(), String> {
+    if !name.trim().is_empty() {
+        let output = std::process::Command::new("git")
+            .args(["config", "--global", "user.name", &name])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to set user.name: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+
+    if !email.trim().is_empty() {
+        let output = std::process::Command::new("git")
+            .args(["config", "--global", "user.email", &email])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to set user.email: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+
+    Ok(())
+}
 use crate::git_ops::{
     apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir,
 };

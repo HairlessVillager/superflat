@@ -163,6 +163,7 @@ body::after {
 .btn-remove,
 .btn-browse,
 .btn-panel-primary,
+.btn-panel-secondary,
 .btn-load-profile,
 .btn-checkout,
 .btn-checkout-confirm,
@@ -725,6 +726,7 @@ body::after {
     background: #5f9a41;
     color: #f2ffe7;
     padding: 8px;
+    flex: 1;
 }
 .btn-load-profile {
     background: #4f6fbb;
@@ -737,6 +739,7 @@ body::after {
     flex: 1;
     padding: 8px;
 }
+.btn-panel-secondary,
 .btn-cancel-modal {
     background: #4a4a3a;
     color: #c8c8b8;
@@ -791,3 +794,66 @@ body::after {
 ::-webkit-scrollbar-thumb:hover {
     background: #5b7a49;
 }
+
+/* Git user config modal */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(1px);
+    z-index: 90;
+}
+
+.modal-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 320px;
+    z-index: 100;
+}
+
+.modal-panel.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.modal-panel .modal-titlebar {
+    font-weight: bold;
+    font-size: 16px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+}
+
+.modal-panel .modal-desc {
+    margin-bottom: 16px;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+/* Git user config hint */
+.panel-hint {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.panel-row-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+/*.btn-panel-secondary {
+    background: #3d2e2e;
+    color: #ffcece;
+    border: 2px solid #1a1212;
+    padding: 8px;
+    flex: 1;
+}*/

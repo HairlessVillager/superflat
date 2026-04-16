@@ -364,6 +364,79 @@ fn CloneFromRemoteFormPanel(
     }
 }
 
+// ── Git user config panel
+
+#[component]
+fn GitUserConfigPanel(
+    right_panel: ReadSignal<RightPanel>,
+    form_closing: ReadSignal<bool>,
+    form_git_name: ReadSignal<String>,
+    form_git_email: ReadSignal<String>,
+    set_form_git_name: WriteSignal<String>,
+    set_form_git_email: WriteSignal<String>,
+    set_form_closing: WriteSignal<bool>,
+    set_list_instant: WriteSignal<bool>,
+    set_right_panel: WriteSignal<RightPanel>,
+    set_output_lines: WriteSignal<Vec<String>>,
+    save_git_config: impl Fn(leptos::ev::MouseEvent) + Copy + 'static + Send + Sync,
+) -> impl IntoView {
+    let (form_closing_local, _set_form_closing_local) = signal(false);
+    view! {
+        <Show when=move || right_panel.get() == RightPanel::GitUserConfig>
+            <div class="sidebar-overlay" on:click=move |_| {}></div>
+            <div class="sidebar"
+                class:open=move || right_panel.get() == RightPanel::GitUserConfig
+                    || (form_closing.get() && right_panel.get() == RightPanel::GitUserConfig)
+                class:no-transition=move || form_closing_local.get()
+            >
+                <div class="sidebar-panel-form">
+                    <div class="sidebar-body">
+                        <div class="panel-body">
+                            <p class="panel-hint">"Please set your Git user name and email for commits."</p>
+                            <label class="panel-label">"user.name"
+                                <input type="text" prop:value=move || form_git_name.get()
+                                    on:input=move |ev| { set_form_git_name.set(event_target_value(&ev)); }
+                                    placeholder="Your Name" />
+                            </label>
+                            <label class="panel-label">"user.email"
+                                <input type="text" prop:value=move || form_git_email.get()
+                                    on:input=move |ev| { set_form_git_email.set(event_target_value(&ev)); }
+                                    placeholder="you@example.com" />
+                            </label>
+                            <div class="panel-row-buttons">
+                                <button class="btn-panel-secondary" on:click=move |_| {
+                                    spawn_local(async move {
+                                        if let Err(err) = invoke("window_close", JsValue::NULL).await {
+                                            log(&format!("quit failed: {}", js_error_to_string(err)));
+                                        }
+                                    });
+                                }>"Quit"</button>
+                                <button class="btn-panel-primary" on:click=move |ev| {
+                                    let name_ok = !form_git_name.get_untracked().trim().is_empty();
+                                    let email_ok = !form_git_email.get_untracked().trim().is_empty();
+                                    if name_ok && email_ok {
+                                        save_git_config(ev);
+                                        set_form_closing.set(true);
+                                        set_list_instant.set(true);
+                                        spawn_local(async move {
+                                            gloo_timers::future::TimeoutFuture::new(FORM_CLOSE_ANIMATION_MS).await;
+                                            set_right_panel.set(RightPanel::None);
+                                            set_form_closing.set(false);
+                                            set_list_instant.set(false);
+                                        });
+                                    } else {
+                                        set_output_lines.update(|l| l.push("Error: name and email are required".to_string()));
+                                    }
+                                }>"Save"</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
 // ── App ─────────────────────────────────────────────────────────────────────
 
 #[component]
@@ -393,11 +466,24 @@ pub fn App() -> impl IntoView {
     let (form_mc_version, set_form_mc_version) = signal(String::new());
     let (form_remote_url, set_form_remote_url) = signal(String::new());
     let (form_clone_git_dir, set_form_clone_git_dir) = signal(String::new());
+    let (form_git_name, set_form_git_name) = signal(String::new());
+    let (form_git_email, set_form_git_email) = signal(String::new());
 
     let (remote_url_invalid, set_remote_url_invalid) = signal(false);
 
     let refresh = make_refresh_repo_state(set_repo_exists, set_commits, set_output_lines);
     let do_upsert = make_upsert_profile(set_profiles);
+
+    // Check git user config on startup
+    spawn_local(async move {
+        if let Ok(result) = invoke("get_git_user_config", JsValue::NULL).await {
+            if let Ok(config) = serde_wasm_bindgen::from_value::<GitUserConfig>(result) {
+                if config.name.is_empty() || config.email.is_empty() {
+                    set_right_panel.set(RightPanel::GitUserConfig);
+                }
+            }
+        }
+    });
 
     Effect::new(move |_| {
         let dir = active_profile.get().save_dir;
@@ -664,6 +750,22 @@ pub fn App() -> impl IntoView {
         set_show_profiles.set(true);
     };
 
+    let save_git_config = move |_: leptos::ev::MouseEvent| {
+        let name = form_git_name.get_untracked();
+        let email = form_git_email.get_untracked();
+        spawn_local(async move {
+            let args = to_js(&SetGitUserConfigArgs {
+                name: name.clone(),
+                email: email.clone(),
+            });
+            if let Err(err) = invoke("set_git_user_config", args).await {
+                set_output_lines.update(|l| l.push(format!("Error: {}", js_error_to_string(err))));
+            } else {
+                set_right_panel.set(RightPanel::None);
+            }
+        });
+    };
+
     let clone_profile_form = move |_: leptos::ev::MouseEvent| {
         let save_dir = form_clone_git_dir.get_untracked();
         let remote_url = form_remote_url.get_untracked();
@@ -769,6 +871,19 @@ pub fn App() -> impl IntoView {
                 set_form_remote_url=set_form_remote_url
                 remote_url_invalid=remote_url_invalid set_remote_url_invalid=set_remote_url_invalid
                 save_profile_form=save_profile_form
+            />
+            <GitUserConfigPanel
+                right_panel=right_panel
+                form_closing=form_closing
+                form_git_name=form_git_name
+                form_git_email=form_git_email
+                set_form_git_name=set_form_git_name
+                set_form_git_email=set_form_git_email
+                set_form_closing=set_form_closing
+                set_list_instant=set_list_instant
+                set_right_panel=set_right_panel
+                set_output_lines=set_output_lines
+                save_git_config=save_git_config
             />
             <CloneFromRemoteFormPanel
                 show_profiles=show_profiles right_panel=right_panel form_closing=form_closing

@@ -8,6 +8,21 @@ pub const FORM_CLOSE_ANIMATION_MS: u32 = 200;
 pub const EVENT_OUTPUT: &str = "sf-log";
 pub const EVENT_DONE: &str = "sf-done";
 
+// ── Git user config ──────────────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct GitUserConfig {
+    pub name: String,
+    pub email: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetGitUserConfigArgs {
+    pub name: String,
+    pub email: String,
+}
+
 // ── Arg structs ────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -110,6 +125,7 @@ pub enum RightPanel {
     AddProfile,
     EditProfile(String), // save_dir key
     CloneFromRemote,
+    GitUserConfig,
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
