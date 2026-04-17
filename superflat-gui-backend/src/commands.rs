@@ -1,87 +1,70 @@
 use std::path::PathBuf;
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
+use superflat::utils::cmd::exec as sf_exec;
+
 use crate::EVENT_DONE;
+use crate::git_ops::{
+    apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GitUserConfig {
-    pub name: String,
-    pub email: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
 }
 
 /// Check if git is available on the system
 #[tauri::command]
 pub fn check_git_available() -> Result<(), String> {
-    let output = std::process::Command::new("git")
-        .arg("--version")
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err("Git is missing. [Install Now](https://git-scm.com/install/)".to_string())
-    }
+    let mut cmd = Command::new("git");
+    cmd.arg("--version");
+    sf_exec(cmd, None)
+        .map_err(|e| {
+            format!(
+                "Git is missing. [Install Now](https://git-scm.com/install/): {}",
+                e
+            )
+        })
+        .map(|_| ())
 }
 
 #[tauri::command]
-pub fn get_git_user_config() -> GitUserConfig {
-    let name = std::process::Command::new("git")
-        .args(["config", "--global", "user.name"])
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(o) } else { None })
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+pub fn get_git_user_config() -> Result<GitUserConfig, String> {
+    let git_config_get = |key| {
+        let mut cmd = Command::new("git");
+        cmd.args(["config", "--global", key]);
+        sf_exec(cmd, None).ok().filter(String::is_empty)
+    };
 
-    let email = std::process::Command::new("git")
-        .args(["config", "--global", "user.email"])
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(o) } else { None })
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
+    let name = git_config_get("user.name");
+    let email = git_config_get("user.email");
+    log::debug!("Git config: name: {name:?}, email: {email:?}");
 
-    GitUserConfig { name, email }
+    Ok(GitUserConfig { name, email })
 }
 
 #[tauri::command]
 pub fn set_git_user_config(name: String, email: String) -> Result<(), String> {
     if !name.trim().is_empty() {
-        let output = std::process::Command::new("git")
-            .args(["config", "--global", "user.name", &name])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to set user.name: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
+        let mut cmd = Command::new("git");
+        cmd.args(["config", "--global", "user.name", &name]);
+        sf_exec(cmd, None).map_err(|e| format!("Failed to set user.name: {}", e))?;
     }
 
     if !email.trim().is_empty() {
-        let output = std::process::Command::new("git")
-            .args(["config", "--global", "user.email", &email])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to set user.email: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
+        let mut cmd = Command::new("git");
+        cmd.args(["config", "--global", "user.email", &email]);
+        sf_exec(cmd, None).map_err(|e| format!("Failed to set user.email: {}", e))?;
     }
 
     Ok(())
 }
-use crate::git_ops::{
-    apply_repo_config, canonicalize_portable, git_init_bare, save_dir_to_git_dir,
-};
 
 fn emit_done(app: &AppHandle) {
     crate::flush_log();
@@ -351,22 +334,11 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create parent dir: {e}"))?;
         }
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = Command::new("git");
         cmd.args(["clone", "--bare", &url]).arg(&git_dir);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000);
-        }
-        let out = cmd.output().map_err(|e| e.to_string())?;
-        for line in String::from_utf8_lossy(&out.stderr).lines() {
+        let output = sf_exec(cmd, None).map_err(|e| format!("git clone failed: {}", e))?;
+        for line in output.lines() {
             log::info!("{}", line);
-        }
-        for line in String::from_utf8_lossy(&out.stdout).lines() {
-            log::info!("{}", line);
-        }
-        if !out.status.success() {
-            return Err(format!("git clone exited with {}", out.status));
         }
         apply_repo_config(&git_dir)
     })
@@ -396,7 +368,7 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     let result = tokio::task::spawn_blocking(move || {
         let cmd =
             superflat::utils::cmd::git_cmd(&git_dir, ["fetch", &url, "refs/heads/*:refs/heads/*"]);
-        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
+        sf_exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
 
@@ -428,7 +400,7 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
 
     let result = tokio::task::spawn_blocking(move || {
         let cmd = superflat::utils::cmd::git_cmd(&git_dir, ["push", &url, "--all"]);
-        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
+        sf_exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
 

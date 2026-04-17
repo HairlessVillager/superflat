@@ -12,8 +12,8 @@ pub const EVENT_DONE: &str = "sf-done";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GitUserConfig {
-    pub name: String,
-    pub email: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
 }
 
 #[derive(Serialize)]

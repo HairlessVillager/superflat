@@ -1,9 +1,8 @@
 use crate::bindings::{invoke, log};
 use crate::types::DEFAULT_BRANCH;
 use crate::types::{
-    CheckRepoExistsArgs, CommitInfo, GetCommitsArgs, Profile, RightPanel,
-    RunCheckoutArgs, RunCloneArgs, RunCommitArgs, RunPullArgs, RunPushArgs, UpsertProfileArgs,
-    to_js,
+    CheckRepoExistsArgs, CommitInfo, GetCommitsArgs, Profile, RightPanel, RunCheckoutArgs,
+    RunCloneArgs, RunCommitArgs, RunPullArgs, RunPushArgs, UpsertProfileArgs, to_js,
 };
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -63,12 +62,16 @@ impl AppState {
         let state = *self;
         spawn_local(async move {
             if let Err(err) = invoke(cmd, args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", crate::types::js_error_to_string(err))));
+                state.output_lines.update(|l| {
+                    l.push(format!("Error: {}", crate::types::js_error_to_string(err)))
+                });
             }
             // Refresh after operation
             let dir = p.save_dir.clone();
             if !dir.is_empty() {
-                let args = to_js(&CheckRepoExistsArgs { save_dir: dir.clone() });
+                let args = to_js(&CheckRepoExistsArgs {
+                    save_dir: dir.clone(),
+                });
                 if let Ok(val) = invoke("check_repo_exists", args).await {
                     if let Some(exists) = val.as_bool() {
                         state.repo_exists.set(exists);
@@ -92,7 +95,10 @@ impl AppState {
         self.op_start_ms.set(js_sys::Date::now());
         self.last_raw_line.set(String::new());
         self.right_panel.set(RightPanel::None);
-        let args = to_js(&RunPullArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() });
+        let args = to_js(&RunPullArgs {
+            save_dir: p.save_dir.clone(),
+            url: p.remote_url.clone(),
+        });
         self.run_remote_op("run_pull", args);
     }
 
@@ -101,14 +107,18 @@ impl AppState {
         self.op_start_ms.set(js_sys::Date::now());
         self.last_raw_line.set(String::new());
         self.right_panel.set(RightPanel::None);
-        let args = to_js(&RunPushArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() });
+        let args = to_js(&RunPushArgs {
+            save_dir: p.save_dir.clone(),
+            url: p.remote_url.clone(),
+        });
         self.run_remote_op("run_push", args);
     }
 
     pub fn run_pull(&self) {
         let p = self.active_profile.get_untracked();
         if p.remote_url.is_empty() {
-            self.right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
+            self.right_panel
+                .set(RightPanel::EditProfile(p.save_dir.clone()));
             self.show_profiles.set(true);
             return;
         }
@@ -118,7 +128,8 @@ impl AppState {
     pub fn run_push(&self) {
         let p = self.active_profile.get_untracked();
         if p.remote_url.is_empty() {
-            self.right_panel.set(RightPanel::EditProfile(p.save_dir.clone()));
+            self.right_panel
+                .set(RightPanel::EditProfile(p.save_dir.clone()));
             self.show_profiles.set(true);
             return;
         }
@@ -128,16 +139,21 @@ impl AppState {
     pub fn run_clone(&self) {
         let p = self.active_profile.get_untracked();
         if p.save_dir.is_empty() {
-            self.output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            self.output_lines
+                .update(|l| l.push("Error: Please load a profile first".to_string()));
             return;
         }
         if p.remote_url.is_empty() {
-            self.output_lines.update(|l| l.push("Error: Remote URL is empty".to_string()));
+            self.output_lines
+                .update(|l| l.push("Error: Remote URL is empty".to_string()));
             return;
         }
         self.op_start_ms.set(js_sys::Date::now());
         self.last_raw_line.set(String::new());
-        let args = to_js(&RunCloneArgs { save_dir: p.save_dir.clone(), url: p.remote_url.clone() });
+        let args = to_js(&RunCloneArgs {
+            save_dir: p.save_dir.clone(),
+            url: p.remote_url.clone(),
+        });
         self.run_remote_op("run_clone", args);
     }
 
@@ -147,7 +163,10 @@ impl AppState {
         spawn_local(async move {
             let args = to_js(&UpsertProfileArgs { profile: p });
             if let Err(err) = invoke("upsert_profile", args).await {
-                log(&format!("upsert_profile failed: {}", crate::types::js_error_to_string(err)));
+                log(&format!(
+                    "upsert_profile failed: {}",
+                    crate::types::js_error_to_string(err)
+                ));
                 return;
             }
             if let Ok(result) = invoke("get_profiles", JsValue::NULL).await {
@@ -160,7 +179,8 @@ impl AppState {
 
     pub fn run_commit(&self, msg: String, draft_message: RwSignal<String>) {
         if msg.is_empty() {
-            self.output_lines.update(|l| l.push("Error: Commit message is empty".to_string()));
+            self.output_lines
+                .update(|l| l.push("Error: Commit message is empty".to_string()));
             return;
         }
         let p = self.active_profile.get_untracked();
@@ -179,7 +199,9 @@ impl AppState {
                 mc_version: p.mc_version.clone(),
             });
             if let Err(err) = invoke("run_commit", args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", crate::types::js_error_to_string(err))));
+                state.output_lines.update(|l| {
+                    l.push(format!("Error: {}", crate::types::js_error_to_string(err)))
+                });
             }
             state.do_upsert_profile(p);
         });
@@ -188,7 +210,8 @@ impl AppState {
     pub fn run_checkout(&self, commit: String) {
         let p = self.active_profile.get_untracked();
         if p.save_dir.is_empty() {
-            self.output_lines.update(|l| l.push("Error: Please load a profile first".to_string()));
+            self.output_lines
+                .update(|l| l.push("Error: Please load a profile first".to_string()));
             return;
         }
         self.op_start_ms.set(js_sys::Date::now());
@@ -204,7 +227,9 @@ impl AppState {
                 mc_version: p.mc_version.clone(),
             });
             if let Err(err) = invoke("run_checkout", args).await {
-                state.output_lines.update(|l| l.push(format!("Error: {}", crate::types::js_error_to_string(err))));
+                state.output_lines.update(|l| {
+                    l.push(format!("Error: {}", crate::types::js_error_to_string(err)))
+                });
             }
             state.do_upsert_profile(p);
         });
@@ -241,7 +266,7 @@ pub fn load_initial_data(state: AppState) {
             if let Ok(config) =
                 serde_wasm_bindgen::from_value::<crate::types::GitUserConfig>(result)
             {
-                if config.name.is_empty() || config.email.is_empty() {
+                if config.name.is_none() || config.email.is_none() {
                     state.right_panel.set(RightPanel::GitUserConfig);
                 }
             }
