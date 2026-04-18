@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![logo](./logo.png)
+![logo](./superflat-gui-backend/icons/128x128@2x.png)
 
 # Superflat
 
