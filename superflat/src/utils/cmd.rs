@@ -133,6 +133,10 @@ pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) ->
     let cmd = git_cmd(
         git_dir,
         [
+            "-c",
+            "pack.deltaCacheLimit=65535",
+            "-c",
+            "pack.deltaCacheSize=1073741824", // 1GiB
             "repack",
             "--depth",
             &depth.to_string(),
