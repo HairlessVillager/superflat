@@ -2,7 +2,9 @@
 
 <div align="center">
 
-# ⛏️ Superflat
+![logo](./logo.png)
+
+# Superflat
 
 **基于 Git 的 Minecraft Java 版存档版本控制工具**
 

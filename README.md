@@ -2,7 +2,9 @@
 
 <div align="center">
 
-# ⛏️ Superflat
+![logo](./logo.png)
+
+# Superflat
 
 **Git-powered version control for Minecraft Java Edition saves**
 
