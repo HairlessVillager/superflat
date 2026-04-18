@@ -342,11 +342,7 @@ pub fn split_chunk(nbt: BaseNbt) -> Result<(BaseNbt, SectionsDump)> {
     if let Some(is_light_on_idx) = nbt.byte_mut("isLightOn") {
         *is_light_on_idx = i8::from(false);
     } else {
-        anyhow::bail!(
-            "missing 'isLightOn', all fields: {:#?}",
-            nbt.keys().collect::<Vec<_>>()
-        );
-        // nbt.root_tag.put_bool("isLightOn", false);
+        log::warn!("Missing field 'isLightOn', ignored")
     }
 
     Ok((BaseNbt::new(name, nbt), sections_dump))
