@@ -6,26 +6,11 @@ use crate::odb::{OdbReader, OdbWriter};
 use crate::utils::nbt::{dump_nbt, load_nbt, sort_nbt};
 use crate::utils::region::{parse_xz, read_region, write_region};
 
-const FLATTEN_PATTERNS: &[&str] = &[
-    "entities/r.*.*.mca",
-    "poi/r.*.*.mca",
-    "DIM1/entities/r.*.*.mca",
-    "DIM1/poi/r.*.*.mca",
-    "DIM-1/entities/r.*.*.mca",
-    "DIM-1/poi/r.*.*.mca",
-    "dimensions/*/*/entities/r.*.*.mca",
-    "dimensions/*/*/poi/r.*.*.mca",
-];
+const FLATTEN_PATTERNS: &[&str] = &["**/entities/r.*.*.mca", "**/poi/r.*.*.mca"];
 
 const UNFLATTEN_PATTERNS: &[&str] = &[
-    "entities/r.*.*.mca/timestamp-header",
-    "poi/r.*.*.mca/timestamp-header",
-    "DIM1/entities/r.*.*.mca/timestamp-header",
-    "DIM1/poi/r.*.*.mca/timestamp-header",
-    "DIM-1/entities/r.*.*.mca/timestamp-header",
-    "DIM-1/poi/r.*.*.mca/timestamp-header",
-    "dimensions/*/*/entities/r.*.*.mca/timestamp-header",
-    "dimensions/*/*/poi/r.*.*.mca/timestamp-header",
+    "**/entities/r.*.*.mca/timestamp-header",
+    "**/poi/r.*.*.mca/timestamp-header",
 ];
 
 pub struct OtherRegionCrafter;

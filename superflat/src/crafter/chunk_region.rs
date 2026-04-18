@@ -11,19 +11,9 @@ use crate::utils::region::{
     SectionsDump, parse_xz, read_region, restore_chunk, split_chunk, write_region,
 };
 
-const FLATTEN_PATTERNS: &[&str] = &[
-    "region/r.*.*.mca",
-    "DIM1/region/r.*.*.mca",
-    "DIM-1/region/r.*.*.mca",
-    "dimensions/*/*/region/r.*.*.mca",
-];
+const FLATTEN_PATTERNS: &[&str] = &["**/region/r.*.*.mca"];
 
-const UNFLATTEN_PATTERNS: &[&str] = &[
-    "region/r.*.*.mca/timestamp-header", // timestamp-header is sentry
-    "DIM1/region/r.*.*.mca/timestamp-header",
-    "DIM-1/region/r.*.*.mca/timestamp-header",
-    "dimensions/*/*/region/r.*.*.mca/timestamp-header",
-];
+const UNFLATTEN_PATTERNS: &[&str] = &["**/region/r.*.*.mca/timestamp-header"]; // timestamp-header is sentry
 
 pub struct ChunkRegionCrafter;
 

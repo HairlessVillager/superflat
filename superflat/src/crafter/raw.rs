@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
 
-const RAW_GLOB_PATTERNS: &[&str] = &["icon.png", "advancements/*.json", "stats/*.json"];
+const RAW_GLOB_PATTERNS: &[&str] = &["**/*.png", "**/*.json"];
 
 pub struct RawCrafter;
 

@@ -7,40 +7,7 @@ use std::io::{Read, Write};
 use super::Crafter;
 use crate::odb::{OdbReader, OdbWriter};
 
-const GZIP_NBT_GLOB_PATTERNS: &[&str] = &[
-    "level.dat",
-    "data/idcounts.dat",
-    "data/command_storage_*.dat",
-    "data/map_*.dat",
-    "data/scoreboard.dat",
-    "data/stopwatches.dat",
-    "generated/*/structures/*.nbt",
-    "playerdata/*.dat",
-    // root dimension data
-    "data/chunks.dat",
-    "data/raids.dat",
-    "data/raids_end.dat",
-    "data/random_sequences.dat",
-    "data/world_border.dat",
-    // DIM1
-    "DIM1/data/chunks.dat",
-    "DIM1/data/raids.dat",
-    "DIM1/data/raids_end.dat",
-    "DIM1/data/random_sequences.dat",
-    "DIM1/data/world_border.dat",
-    // DIM-1
-    "DIM-1/data/chunks.dat",
-    "DIM-1/data/raids.dat",
-    "DIM-1/data/raids_end.dat",
-    "DIM-1/data/random_sequences.dat",
-    "DIM-1/data/world_border.dat",
-    // custom dimensions
-    "dimensions/*/*/data/chunks.dat",
-    "dimensions/*/*/data/raids.dat",
-    "dimensions/*/*/data/raids_end.dat",
-    "dimensions/*/*/data/random_sequences.dat",
-    "dimensions/*/*/data/world_border.dat",
-];
+const GZIP_NBT_GLOB_PATTERNS: &[&str] = &["**/*.dat"];
 
 pub struct GzipNbtCrafter;
 
