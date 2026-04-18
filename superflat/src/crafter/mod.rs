@@ -24,8 +24,8 @@ pub enum CrafterImpl {
 }
 
 impl CrafterImpl {
-    pub fn get_crafters() -> Vec<Self> {
-        vec![
+    pub fn get_crafters() -> [Self; 4] {
+        [
             Self::Raw(RawCrafter {}),
             Self::GzipNbt(GzipNbtCrafter {}),
             Self::ChunkRegion(ChunkRegionCrafter {}),
