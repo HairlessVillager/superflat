@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
-use superflat::utils::cmd::exec as sf_exec;
+use superflat::utils::cmd::{exec as sf_exec, git_cmd};
 
 use crate::EVENT_DONE;
 use crate::git_ops::{
@@ -204,11 +204,11 @@ async fn resolve_branch_parent(git_dir: &PathBuf, branch: &str) -> Result<String
     let git_dir_clone = git_dir.clone();
     let branch_clone = branch.to_owned();
     let rev = tokio::task::spawn_blocking(move || {
-        let cmd = superflat::utils::cmd::git_cmd(
+        let cmd = git_cmd(
             &git_dir_clone,
             ["rev-parse", &format!("{}^{{commit}}", branch_clone)],
         );
-        superflat::utils::cmd::exec(cmd, None).map_err(|e| e.to_string())
+        sf_exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
     match rev {
@@ -335,7 +335,8 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
                 .map_err(|e| format!("Failed to create parent dir: {e}"))?;
         }
         let mut cmd = Command::new("git");
-        cmd.args(["clone", "--bare", &url]).arg(&git_dir);
+        cmd.args(["clone", "--progress", "--bare", &url])
+            .arg(&git_dir);
         let output = sf_exec(cmd, None).map_err(|e| format!("git clone failed: {}", e))?;
         for line in output.lines() {
             log::info!("{}", line);
@@ -366,8 +367,10 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     log::info!("Pulling from {}", url);
 
     let result = tokio::task::spawn_blocking(move || {
-        let cmd =
-            superflat::utils::cmd::git_cmd(&git_dir, ["fetch", &url, "refs/heads/*:refs/heads/*"]);
+        let cmd = git_cmd(
+            &git_dir,
+            ["fetch", "--progress", &url, "refs/heads/*:refs/heads/*"],
+        );
         sf_exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
@@ -399,7 +402,7 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
     log::info!("Pushing to {}", url);
 
     let result = tokio::task::spawn_blocking(move || {
-        let cmd = superflat::utils::cmd::git_cmd(&git_dir, ["push", &url, "--all"]);
+        let cmd = git_cmd(&git_dir, ["push", "--progress", &url, "--all"]);
         sf_exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;

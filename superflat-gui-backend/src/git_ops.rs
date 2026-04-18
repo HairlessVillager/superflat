@@ -1,5 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
+use superflat::utils::cmd::{exec as sf_exec, git_cmd};
+
 /// Canonicalize a path and strip the `\\?\` verbatim prefix that
 /// [`std::fs::canonicalize`] adds on Windows.  Git for Windows does not
 /// understand the extended-length path syntax and misinterprets it as a
@@ -29,14 +33,17 @@ fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
             match prefix.kind() {
                 Prefix::VerbatimDisk(drive) => {
                     // \\?\C:\foo  →  C:\foo
-                    let root: PathBuf =
-                        format!("{}:\\", drive as char).into();
+                    let root: PathBuf = format!("{}:\\", drive as char).into();
                     return components.fold(root, |acc, c| acc.join(c));
                 }
                 Prefix::VerbatimUNC(host, share) => {
                     // \\?\UNC\host\share\foo  →  \\host\share\foo
-                    let root: PathBuf =
-                        format!("\\\\{}\\{}", host.to_string_lossy(), share.to_string_lossy()).into();
+                    let root: PathBuf = format!(
+                        "\\\\{}\\{}",
+                        host.to_string_lossy(),
+                        share.to_string_lossy()
+                    )
+                    .into();
                     return components.fold(root, |acc, c| acc.join(c));
                 }
                 Prefix::Verbatim(_) => {
@@ -53,8 +60,6 @@ fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
         path
     }
 }
-
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CommitInfo {
@@ -78,23 +83,17 @@ pub fn save_dir_to_git_dir(save_path: &Path) -> Option<PathBuf> {
 
 /// Apply the two repo config settings required by superflat.
 pub fn apply_repo_config(git_dir: &Path) -> Result<(), String> {
-    let cmd = superflat::utils::cmd::git_cmd(git_dir, ["config", "core.logAllRefUpdates", "true"]);
-    superflat::utils::cmd::exec(cmd, None)
-        .map(|_| ())
-        .map_err(|e| e.to_string())?;
+    let cmd = git_cmd(git_dir, ["config", "core.logAllRefUpdates", "true"]);
+    sf_exec(cmd, None).map(|_| ()).map_err(|e| e.to_string())?;
 
-    let cmd = superflat::utils::cmd::git_cmd(git_dir, ["config", "gc.auto", "0"]);
-    superflat::utils::cmd::exec(cmd, None)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    let cmd = git_cmd(git_dir, ["config", "gc.auto", "0"]);
+    sf_exec(cmd, None).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Initialize a new bare git repo and apply repo config.
 pub fn git_init_bare(git_dir: &Path) -> Result<(), String> {
-    let cmd = superflat::utils::cmd::git_cmd(git_dir, ["init", "--bare"]);
-    superflat::utils::cmd::exec(cmd, None)
-        .map(|_| ())
-        .map_err(|e| e.to_string())?;
+    let cmd = git_cmd(git_dir, ["init", "--bare"]);
+    sf_exec(cmd, None).map(|_| ()).map_err(|e| e.to_string())?;
     apply_repo_config(git_dir)
 }
 
@@ -123,7 +122,7 @@ pub fn get_commits(save_dir: String) -> Result<Vec<CommitInfo>, String> {
         return Ok(vec![]);
     }
 
-    let cmd = superflat::utils::cmd::git_cmd(
+    let cmd = git_cmd(
         &git_dir,
         [
             "log",
@@ -134,8 +133,7 @@ pub fn get_commits(save_dir: String) -> Result<Vec<CommitInfo>, String> {
             "50",
         ],
     );
-    let stdout = superflat::utils::cmd::exec(cmd, None)
-        .map_err(|e| format!("git log failed: {e}"))?;
+    let stdout = sf_exec(cmd, None).map_err(|e| format!("git log failed: {e}"))?;
 
     Ok(stdout
         .lines()
