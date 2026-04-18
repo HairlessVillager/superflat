@@ -50,7 +50,7 @@ pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
     for line in stdout.lines() {
         log::trace!("stdout: {line:?}");
     }
-    anyhow::ensure!(out.status.success(), "Command {cmd:?} status is failed");
+    anyhow::ensure!(out.status.success(), "command {cmd:?} status is failed");
     Ok(stdout)
 }
 

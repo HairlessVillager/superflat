@@ -154,9 +154,9 @@ fn main() -> Result<(), anyhow::Error> {
                         ]
                     }
                     (false, true) => vec![],
-                    (true, true) => panic!("Branch '{branch}' exists, remove --init"),
-                    (false, false) => panic!(
-                        "Invalid branch name '{branch}'. Self-check via 'git --git-dir {:?} rev-parse {branch}^{{commit}}'",
+                    (true, true) => anyhow::bail!("branch '{branch}' exists, remove --init"),
+                    (false, false) => anyhow::bail!(
+                        "invalid branch name '{branch}'. Self-check via 'git --git-dir {:?} rev-parse {branch}^{{commit}}'",
                         git_dir.as_os_str()
                     ),
                 }
@@ -229,7 +229,7 @@ fn main() -> Result<(), anyhow::Error> {
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
                     .with_context(|| {
                         format!(
-                            "Missing chunk, all chunk positions: {:#?}",
+                            "missing chunk, all chunk positions: {:#?}",
                             xz_nbts
                                 .iter()
                                 .map(|(x, z, _)| format!("({x}, {z})"))

@@ -255,12 +255,12 @@ fn dump_sections(sections: &NbtList) -> Result<SectionsDump> {
         .enumerate()
         .map(|(idx, section)| {
             let y = section.byte("Y").with_context(|| {
-                format!("Missing NBT byte 'sections.{idx}.Y', got: {section:#?}")
+                format!("missing NBT byte 'sections.{idx}.Y', got: {section:#?}")
             })?;
             let biome_dump = {
                 let Some(biome) = section.compound("biomes") else {
                     log::warn!(
-                        "Missing 'sections.{idx}.biomes' (y={y}), all fields got: {:?}",
+                        "missing 'sections.{idx}.biomes' (y={y}), all fields got: {:?}",
                         section.keys().collect::<Vec<_>>()
                     );
                     return Ok(None);
@@ -270,7 +270,7 @@ fn dump_sections(sections: &NbtList) -> Result<SectionsDump> {
             let block_dump = {
                 let Some(block_states) = section.compound("block_states") else {
                     log::warn!(
-                        "Missing 'sections.{idx}.block_states' (y={y}), all fields got: {:?}",
+                        "missing 'sections.{idx}.block_states' (y={y}), all fields got: {:?}",
                         section.keys().collect::<Vec<_>>()
                     );
                     return Ok(None);
@@ -304,14 +304,14 @@ fn load_sections(dump: SectionsDump) -> Result<NbtList> {
                     "biomes".into(),
                     owned::NbtTag::Compound(load_biome(bytemuck::cast_box(
                         Box::<[u8; 64]>::try_from(section.biome.into_boxed_slice())
-                            .map_err(|_| anyhow::anyhow!("Vec length does not match S^3"))?,
+                            .map_err(|_| anyhow::anyhow!("vec length does not match S^3"))?,
                     ))?),
                 ),
                 (
                     "block_states".into(),
                     owned::NbtTag::Compound(load_block(bytemuck::cast_box(
                         Box::<[u16; 4096]>::try_from(section.block_state.into_boxed_slice())
-                            .map_err(|_| anyhow::anyhow!("Vec length does not match S^3"))?,
+                            .map_err(|_| anyhow::anyhow!("vec length does not match S^3"))?,
                     ))?),
                 ),
             ];
@@ -328,7 +328,7 @@ pub fn split_chunk(nbt: BaseNbt) -> Result<(BaseNbt, SectionsDump)> {
     let sections_dump = {
         let sections = nbt.remove("sections").ok_or_else(|| {
             anyhow::anyhow!(format!(
-                "Missing 'sections', all fields: {:#?}",
+                "missing 'sections', all fields: {:#?}",
                 nbt.keys().collect::<Vec<_>>()
             ))
         })?;
@@ -343,7 +343,7 @@ pub fn split_chunk(nbt: BaseNbt) -> Result<(BaseNbt, SectionsDump)> {
         *is_light_on_idx = i8::from(false);
     } else {
         anyhow::bail!(
-            "Missing 'isLightOn', all fields: {:#?}",
+            "missing 'isLightOn', all fields: {:#?}",
             nbt.keys().collect::<Vec<_>>()
         );
         // nbt.root_tag.put_bool("isLightOn", false);

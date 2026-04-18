@@ -21,21 +21,22 @@ impl LocalFsOdb {
 /// A key must be a relative path with no `..` components and no absolute
 /// root component so that `root_dir.join(key)` always resolves inside the
 /// sandbox.
-fn assert_safe_key(key: &str) {
+fn assert_safe_key(key: &str) -> Result<()> {
     for component in std::path::Path::new(key).components() {
         match component {
-            Component::ParentDir => panic!("ODB key contains '..': {key:?}"),
+            Component::ParentDir => anyhow::bail!("ODB key contains '..': {key:?}"),
             Component::RootDir | Component::Prefix(_) => {
-                panic!("ODB key is absolute: {key:?}")
+                anyhow::bail!("ODB key is absolute: {key:?}")
             }
             Component::CurDir | Component::Normal(_) => {}
         }
     }
+    Ok(())
 }
 
 impl OdbReader for LocalFsOdb {
     fn get(&self, key: &str) -> Result<Vec<u8>> {
-        assert_safe_key(key);
+        assert_safe_key(key)?;
         Ok(fs::read(self.root_dir.join(key)).context("failed to read file from odb")?)
     }
 
@@ -47,30 +48,28 @@ impl OdbReader for LocalFsOdb {
     }
 
     fn glob(&self, pattern: &str) -> Result<Vec<String>> {
-        assert_safe_key(pattern);
+        assert_safe_key(pattern)?;
         let full_pattern = self.root_dir.join(pattern);
         let root = self.root_dir.clone();
-        Ok(
-            glob::glob(
-                full_pattern
-                    .to_str()
-                    .context("glob pattern path is not valid utf-8")?,
-            )
-            .context("failed to run glob")?
-            .filter_map(|e| e.ok())
-            .filter_map(|path| {
-                path.strip_prefix(&root)
-                    .ok()
-                    .and_then(|p| p.to_str().map(|s| s.to_string()))
-            })
-            .collect(),
+        Ok(glob::glob(
+            full_pattern
+                .to_str()
+                .context("glob pattern path is not valid utf-8")?,
         )
+        .context("failed to run glob")?
+        .filter_map(|e| e.ok())
+        .filter_map(|path| {
+            path.strip_prefix(&root)
+                .ok()
+                .and_then(|p| p.to_str().map(|s| s.to_string()))
+        })
+        .collect())
     }
 }
 
 impl OdbWriter for LocalFsOdb {
     fn put(&mut self, key: &str, value: impl AsRef<[u8]>) -> Result<()> {
-        assert_safe_key(key);
+        assert_safe_key(key)?;
         let path = self.root_dir.join(key);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).context("failed to create parent directory")?;
@@ -79,9 +78,12 @@ impl OdbWriter for LocalFsOdb {
         Ok(())
     }
 
-    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) -> Result<()> {
+    fn put_par(
+        &mut self,
+        entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>,
+    ) -> Result<()> {
         entries.into_par_iter().try_for_each(|(key, value)| {
-            assert_safe_key(&key);
+            assert_safe_key(&key)?;
             let path = self.root_dir.join(&key);
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).context("failed to create parent directory")?;
