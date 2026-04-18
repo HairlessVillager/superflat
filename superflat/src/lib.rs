@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use crate::{
-    crafter::{ChunkRegionCrafter, Crafter, GzipNbtCrafter, OtherRegionCrafter, RawCrafter},
+    crafter::{Crafter, CrafterImpl},
     odb::{LocalFsOdb, LocalGitOdb},
     utils::{
         cmd::{exec, git_cmd, git_repack_ad},
@@ -20,10 +20,10 @@ pub fn flatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: &str) -> Result
     let save = LocalFsOdb::from_dir(save_dir);
     let mut repo = LocalFsOdb::from_dir(repo_dir);
 
-    RawCrafter.flatten(&save, &mut repo)?;
-    GzipNbtCrafter.flatten(&save, &mut repo)?;
-    ChunkRegionCrafter.flatten(&save, &mut repo)?;
-    OtherRegionCrafter.flatten(&save, &mut repo)?;
+    for crafter in CrafterImpl::get_crafters() {
+        crafter.flatten(&save, &mut repo)?;
+    }
+
     Ok(())
 }
 
@@ -32,10 +32,10 @@ pub fn unflatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: &str) -> Resu
     let mut save = LocalFsOdb::from_dir(save_dir);
     let repo = LocalFsOdb::from_dir(repo_dir);
 
-    RawCrafter.unflatten(&mut save, &repo)?;
-    GzipNbtCrafter.unflatten(&mut save, &repo)?;
-    ChunkRegionCrafter.unflatten(&mut save, &repo)?;
-    OtherRegionCrafter.unflatten(&mut save, &repo)?;
+    for crafter in CrafterImpl::get_crafters() {
+        crafter.unflatten(&mut save, &repo)?;
+    }
+
     Ok(())
 }
 
@@ -55,10 +55,9 @@ pub fn commit(
         LocalGitOdb::new(git_dir.to_owned())
     };
 
-    RawCrafter.flatten(&save, &mut git)?;
-    GzipNbtCrafter.flatten(&save, &mut git)?;
-    ChunkRegionCrafter.flatten(&save, &mut git)?;
-    OtherRegionCrafter.flatten(&save, &mut git)?;
+    for crafter in CrafterImpl::get_crafters() {
+        crafter.flatten(&save, &mut git)?;
+    }
 
     let commit = git.commit(parents.as_slice(), message);
 
@@ -72,15 +71,20 @@ pub fn commit(
     Ok(())
 }
 
-pub fn checkout(save_dir: PathBuf, git_dir: PathBuf, commit: String, mc_version: &str) -> Result<()> {
+pub fn checkout(
+    save_dir: PathBuf,
+    git_dir: PathBuf,
+    commit: String,
+    mc_version: &str,
+) -> Result<()> {
     init_mc_data(mc_version);
     let mut save = LocalFsOdb::from_dir(save_dir);
     let git = LocalGitOdb::from_commit(git_dir, commit);
 
-    RawCrafter.unflatten(&mut save, &git)?;
-    GzipNbtCrafter.unflatten(&mut save, &git)?;
-    ChunkRegionCrafter.unflatten(&mut save, &git)?;
-    OtherRegionCrafter.unflatten(&mut save, &git)?;
+    for crafter in CrafterImpl::get_crafters() {
+        crafter.unflatten(&mut save, &git)?;
+    }
+
     Ok(())
 }
 
