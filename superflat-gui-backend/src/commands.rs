@@ -39,7 +39,10 @@ pub fn get_git_user_config() -> Result<GitUserConfig, String> {
     let git_config_get = |key| {
         let mut cmd = Command::new("git");
         cmd.args(["config", "--global", key]);
-        sf_exec(cmd, None).ok().filter(String::is_empty)
+        sf_exec(cmd, None)
+            .ok()
+            .map(|v| v.trim_end().to_string())
+            .filter(|v| !v.is_empty())
     };
 
     let name = git_config_get("user.name");
