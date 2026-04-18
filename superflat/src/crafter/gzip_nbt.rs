@@ -2,10 +2,13 @@ use anyhow::{Context, Result};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 
 use super::Crafter;
-use crate::odb::{OdbReader, OdbWriter};
+use crate::{
+    odb::{OdbReader, OdbWriter},
+    utils::nbt::{dump_nbt, load_nbt, sort_nbt},
+};
 
 const GZIP_NBT_GLOB_PATTERNS: &[&str] = &["**/*.dat"];
 
@@ -18,11 +21,23 @@ impl Crafter for GzipNbtCrafter {
                 log::info!("Process gzip nbt file {key}");
                 let compressed = save.get(&key)?;
                 let mut decoder = GzDecoder::new(compressed.as_slice());
-                let mut decompressed = Vec::new();
-                decoder
-                    .read_to_end(&mut decompressed)
-                    .context("failed to decompress gzip data")?;
-                storage.put(&key, &decompressed)?;
+                let decompressed = if decoder.header().is_some() {
+                    let mut decompressed = Vec::new();
+                    decoder
+                        .read_to_end(&mut decompressed)
+                        .context("failed to decompress gzip data")?;
+                    decompressed
+                } else {
+                    log::warn!(
+                        "Failed to decompress because header is invalid, treat as uncompressed"
+                    );
+                    compressed
+                };
+                let sorted = dump_nbt(
+                    sort_nbt(load_nbt(Cursor::new(&decompressed))?),
+                    decompressed.len(),
+                )?;
+                storage.put(&key, &sorted)?;
             }
         }
         Ok(())
