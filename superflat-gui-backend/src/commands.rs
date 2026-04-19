@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
-use superflat::utils::cmd::{exec as sf_exec, git_cmd};
+use superflat::utils::cmd as sf_cmd;
 
 use crate::EVENT_DONE;
 use crate::git_ops::{
@@ -24,7 +24,7 @@ pub struct GitUserConfig {
 pub fn check_git_available() -> Result<(), String> {
     let mut cmd = Command::new("git");
     cmd.arg("--version");
-    sf_exec(cmd, None)
+    sf_cmd::exec(cmd, None)
         .map_err(|e| {
             format!(
                 "Git is missing. [Install Now](https://git-scm.com/install/): {}",
@@ -39,7 +39,7 @@ pub fn get_git_user_config() -> Result<GitUserConfig, String> {
     let git_config_get = |key| {
         let mut cmd = Command::new("git");
         cmd.args(["config", "--global", key]);
-        sf_exec(cmd, None)
+        sf_cmd::exec(cmd, None)
             .ok()
             .map(|v| v.trim_end().to_string())
             .filter(|v| !v.is_empty())
@@ -57,13 +57,13 @@ pub fn set_git_user_config(name: String, email: String) -> Result<(), String> {
     if !name.trim().is_empty() {
         let mut cmd = Command::new("git");
         cmd.args(["config", "--global", "user.name", &name]);
-        sf_exec(cmd, None).map_err(|e| format!("Failed to set user.name: {}", e))?;
+        sf_cmd::exec(cmd, None).map_err(|e| format!("Failed to set user.name: {}", e))?;
     }
 
     if !email.trim().is_empty() {
         let mut cmd = Command::new("git");
         cmd.args(["config", "--global", "user.email", &email]);
-        sf_exec(cmd, None).map_err(|e| format!("Failed to set user.email: {}", e))?;
+        sf_cmd::exec(cmd, None).map_err(|e| format!("Failed to set user.email: {}", e))?;
     }
 
     Ok(())
@@ -207,11 +207,11 @@ async fn resolve_branch_parent(git_dir: &PathBuf, branch: &str) -> Result<String
     let git_dir_clone = git_dir.clone();
     let branch_clone = branch.to_owned();
     let rev = tokio::task::spawn_blocking(move || {
-        let cmd = git_cmd(
+        let cmd = sf_cmd::git_cmd(
             &git_dir_clone,
             ["rev-parse", &format!("{}^{{commit}}", branch_clone)],
         );
-        sf_exec(cmd, None).map_err(|e| e.to_string())
+        sf_cmd::exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
     match rev {
@@ -231,6 +231,9 @@ async fn do_commit_and_repack(
 ) {
     let r#ref = format!("refs/heads/{}", branch);
     let git_dir_for_commit = git_dir.clone();
+    let size_before = sf_cmd::git_count_objects(git_dir.to_owned())
+        .expect("failed to count git objects")
+        .total_size_mib();
     let result = tokio::task::spawn_blocking(move || {
         superflat::commit(
             save_path,
@@ -247,18 +250,20 @@ async fn do_commit_and_repack(
         Ok(Ok(())) => {
             let git_dir_clone = git_dir.clone();
             let repack = tokio::task::spawn_blocking(move || {
-                superflat::utils::cmd::git_count_objects(&git_dir_clone)
-                    .map_err(|e| e.to_string())?;
-                superflat::utils::cmd::git_repack_ad(&git_dir_clone, 4095, 2)
-                    .map_err(|e| e.to_string())?;
-                let stats = superflat::utils::cmd::git_count_objects(&git_dir_clone)
-                    .map_err(|e| e.to_string())?;
-                Ok::<_, String>(stats)
+                sf_cmd::git_count_objects(&git_dir_clone).map_err(|e| e.to_string())?;
+                sf_cmd::git_repack_ad(&git_dir_clone, 4095, 2).map_err(|e| e.to_string())?;
+                Ok::<_, String>(())
             })
             .await;
             match repack {
-                Ok(Ok(stats)) => {
-                    log::info!("Done. Repo total size: {:.2} MiB", stats.total_size_mib())
+                Ok(Ok(())) => {
+                    let size_after = sf_cmd::git_count_objects(git_dir.to_owned())
+                        .expect("failed to count git objects")
+                        .total_size_mib();
+                    log::info!(
+                        "Done. Repo total size: {size_after:.2} MiB (up {:+.2}% from {size_before:.2} MiB)",
+                        (size_after - size_before) / size_before * 100.0
+                    );
                 }
                 Ok(Err(e)) => log::error!("Commit succeeded but repack failed: {}", e),
                 Err(e) => log::error!("Commit succeeded but repack task failed: {}", e),
@@ -340,7 +345,7 @@ pub async fn run_clone(save_dir: String, url: String, app: AppHandle) {
         let mut cmd = Command::new("git");
         cmd.args(["clone", "--progress", "--bare", &url])
             .arg(&git_dir);
-        let output = sf_exec(cmd, None).map_err(|e| format!("git clone failed: {}", e))?;
+        let output = sf_cmd::exec(cmd, None).map_err(|e| format!("git clone failed: {}", e))?;
         for line in output.lines() {
             log::info!("{}", line);
         }
@@ -370,11 +375,11 @@ pub async fn run_pull(save_dir: String, url: String, app: AppHandle) {
     log::info!("Pulling from {}", url);
 
     let result = tokio::task::spawn_blocking(move || {
-        let cmd = git_cmd(
+        let cmd = sf_cmd::git_cmd(
             &git_dir,
             ["fetch", "--progress", &url, "refs/heads/*:refs/heads/*"],
         );
-        sf_exec(cmd, None).map_err(|e| e.to_string())
+        sf_cmd::exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
 
@@ -405,8 +410,8 @@ pub async fn run_push(save_dir: String, url: String, app: AppHandle) {
     log::info!("Pushing to {}", url);
 
     let result = tokio::task::spawn_blocking(move || {
-        let cmd = git_cmd(&git_dir, ["push", "--progress", &url, "--all"]);
-        sf_exec(cmd, None).map_err(|e| e.to_string())
+        let cmd = sf_cmd::git_cmd(&git_dir, ["push", "--progress", &url, "--all"]);
+        sf_cmd::exec(cmd, None).map_err(|e| e.to_string())
     })
     .await;
 

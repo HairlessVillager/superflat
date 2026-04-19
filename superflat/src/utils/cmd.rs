@@ -122,7 +122,6 @@ pub fn git_count_objects(git_dir: impl AsRef<OsStr>) -> Result<RepoStats> {
                 _ => {}
             }
         }
-        log::info!("git-count-objects: {line}");
     }
 
     Ok(stats)

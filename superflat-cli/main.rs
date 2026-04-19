@@ -163,6 +163,9 @@ fn main() -> Result<(), anyhow::Error> {
             };
             let r#ref = format!("refs/heads/{}", &branch);
 
+            let size_before = git_count_objects(git_dir.to_owned())
+                .expect("failed to count git objects")
+                .total_size_mib();
             commit(
                 save_dir,
                 git_dir.to_owned(),
@@ -179,8 +182,13 @@ fn main() -> Result<(), anyhow::Error> {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
 
-            let stats = git_count_objects(git_dir.to_owned()).expect("failed to count git objects");
-            log::info!("Done. Repo total size: {:.2} MiB", stats.total_size_mib());
+            let size_after = git_count_objects(git_dir.to_owned())
+                .expect("failed to count git objects")
+                .total_size_mib();
+            log::info!(
+                "Done. Repo total size: {size_after:.2} MiB (up {:+.2}% from {size_before:.2} MiB)",
+                (size_after - size_before) / size_before * 100.0
+            );
             Ok(())
         }
         CliSubcommand::Checkout {
