@@ -250,35 +250,40 @@ pub struct SectionsDump {
 fn dump_sections(sections: &NbtList) -> Result<SectionsDump> {
     let sections = sections
         .compounds()
-        .context("expect sections is a NBT compound list, got: {sections:#?}")?
+        .context("expect sections is a NBT compound list, got: {sections:#?}")?;
+    let sections_len = sections.len();
+    let sections = sections
         .iter()
         .enumerate()
         .map(|(idx, section)| {
             let y = section.byte("Y").with_context(|| {
                 format!("missing NBT byte 'sections.{idx}.Y', got: {section:#?}")
             })?;
-            let biome_dump = {
-                let Some(biome) = section.compound("biomes") else {
-                    log::warn!(
-                        "missing 'sections.{idx}.biomes' (y={y}), all fields got: {:?}",
-                        section.keys().collect::<Vec<_>>()
+            let (biome_dump, block_dump) = if let Some(biome) = section.compound("biomes")
+                && let Some(block_states) = section.compound("block_states")
+            {
+                (
+                    dump_biome(biome)?.as_flattened().as_flattened().into(),
+                    dump_block(block_states)?
+                        .as_flattened()
+                        .as_flattened()
+                        .into(),
+                )
+            } else {
+                if idx == 0 || idx == sections_len - 1 {
+                    // Some sections extend beyond the world boundary;
+                    // they do not contain block and biome data, although they often contain light data.
+                    log::trace!(
+                        "Missing field 'biomes' or/and 'block_states' in 'sections.{idx}' (y={y}), all fields got: {:?}",
+                        section.keys().map(|s|s.to_str()).collect::<Vec<_>>()
                     );
                     return Ok(None);
-                };
-                dump_biome(biome)?.as_flattened().as_flattened().into()
-            };
-            let block_dump = {
-                let Some(block_states) = section.compound("block_states") else {
-                    log::warn!(
-                        "missing 'sections.{idx}.block_states' (y={y}), all fields got: {:?}",
-                        section.keys().collect::<Vec<_>>()
+                } else {
+                    anyhow::bail!(
+                        "Missing field 'biomes' or/and 'block_states' in 'sections.{idx}' (y={y}), all fields got: {:?}",
+                        section.keys().map(|s|s.to_str()).collect::<Vec<_>>()
                     );
-                    return Ok(None);
-                };
-                dump_block(block_states)?
-                    .as_flattened()
-                    .as_flattened()
-                    .into()
+                }
             };
             // TODO: extract block/sky light
             Ok(Some(Section {
@@ -342,7 +347,7 @@ pub fn split_chunk(nbt: BaseNbt) -> Result<(BaseNbt, SectionsDump)> {
     if let Some(is_light_on_idx) = nbt.byte_mut("isLightOn") {
         *is_light_on_idx = i8::from(false);
     } else {
-        log::warn!("Missing field 'isLightOn', ignored")
+        log::trace!("Missing field 'isLightOn', ignored and will be treated as false by game");
     }
 
     Ok((BaseNbt::new(name, nbt), sections_dump))
