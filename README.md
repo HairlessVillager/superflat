@@ -8,7 +8,7 @@
 
 **Git-powered version control for Minecraft Java Edition saves**
 
-[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#license)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#📄-license)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20MasOS-lightgrey?logo=github)](https://github.com/HairlessVillager/superflat/releases)
 [![GitHub Release](https://img.shields.io/github/v/release/HairlessVillager/superflat?color=green)](https://github.com/HairlessVillager/superflat/releases)
@@ -19,75 +19,35 @@
 
 Superflat is a Minecraft save format conversion tool that converts Java Edition saves into a **Git-friendly** format. By leveraging Git's mature version control and delta compression capabilities, Superflat achieves:
 
-- 🗜️ **Extreme Space Efficiency**: Each incremental backup averages only **~2%** of the original Zip size
-- ⚡ **Fast Backup**: ~30 MiB/s processing, ~20 MiB/s Git write speed
-- 🔄 **Fast Rollback**: ~45 MiB/s restoration
-
-## 🗺️ Roadmap
-
-- [x] `superflat flatten`: Deconstruct save files into a flattened format
-- [x] `superflat unflatten`: Reconstruct save files from the flattened format
-- [x] Complete Rust refactor
-- [x] Basic parallel computing
-- [x] `superflat commit`: Stream-flatten and commit to Git
-- [x] `superflat checkout`: Checkout from Git and stream-restore the save
-- [ ] In-depth performance profiling and extreme optimization
-    - [x] `ChunkRegionCrafter` parallelization
-    - [x] `LocalGitOdb` parallelization
-    - [ ] More optimization...
-- [ ] `superflat merge`: Implement chunk-level and game-semantic level merging
-- [x] Reduce dependency on Pumpkin for the Sections Dump feature
-- [x] Write auto compile GitHub Workflows
-- [x] Expand version support
-    - [x] Block and biome data version support
-    - [x] Save directory format support (26.1 and later)
-- [ ] Chunk de-duplication based on Minecraft original terrain generation algorithms (storing only modifications)
-- [x] Change the project license to the Rust community standard MIT/Apache 2.0 dual-license
-    - [x] Replace the `pumpkin-nbt` dependency
-    - [x] Re-implement the Sub-chunk Dump (Sections Dump) feature
-    - [x] Remove `src/utils/palette.rs` from Git `main` branch and force-push
-
-## 🙏 Credits
-
-Special thanks to the [Pumpkin-MC Project](https://github.com/Pumpkin-MC) for inspiration (and support for [legacy version](https://github.com/HairlessVillager/superflat/tree/gplv3-legacy-main)).
-
-Thanks to the [`gitoxide` project](https://github.com/GitoxideLabs/gitoxide) (licensed under MIT / Apache-2.0) for providing a highly efficient and modern Git-compatible implementation. This project relies on `gitoxide` for high-performance object reading and writing.
-
-Thanks to Lewis for providing the 4.6 GiB real-world test save. In the early stages of development, we lacked a large amount of real experimental data.
+- 🗜️ **Extreme Space Efficiency**: Each incremental backup averages only **~1%** of the original save size
+- ⚡ **Fast Backup and Restore**: Commit (backup) speed around **100 MiB/s**, checkout (rollback) speed around **50 MiB/s**
 
 ## 📦 Download and Installation
-
-Ensure [Git](https://git-scm.com/install/) is installed, as `sf commit` and `sf checkout` depend on Git for streaming backup and restoration.
-
-There are two ways to get the Superflat executable:
-
-- **Pre-built**: Download pre-compiled binaries from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page.
-- **From source**: Compile locally (see below).
-
-### Local Compilation
-
-Ensure you have [rustup](https://rustup.rs/) installed, then:
-
-```sh
-git clone https://github.com/HairlessVillager/superflat.git
-cd superflat
-cargo install --path . --bin sf
-```
 
 ## 🚀 Quick Start
 
 ### Using the GUI
 
-We provide a GUI build for Windows users. Download the `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` executable from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page. Simply double-click the `.exe` to run it.
+If Git is not installed, please [install Git](https://git-scm.com/install/) first, as `sf commit` and `sf checkout` depend on Git for streaming backup and restoration.
+
+We provide a GUI build for Windows users. Download the `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` executable from the [GitHub Release](https://github.com/HairlessVillager/superflat/releases) page. Double-click the `.exe` to run it. Then you can read the [GUI guide](docs/gui-guide.md) to learn how to use it.
+
+<div align="center">
+
+![gui-demo](./docs/images/screenshot-2026-04-12_21-00-58.png)
+
+</div>
 
 > [!TIP]
 > If you trust the application, whitelist the GUI process in Windows Defender (see [guide](docs/windows-defender-bypass.md)) for better performance.
 
-See [this guide](docs/gui-guide.md) for instructions on using the GUI. The GUI aims to provide a WYSIWYG interface for basic operations (`sf commit`, `sf checkout`, and some Git commands); for advanced operations, please use the CLI.
-
 ### Using the CLI
 
-This section demonstrates a standard workflow:
+The GUI provides a WYSIWYG interface for basic operations. For users who need to fine-tune execution details, please use the CLI.
+
+> For developers, you can also compile from source. Ensure [rustup](https://rustup.rs/) is installed, then run `cargo install --path . --bin sf` in the project directory to install the CLI.
+
+You can still get CLI from [GitHub Release](https://github.com/HairlessVillager/superflat/releases). This section demonstrates a standard workflow:
 
 #### Step 1 — Prepare
 
@@ -166,6 +126,30 @@ sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
 # Restores to the latest commit on the main branch 10 minutes ago
 ```
 
+## 🗺️ Roadmap
+
+- [x] `superflat flatten`: Deconstruct save files into a flattened format
+- [x] `superflat unflatten`: Reconstruct save files from the flattened format
+- [x] Complete Rust refactor
+- [x] Basic parallel computing
+- [x] `superflat commit`: Stream-flatten and commit to Git
+- [x] `superflat checkout`: Checkout from Git and stream-restore the save
+- [ ] In-depth performance profiling and extreme optimization
+    - [x] `ChunkRegionCrafter` parallelization
+    - [x] `LocalGitOdb` parallelization
+    - [ ] More optimization...
+- [ ] `superflat merge`: Implement chunk-level and game-semantic level merging
+- [x] Reduce dependency on Pumpkin for the Sections Dump feature
+- [x] Write auto compile GitHub Workflows
+- [ ] Expand version support
+    - [x] Block and biome data version support
+    - [ ] Save directory format support (26.1 and later)
+- [ ] Chunk de-duplication based on Minecraft original terrain generation algorithms (storing only modifications)
+- [x] Change the project license to the Rust community standard MIT/Apache 2.0 dual-license
+    - [x] Replace the `pumpkin-nbt` dependency
+    - [x] Re-implement the Sub-chunk Dump (Sections Dump) feature
+    - [x] Remove `src/utils/palette.rs` from Git `main` branch and force-push
+
 ## 🔬 How It Works
 
 Superflat's design is based on two core insights:
@@ -178,6 +162,9 @@ Superflat's design is based on two core insights:
 Git, as a mature version control tool, uses object ordering and **Delta Compression algorithms** that can precisely identify and eliminate this redundancy. Superflat "flattens" the complex `.mca` binary format into small files that Git can easily recognize, thereby unlocking Git's full compression potential.
 
 ## 📊 Experiments and Benchmarks
+
+> [!NOTE]
+> This section needs to be updated.
 
 We verified the tool's effectiveness using 13 consecutive backups of a survival save (Seed: 42), referred to as the `test42` dataset. For detailed analysis, see [bench.md](docs/blog/bench.md).
 
@@ -197,6 +184,16 @@ We verified the tool's effectiveness using 13 consecutive backups of a survival 
     - Increasing the `window` parameter yields diminishing returns for compression while increasing computation time exponentially.
     - **Daily Backups**: Recommended `window <= 16`; backup time remains stable under 1 second.
     - **Long-term Archiving**: Recommended to perform `gc --aggressive` periodically.
+
+## 🙏 Credits
+
+Special thanks to the [Pumpkin-MC Project](https://github.com/Pumpkin-MC) for inspiration (and support for [legacy version](https://github.com/HairlessVillager/superflat/tree/gplv3-legacy-main)).
+
+Thanks to the [`gitoxide` project](https://github.com/GitoxideLabs/gitoxide) (licensed under MIT / Apache-2.0) for providing a highly efficient and modern Git-compatible implementation. This project relies on `gitoxide` for high-performance object reading and writing.
+
+Thanks to the [`simdnbt` project](https://github.com/azalea-rs/simdnbt) (licensed under MIT) for providing an extremely impressive NBT serialization/deserialization implementation. To use this library, this project uses Rust Nightly Toolchain, and it ultimately proved to be worth it.
+
+Thanks to Lewis for providing the 4.6 GiB real-world test save. In the early stages of development, we lacked a large amount of real experimental data.
 
 ## 📄 License
 

@@ -8,7 +8,7 @@
 
 **基于 Git 的 Minecraft Java 版存档版本控制工具**
 
-[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#license)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#📄-开源许可)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20MasOS-lightgrey?logo=github)](https://github.com/HairlessVillager/superflat/releases)
 [![GitHub Release](https://img.shields.io/github/v/release/HairlessVillager/superflat?color=green)](https://github.com/HairlessVillager/superflat/releases)
@@ -19,75 +19,35 @@
 
 Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Java 版存档转换为 **Git 友好** 的格式。通过利用 Git 成熟的版本控制与差分压缩能力，Superflat 实现了：
 
-- 🗜️ **极高的空间效率**：每次增量备份平均仅占存档原始 Zip 体积的 **~2%**
-- ⚡ **快速备份**：处理速度约 30 MiB/s，Git 写入速度约 20 MiB/s
-- 🔄 **快速回滚**：还原速度约 45 MiB/s
-
-## 🗺️ 路线图 (Roadmap)
-
-- [x] `superflat flatten`: 存档平坦化（解构）
-- [x] `superflat unflatten`: 存档还原（重构）
-- [x] Rust 完全重构
-- [x] 基本的并行计算
-- [x] `superflat commit`：流式平坦化并提交到 Git
-- [x] `superflat checkout`：从 Git 检出并流式还原存档
-- [ ] 深度性能分析与极致性能优化
-    - [x] `ChunkRegionCrafter` 并行化
-    - [x] `LocalGitOdb` 并行化
-    - [ ] 更多的性能优化
-- [ ] `superflat merge`: 实现区块 / 游戏语义级合并
-- [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
-- [x] 构建自动编译 GitHub 工作流
-- [ ] 扩展版本支持
-    - [x] 方块与群系数据版本支持
-    - [ ] 存档目录格式支持（26.1 及之后）
-- [ ] 基于 Minecraft 原版地形生成算法的区块去冗余（仅存储修改量）
-- [x] 将项目许可变更为 Rust 社区标准的 MIT/Apache 2.0 双授权
-    - [x] 替换 `pumpkin-nbt` 依赖
-    - [x] 重新实现子区块转储（Sections Dump）功能
-    - [x] 从 Git `main` 分支移除 `src/utils/palette.rs` 文件并强制推送
-
-## 🙏 致谢
-
-特别感谢 [Pumpkin-MC 项目](https://github.com/Pumpkin-MC) 对本项目的启发（以及对本项目 [历史版本](https://github.com/HairlessVillager/superflat/tree/gplv3-legacy-main) 的支持）。
-
-感谢 [`gitoxide` 项目](https://github.com/GitoxideLabs/gitoxide) （基于 MIT / Apache-2.0 双许可）提供了非常高效且现代的 Git 兼容实现。本项目依赖 `gitoxide` 实现高性能的对象读取与写入功能。
-
-感谢 lewis 提供的共计 4.6 GiB 的存档。在早期开发阶段我们非常缺少大量真实的实验数据。
-
-## 📦 下载与安装
-
-请确保系统中已安装 [Git](https://git-scm.com/install/)，`sf commit` 和 `sf checkout` 依赖 Git 进程提供流式备份与还原。
-
-获取 Superflat 的可执行文件有两种方式：
-
-- **预编译版本**：从 [GitHub Release](https://github.com/HairlessVillager/superflat/releases) 页面下载预编译的可执行文件
-- **从源码编译**：本地编译安装（见下文）
-
-### 本地编译
-
-请确保系统中已安装 [rustup](https://rustup.rs/)，然后执行：
-
-```sh
-git clone https://github.com/HairlessVillager/superflat.git
-cd superflat
-cargo install --path . --bin sf
-```
+- 🗜️ **极高的空间效率**：每次增量备份平均仅占存档体积的约 **1%**
+- ⚡ **快速备份与回滚**：创建提交（备份）速度约 **100 MiB/s**，检出（回滚）速度约 **50 MiB/s**
 
 ## 🚀 快速开始
 
 ### 基于 GUI
 
-我们为 Windows 用户准备了 GUI 版本的程序。在 [GitHub Release 页面](https://github.com/HairlessVillager/superflat/releases) 下载 `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` 可执行文件。下载后双击运行 `.exe` 即可运行。
+如果系统没有 Git，则需要先[安装 Git](https://git-scm.com/install/)，`sf commit` 和 `sf checkout` 依赖 Git 进程提供流式备份与还原。
+
+确保 Git 安装之后，从 [GitHub Release](https://github.com/HairlessVillager/superflat/releases) 页面下载预编译的可执行文件。
+
+我们为 Windows 用户准备了 GUI 版本的程序。在 [GitHub Release](https://github.com/HairlessVillager/superflat/releases) 页面下载 `superflat-gui-x.x.x-x86_64-pc-windows-msvc.exe` 可执行文件，双击运行 `.exe` 即可运行。之后您可以阅读 [GUI 程序的使用指引](docs/gui-guide-zh.md) 了解如何使用。
+
+<div align="center">
+
+![gui-demo](./docs/images/screenshot-2026-04-12_21-00-58.png)
+
+</div>
 
 > [!TIP]
-> 如果您信任我们的程序，请把 GUI 进程加入 Window Defender 白名单（[中文教程](docs/windows-defender-bypass-zh.md)），从而获得更好的性能。
-
-点击 [此处](docs/gui-guide-zh.md) 查看 GUI 程序的使用指引。GUI 程序致力于给基础操作（`sf commit`、`sf checkout` 以及一部分 Git 命令）提供一个所见即所得的用户界面，对于高级操作请使用 CLI 程序。
+> 如果您信任我们的程序，请把 GUI 进程加入 Windows Defender 白名单（[中文教程](docs/windows-defender-bypass-zh.md)），从而获得更好的性能。
 
 ### 基于 CLI
 
-本节演示一个标准的工作流：
+GUI 程序致力于给基础操作提供一个所见即所得的用户界面。对于需要调整运行细节的用户，请使用 CLI 程序。
+
+> 对于开发者，你也可以选择本地编译。请确保系统中已安装 [rustup](https://rustup.rs/)，然后在项目目录运行 `cargo install --path . --bin sf` 安装 CLI 程序。
+
+你依旧可以从 [GitHub Release](https://github.com/HairlessVillager/superflat/releases) 页面下载 CLI 程序。本节演示一个标准的工作流：
 
 #### 步骤 1 — 准备
 
@@ -166,6 +126,30 @@ sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
 # 恢复到 main 分支 10 分钟前的最近 commit
 ```
 
+## 🗺️ 路线图 (Roadmap)
+
+- [x] `superflat flatten`: 存档平坦化（解构）
+- [x] `superflat unflatten`: 存档还原（重构）
+- [x] Rust 完全重构
+- [x] 基本的并行计算
+- [x] `superflat commit`：流式平坦化并提交到 Git
+- [x] `superflat checkout`：从 Git 检出并流式还原存档
+- [ ] 深度性能分析与极致性能优化
+    - [x] `ChunkRegionCrafter` 并行化
+    - [x] `LocalGitOdb` 并行化
+    - [ ] 更多的性能优化
+- [ ] `superflat merge`: 实现区块 / 游戏语义级合并
+- [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
+- [x] 构建自动编译 GitHub 工作流
+- [ ] 扩展版本支持
+    - [x] 方块与群系数据版本支持
+    - [ ] 存档目录格式支持（26.1 及之后）
+- [ ] 基于 Minecraft 原版地形生成算法的区块去冗余（仅存储修改量）
+- [x] 将项目许可变更为 Rust 社区标准的 MIT/Apache 2.0 双授权
+    - [x] 替换 `pumpkin-nbt` 依赖
+    - [x] 重新实现子区块转储（Sections Dump）功能
+    - [x] 从 Git `main` 分支移除 `src/utils/palette.rs` 文件并强制推送
+
 ## 🔬 实现原理
 
 Superflat 的设计基于以下两个核心洞察：
@@ -178,6 +162,9 @@ Superflat 的设计基于以下两个核心洞察：
 Git 作为成熟的版本控制工具，其对象排序和 **Delta 压缩算法** 能够精准识别并消除这些重复数据。Superflat 通过将复杂的 `.mca` 二进制格式"拍平"为 Git 易于识别的小文件，从而充分释放 Git 的压缩潜力。
 
 ## 📊 实验与基准测试
+
+> [!NOTE]
+> 本节内容需要更新。
 
 我们通过一个生存存档（Seed: 42）的 13 次连续备份（名为 `test42` 数据集）验证了工具的有效性。更详细的说明另见 [bench.md](docs/blog/bench.md)
 
@@ -211,3 +198,13 @@ Git 作为成熟的版本控制工具，其对象排序和 **Delta 压缩算法*
 > **历史版本说明：**
 >
 > 由于之前的版本依赖于采用 GPLv3 协议的项目 Pumpkin，因此 [gplv3-legacy-main 分支](https://github.com/HairlessVillager/superflat/tree/gplv3-legacy-main) 仍遵循 [GNU General Public License v3.0](./LICENSE)。当前主版本已移除相关依赖，协议已变更为更为宽松的 Apache/MIT 双授权。
+
+## 🙏 致谢
+
+特别感谢 [Pumpkin-MC 项目](https://github.com/Pumpkin-MC) 对本项目的启发（以及对本项目 [历史版本](https://github.com/HairlessVillager/superflat/tree/gplv3-legacy-main) 的支持）。
+
+感谢 [`gitoxide` 项目](https://github.com/GitoxideLabs/gitoxide) （基于 MIT / Apache-2.0 双许可）提供了非常高效且现代的 Git 兼容实现。本项目依赖 `gitoxide` 实现高性能的对象读取与写入功能。
+
+感谢 [`simdnbt` 项目](https://github.com/azalea-rs/simdnbt)（基于 MIT 许可）提供了非常夸张的 NBT 序列化/反序列化实现。为了使用这个库，本项目使用 Rust Nigltly Toolchain 开发，并最终证明这是值得的。
+
+感谢 lewis 提供的共计 4.6 GiB 的存档。在早期开发阶段我们非常缺少大量真实的实验数据。
