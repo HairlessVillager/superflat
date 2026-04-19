@@ -142,13 +142,13 @@ fn main() -> Result<(), anyhow::Error> {
         } => {
             let parents = {
                 let mut cmd = git_cmd(&git_dir, ["rev-parse", &format!("{branch}^{{commit}}")]);
-                let out = cmd.output().expect("failed to run git rev-parse");
+                let out = cmd.output().context("failed to run git rev-parse")?;
                 let branch_exists = out.status.success();
                 match (branch_exists, init) {
                     (true, false) => {
                         vec![
                             String::from_utf8(out.stdout)
-                                .expect("git output is not valid UTF-8")
+                                .context("git output is not valid UTF-8")?
                                 .trim()
                                 .to_owned(),
                         ]
@@ -164,7 +164,7 @@ fn main() -> Result<(), anyhow::Error> {
             let r#ref = format!("refs/heads/{}", &branch);
 
             let size_before = git_count_objects(git_dir.to_owned())
-                .expect("failed to count git objects")
+                .context("failed to count git objects")?
                 .total_size_mib();
             commit(
                 save_dir,
@@ -176,14 +176,14 @@ fn main() -> Result<(), anyhow::Error> {
             )?;
 
             if use_repack {
-                git_count_objects(&git_dir).expect("failed to count git objects");
+                git_count_objects(&git_dir).context("failed to count git objects")?;
                 repack(git_dir.to_owned())?;
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }
 
             let size_after = git_count_objects(git_dir.to_owned())
-                .expect("failed to count git objects")
+                .context("failed to count git objects")?
                 .total_size_mib();
             log::info!(
                 "Done. Repo total size: {size_after:.2} MiB (up {:+.2}% from {size_before:.2} MiB)",
@@ -200,7 +200,7 @@ fn main() -> Result<(), anyhow::Error> {
             if save_dir.exists() {
                 let bak = save_dir.with_extension("bak");
                 log::warn!("save_dir {save_dir:?} already exists, renaming to {bak:?}");
-                std::fs::rename(&save_dir, &bak).expect("failed to rename save directory");
+                std::fs::rename(&save_dir, &bak).context("failed to rename save directory")?;
             }
             checkout(save_dir, git_dir, commit, &mc_version)?;
             log::info!("Done");
@@ -220,18 +220,18 @@ fn main() -> Result<(), anyhow::Error> {
                 let (region_x, region_z) = parse_xz(
                     region_path
                         .file_name()
-                        .expect("invalid region path")
+                        .context("invalid region path")?
                         .to_str()
-                        .expect("region path contains invalid UTF-8"),
+                        .context("region path contains invalid UTF-8")?,
                 )
-                .expect("failed to parse region filename");
+                .context("failed to parse region filename")?;
                 let (_, xz_nbts) = read_region(
-                    fs::File::open(region_path).expect("failed to open region file"),
+                    fs::File::open(region_path).context("failed to open region file")?,
                     region_x,
                     region_z,
                 )
-                .expect("failed to read region file")
-                .expect("region file is empty");
+                .context("failed to read region file")?
+                .context("region file is empty")?;
                 let (_, _, nbt) = xz_nbts
                     .iter()
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
@@ -244,10 +244,10 @@ fn main() -> Result<(), anyhow::Error> {
                                 .collect::<Vec<_>>()
                         )
                     })
-                    .expect("chunk not found");
+                    .context("chunk not found")?;
                 io::stdout()
                     .write_all(nbt)
-                    .expect("failed to write to stdout");
+                    .context("failed to write to stdout")?;
             }
             UtilsSubcommand::Section {
                 region_path,
@@ -265,30 +265,30 @@ fn main() -> Result<(), anyhow::Error> {
                 let (region_x, region_z) = parse_xz(
                     region_path
                         .file_name()
-                        .expect("invalid region path")
+                        .context("invalid region path")?
                         .to_str()
-                        .expect("region path contains invalid UTF-8"),
+                        .context("region path contains invalid UTF-8")?,
                 )
-                .expect("failed to parse region filename");
+                .context("failed to parse region filename")?;
                 let (_, xz_nbts) = read_region(
-                    fs::File::open(region_path).expect("failed to open region file"),
+                    fs::File::open(region_path).context("failed to open region file")?,
                     region_x,
                     region_z,
                 )
-                .expect("failed to read region file")
-                .expect("region file is empty");
+                .context("failed to read region file")?
+                .context("region file is empty")?;
                 let (_, _, nbt_bytes) = xz_nbts
                     .iter()
                     .find(|(x, z, _)| *x == chunk_x && *z == chunk_z)
-                    .expect("chunk not found");
-                let nbt = load_nbt(Cursor::new(nbt_bytes)).expect("failed to load chunk nbt");
+                    .context("chunk not found")?;
+                let nbt = load_nbt(Cursor::new(nbt_bytes)).context("failed to load chunk nbt")?;
                 let (_, sections_dump) =
-                    split_chunk(nbt).expect("failed to load sections dump from chunk nbt");
+                    split_chunk(nbt).context("failed to load sections dump from chunk nbt")?;
                 let section = sections_dump
                     .sections
                     .iter()
                     .find(|s| s.y == section_y)
-                    .expect("section not found");
+                    .context("section not found")?;
                 let mut stdout = io::stdout().lock();
                 if block {
                     let bytes: Vec<u8> = section
@@ -296,11 +296,13 @@ fn main() -> Result<(), anyhow::Error> {
                         .iter()
                         .flat_map(|&v| v.to_le_bytes())
                         .collect();
-                    stdout.write_all(&bytes).expect("failed to write to stdout");
+                    stdout
+                        .write_all(&bytes)
+                        .context("failed to write to stdout")?;
                 } else {
                     stdout
                         .write_all(&section.biome)
-                        .expect("failed to write to stdout");
+                        .context("failed to write to stdout")?;
                 }
             }
         }),

@@ -16,33 +16,30 @@ pub struct LocalGitOdb {
 }
 
 impl LocalGitOdb {
-    pub fn new(git_dir: PathBuf) -> Self {
-        Self {
+    pub fn new(git_dir: PathBuf) -> Result<Self> {
+        Ok(Self {
             repo: gix::open(git_dir.to_owned())
-                .expect(&format!(
-                    "try 'git init --bare {}'",
-                    git_dir.to_str().expect("git dir path is not valid utf-8")
-                ))
+                .with_context(|| format!("try 'git init --bare {}'", git_dir.to_string_lossy()))?
                 .into(),
             pending: HashMap::new(),
             path_to_oid: HashMap::new(),
-        }
+        })
     }
 
-    pub fn from_commit(git_dir: PathBuf, commit: String) -> Self {
+    pub fn from_commit(git_dir: PathBuf, commit: String) -> Result<Self> {
         let repo: gix::ThreadSafeRepository = gix::open(&git_dir)
-            .expect("failed to open git repository")
+            .context("failed to open git repository")?
             .into();
         let path_to_oid = if commit.is_empty() {
             HashMap::new()
         } else {
-            build_path_to_oid(&git_dir, &commit)
+            build_path_to_oid(&git_dir, &commit)?
         };
-        Self {
+        Ok(Self {
             repo,
             pending: HashMap::new(),
             path_to_oid,
-        }
+        })
     }
 
     /// Create a commit from all pending blobs, consuming self.
@@ -53,9 +50,9 @@ impl LocalGitOdb {
     /// their underlying commit objects.
     ///
     /// Returns the sha1 of the new commit.
-    pub fn commit(self, parents: &[impl AsRef<str>], message: &str) -> String {
+    pub fn commit(self, parents: &[impl AsRef<str>], message: &str) -> Result<String> {
         log::info!("Building Git tree objects");
-        let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "");
+        let tree_sha = build_tree(self.repo.git_dir(), &self.pending, "")?;
 
         let mut cmd = git_cmd(self.repo.git_dir(), [] as [&str; 0]);
         cmd.arg("commit-tree").arg(&tree_sha);
@@ -65,10 +62,10 @@ impl LocalGitOdb {
         cmd.arg("-m").arg(message);
 
         let commit = exec(cmd, None)
-            .expect("failed to run commit-tree")
+            .context("failed to run commit-tree")?
             .trim()
             .to_string();
-        commit
+        Ok(commit)
     }
 }
 
@@ -78,7 +75,7 @@ fn build_tree(
     git_dir: &std::path::Path,
     entries: &HashMap<String, String>,
     prefix: &str,
-) -> String {
+) -> Result<String> {
     let mut blobs: Vec<(String, String)> = Vec::new();
     let mut dirs: std::collections::BTreeMap<String, HashMap<String, String>> =
         std::collections::BTreeMap::new();
@@ -106,10 +103,10 @@ fn build_tree(
             } else {
                 format!("{prefix}/{name}")
             };
-            let sub_sha = build_tree(git_dir, &sub_entries, &sub_prefix);
-            (name, sub_sha)
+            let sub_sha = build_tree(git_dir, &sub_entries, &sub_prefix)?;
+            Ok((name, sub_sha))
         })
-        .collect();
+        .collect::<Result<_>>()?;
     dir_shas.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
     let mut mktree_input = String::new();
@@ -121,17 +118,20 @@ fn build_tree(
     }
 
     let cmd = git_cmd(git_dir, ["mktree"]);
-    exec(cmd, Some(mktree_input))
-        .expect("failed to run mktree")
+    Ok(exec(cmd, Some(mktree_input))
+        .context("failed to run mktree")?
         .trim()
-        .to_string()
+        .to_string())
 }
 
 /// Build a path → oid map for a commit using `git ls-tree -r`.
-fn build_path_to_oid(git_dir: &PathBuf, commit_sha: &str) -> HashMap<String, gix::ObjectId> {
+fn build_path_to_oid(
+    git_dir: &PathBuf,
+    commit_sha: &str,
+) -> Result<HashMap<String, gix::ObjectId>> {
     let cmd = git_cmd(git_dir, ["ls-tree", "-r", "--", commit_sha]);
-    exec(cmd, None)
-        .expect("failed to run ls-tree")
+    Ok(exec(cmd, None)
+        .context("failed to run ls-tree")?
         .lines()
         .filter_map(|line| {
             let oid_str = line.get(12..52)?;
@@ -139,7 +139,7 @@ fn build_path_to_oid(git_dir: &PathBuf, commit_sha: &str) -> HashMap<String, gix
             let oid: gix::ObjectId = oid_str.parse().ok()?;
             Some((path.to_string(), oid))
         })
-        .collect()
+        .collect())
 }
 
 impl OdbReader for LocalGitOdb {
@@ -270,14 +270,14 @@ mod tests {
     #[test]
     fn git_put_commit_get_roundtrip() {
         let repo = init_bare_repo();
-        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new()).unwrap();
 
         let data = b"hello git odb".to_vec();
         odb.put("src/hello.txt", &data).unwrap();
-        let commit_sha = odb.commit(&[] as &[&str], "initial");
+        let commit_sha = odb.commit(&[] as &[&str], "initial").unwrap();
         assert_eq!(commit_sha.len(), 40);
 
-        let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
+        let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha).unwrap();
         let got = odb.get("src/hello.txt").unwrap();
         assert_eq!(got, data);
     }
@@ -285,14 +285,14 @@ mod tests {
     #[test]
     fn git_glob_after_commit() {
         let repo = init_bare_repo();
-        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new()).unwrap();
 
         odb.put("a/x.rs", &b"fn x(){}".to_vec()).unwrap();
         odb.put("a/y.rs", &b"fn y(){}".to_vec()).unwrap();
         odb.put("b/z.md", &b"# Z".to_vec()).unwrap();
-        let commit_sha = odb.commit(&[] as &[&str], "add files");
+        let commit_sha = odb.commit(&[] as &[&str], "add files").unwrap();
 
-        let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha);
+        let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha).unwrap();
         let mut matches = odb.glob("a/*.rs").unwrap();
         matches.sort();
         assert_eq!(matches, vec!["a/x.rs", "a/y.rs"]);
@@ -301,15 +301,15 @@ mod tests {
     #[test]
     fn git_commit_with_parent() {
         let repo = init_bare_repo();
-        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), String::new()).unwrap();
 
         odb.put("a.txt", &b"v1".to_vec()).unwrap();
-        let first = odb.commit(&[] as &[&str], "first");
+        let first = odb.commit(&[] as &[&str], "first").unwrap();
 
         // Second commit only puts b.txt — a.txt is NOT inherited
-        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone());
+        let mut odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), first.clone()).unwrap();
         odb.put("b.txt", &b"v2".to_vec()).unwrap();
-        let second = odb.commit(&[&first], "second");
+        let second = odb.commit(&[&first], "second").unwrap();
 
         // second commit's tree contains only b.txt
         let files: Vec<String> = String::from_utf8(

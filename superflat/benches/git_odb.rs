@@ -57,9 +57,9 @@ fn bench_writer(c: &mut Criterion) {
     c.bench_function("put_200KB_blob", |b| {
         b.iter(|| {
             let repo = init_bare_repo();
-            let mut odb = LocalGitOdb::new(repo.path().to_path_buf());
+            let mut odb = LocalGitOdb::new(repo.path().to_path_buf()).unwrap();
             odb.put(&key, &data).unwrap();
-            odb.commit(&[] as &[&str], "bench");
+            odb.commit(&[] as &[&str], "bench").unwrap();
         });
     });
 }
@@ -70,14 +70,16 @@ fn bench_reader(c: &mut Criterion) {
     // Commit once, reuse across iterations.
     let repo = init_bare_repo();
     let commit_sha = {
-        let mut odb = LocalGitOdb::new(repo.path().to_path_buf());
+        let mut odb = LocalGitOdb::new(repo.path().to_path_buf()).unwrap();
         odb.put(&key, &data).unwrap();
         odb.commit(&[] as &[&str], "bench-data")
-    };
+    }
+    .unwrap();
 
     c.bench_function("get_200KB_blob", |b| {
         b.iter(|| {
-            let odb = LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha.clone());
+            let odb =
+                LocalGitOdb::from_commit(repo.path().to_path_buf(), commit_sha.clone()).unwrap();
             black_box(odb.get(&key)).unwrap();
         });
     });

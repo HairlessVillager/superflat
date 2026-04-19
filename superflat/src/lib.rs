@@ -53,13 +53,13 @@ pub fn commit(
         LocalGitOdb::from_commit(git_dir.to_owned(), from.clone())
     } else {
         LocalGitOdb::new(git_dir.to_owned())
-    };
+    }?;
 
     for crafter in CrafterImpl::get_crafters() {
         crafter.flatten(&save, &mut git)?;
     }
 
-    let commit = git.commit(parents.as_slice(), message);
+    let commit = git.commit(parents.as_slice(), message)?;
 
     if let Some(r#ref) = r#ref {
         let cmd = git_cmd(git_dir, ["update-ref", &r#ref, &commit]);
@@ -79,7 +79,7 @@ pub fn checkout(
 ) -> Result<()> {
     init_mc_data(mc_version);
     let mut save = LocalFsOdb::from_dir(save_dir);
-    let git = LocalGitOdb::from_commit(git_dir, commit);
+    let git = LocalGitOdb::from_commit(git_dir, commit)?;
 
     for crafter in CrafterImpl::get_crafters() {
         crafter.unflatten(&mut save, &git)?;

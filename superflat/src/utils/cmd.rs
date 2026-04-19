@@ -30,7 +30,7 @@ pub fn exec(mut cmd: Command, stdin: Option<String>) -> Result<String> {
         child
             .stdin
             .as_mut()
-            .expect("failed to get stdin handle")
+            .with_context(|| format!("failed to get stdin handle to command {cmd:?}"))?
             .write_all(stdin.as_bytes())
             .with_context(|| format!("failed to write stdin to command {cmd:?}"))?;
         child
