@@ -22,6 +22,8 @@ Superflat 是一款 Minecraft 存档格式转换工具，旨在将 Minecraft Jav
 - 🗜️ **极高的空间效率**：每次增量备份平均仅占存档体积的约 **1%**
 - ⚡ **快速备份与回滚**：创建提交（备份）速度约 **100 MiB/s**，检出（回滚）速度约 **50 MiB/s**
 
+你可以参考 [FAQ](./docs/FAQ-zh.md) 来解答你对这个项目的一些疑问。
+
 ## 🚀 快速开始
 
 ### 基于 GUI
@@ -138,7 +140,13 @@ sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
     - [x] `ChunkRegionCrafter` 并行化
     - [x] `LocalGitOdb` 并行化
     - [ ] 更多的性能优化
-- [ ] `superflat merge`: 实现区块 / 游戏语义级合并
+- [ ] Blob 对象文本化
+    - [ ] `superflat merge`: 区块 / 游戏语义级合并
+    - [ ] `superflat diff`：快速浏览两个 Commit 之间的区别
+    - [ ] `superflat blame`：精确到方块的历史跟踪
+- [ ] Mod 开发
+- [ ] 支持更多的区块压缩类型
+- [ ] 支持 `.mcc` 文件
 - [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
 - [x] 构建自动编译 GitHub 工作流
 - [ ] 扩展版本支持
@@ -208,3 +216,5 @@ Git 作为成熟的版本控制工具，其对象排序和 **Delta 压缩算法*
 感谢 [`simdnbt` 项目](https://github.com/azalea-rs/simdnbt)（基于 MIT 许可）提供了非常夸张的 NBT 序列化/反序列化实现。为了使用这个库，本项目使用 Rust Nigltly Toolchain 开发，并最终证明这是值得的。
 
 感谢 lewis 提供的共计 4.6 GiB 的存档。在早期开发阶段我们非常缺少大量真实的实验数据。
+
+感谢在早期阶段就关注这个项目的人们。你们的每一个问题和意见都是这个项目前进的燃料。

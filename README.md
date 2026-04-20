@@ -22,6 +22,8 @@ Superflat is a Minecraft save format conversion tool that converts Java Edition 
 - 🗜️ **Extreme Space Efficiency**: Each incremental backup averages only **~1%** of the original save size
 - ⚡ **Fast Backup and Restore**: Commit (backup) speed around **100 MiB/s**, checkout (rollback) speed around **50 MiB/s**
 
+You can refer to the [FAQ](./docs/FAQ.md) for answers to common questions about this project.
+
 ## 📦 Download and Installation
 
 ## 🚀 Quick Start
@@ -138,7 +140,13 @@ sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
     - [x] `ChunkRegionCrafter` parallelization
     - [x] `LocalGitOdb` parallelization
     - [ ] More optimization...
-- [ ] `superflat merge`: Implement chunk-level and game-semantic level merging
+- [ ] Blob object textification
+    - [ ] `superflat merge`: Chunk-level and game-semantic level merging
+    - [ ] `superflat diff`: Quickly view differences between two commits
+    - [ ] `superflat blame`: Block-level history tracking
+- [ ] Mod development
+- [ ] Support more chunk compression types
+- [ ] Support `.mcc` files
 - [x] Reduce dependency on Pumpkin for the Sections Dump feature
 - [x] Write auto compile GitHub Workflows
 - [ ] Expand version support
@@ -194,6 +202,8 @@ Thanks to the [`gitoxide` project](https://github.com/GitoxideLabs/gitoxide) (li
 Thanks to the [`simdnbt` project](https://github.com/azalea-rs/simdnbt) (licensed under MIT) for providing an extremely impressive NBT serialization/deserialization implementation. To use this library, this project uses Rust Nightly Toolchain, and it ultimately proved to be worth it.
 
 Thanks to Lewis for providing the 4.6 GiB real-world test save. In the early stages of development, we lacked a large amount of real experimental data.
+
+Thanks to everyone who followed this project in its early stages. Your questions and feedback are the fuel that drives this project forward.
 
 ## 📄 License
 
