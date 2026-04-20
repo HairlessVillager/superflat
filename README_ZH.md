@@ -8,7 +8,7 @@
 
 **基于 Git 的 Minecraft Java 版存档版本控制工具**
 
-[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#📄-开源许可)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#-开源许可)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20MasOS-lightgrey?logo=github)](https://github.com/HairlessVillager/superflat/releases)
 [![GitHub Release](https://img.shields.io/github/v/release/HairlessVillager/superflat?color=green)](https://github.com/HairlessVillager/superflat/releases)

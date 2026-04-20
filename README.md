@@ -8,7 +8,7 @@
 
 **Git-powered version control for Minecraft Java Edition saves**
 
-[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#📄-license)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg)](#-license)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20MasOS-lightgrey?logo=github)](https://github.com/HairlessVillager/superflat/releases)
 [![GitHub Release](https://img.shields.io/github/v/release/HairlessVillager/superflat?color=green)](https://github.com/HairlessVillager/superflat/releases)
