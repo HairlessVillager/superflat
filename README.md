@@ -24,8 +24,6 @@ Superflat is a Minecraft save format conversion tool that converts Java Edition 
 
 You can refer to the [FAQ](./docs/FAQ.md) for answers to common questions about this project.
 
-## 📦 Download and Installation
-
 ## 🚀 Quick Start
 
 ### Using the GUI
@@ -120,8 +118,7 @@ Options:
 
 #### Step 4 — Restore Backup
 
-> [!WARNING]
-> If `$SAVE_DIR` is not empty, please back up its contents manually (e.g., as a `.zip`) before restoring.
+If `$SAVE_DIR` is not empty, CLI will back up to `$SAVE_DIR.bak`.
 
 ```sh
 sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"

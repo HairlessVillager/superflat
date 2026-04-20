@@ -120,8 +120,7 @@ Options:
 
 #### 步骤 4 — 恢复备份
 
-> [!WARNING]
-> 如果 `$SAVE_DIR` 非空，恢复前请务必手动备份（如使用 `.zip`）。
+如果 `$SAVE_DIR` 非空，CLI 会备份到 `$SAVE_DIR.bak`。
 
 ```sh
 sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
