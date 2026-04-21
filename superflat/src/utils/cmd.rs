@@ -127,7 +127,7 @@ pub fn git_count_objects(git_dir: impl AsRef<OsStr>) -> Result<RepoStats> {
     Ok(stats)
 }
 
-pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) -> Result<()> {
+pub fn git_repack(git_dir: impl AsRef<OsStr>) -> Result<()> {
     log::info!("Repacking");
     let cmd = git_cmd(
         git_dir,
@@ -137,10 +137,8 @@ pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) ->
             "-c",
             "pack.deltaCacheSize=1073741824", // 1GiB
             "repack",
-            "--depth",
-            &depth.to_string(),
-            "--window",
-            &window.to_string(),
+            "--depth=4095",
+            "--window=2",
             "-a",
             "-d",
             "--path-walk",

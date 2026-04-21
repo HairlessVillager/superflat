@@ -4,8 +4,8 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use superflat::{
-    checkout, commit, flatten, repack, unflatten,
-    utils::cmd::{git_cmd, git_count_objects, git_repo_exists},
+    checkout, commit, flatten, unflatten,
+    utils::cmd::{git_cmd, git_count_objects, git_repack, git_repo_exists},
 };
 
 /// Superflat - A bridge between Git and Minecraft save
@@ -177,7 +177,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             if use_repack {
                 git_count_objects(&git_dir).context("failed to count git objects")?;
-                repack(git_dir.to_owned())?;
+                git_repack(git_dir.to_owned())?;
             } else {
                 log::warn!("--repack is not enabled, Git repository can get bloated") // TODO: opt prompt
             }

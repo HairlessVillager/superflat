@@ -6,7 +6,7 @@ use crate::{
     crafter::{Crafter, CrafterImpl},
     odb::{LocalFsOdb, LocalGitOdb},
     utils::{
-        cmd::{exec, git_cmd, git_repack_ad},
+        cmd::{exec, git_cmd},
         mc_data::init_mc_data,
     },
 };
@@ -86,8 +86,4 @@ pub fn checkout(
     }
 
     Ok(())
-}
-
-pub fn repack(git_dir: PathBuf) -> Result<()> {
-    git_repack_ad(git_dir, 4095, 2).context("failed to repack git repository")
 }

@@ -251,7 +251,7 @@ async fn do_commit_and_repack(
             let git_dir_clone = git_dir.clone();
             let repack = tokio::task::spawn_blocking(move || {
                 sf_cmd::git_count_objects(&git_dir_clone).map_err(|e| e.to_string())?;
-                sf_cmd::git_repack_ad(&git_dir_clone, 4095, 2).map_err(|e| e.to_string())?;
+                sf_cmd::git_repack(&git_dir_clone).map_err(|e| e.to_string())?;
                 Ok::<_, String>(())
             })
             .await;
