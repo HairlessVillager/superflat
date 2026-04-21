@@ -25,9 +25,7 @@ from pathlib import Path
 
 
 def run(args, cwd=None, capture=True):
-    result = subprocess.run(
-        args, cwd=cwd, capture_output=capture, text=True
-    )
+    result = subprocess.run(args, cwd=cwd, capture_output=capture, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"Command failed: {args}\n{result.stderr}")
     return result.stdout
@@ -35,7 +33,15 @@ def run(args, cwd=None, capture=True):
 
 def get_all_blobs(repo):
     """Return set of all blob hashes in the repo."""
-    out = run(["git", "cat-file", "--batch-all-objects", "--batch-check=%(objecttype) %(objectname)"], cwd=repo)
+    out = run(
+        [
+            "git",
+            "cat-file",
+            "--batch-all-objects",
+            "--batch-check=%(objecttype) %(objectname)",
+        ],
+        cwd=repo,
+    )
     blobs = set()
     for line in out.splitlines():
         parts = line.split()
@@ -48,12 +54,17 @@ def get_all_blobs(repo):
 # Loose object helpers
 # ---------------------------------------------------------------------------
 
+
 def get_loose_objects(repo):
     """Return dict {hash: compressed_size} for all loose blob objects."""
     objects_dir = Path(repo) / "objects"
     loose = {}
     for subdir in objects_dir.iterdir():
-        if not subdir.is_dir() or len(subdir.name) != 2 or not all(c in "0123456789abcdef" for c in subdir.name):
+        if (
+            not subdir.is_dir()
+            or len(subdir.name) != 2
+            or not all(c in "0123456789abcdef" for c in subdir.name)
+        ):
             continue
         for obj_file in subdir.iterdir():
             if not obj_file.is_file():
@@ -68,6 +79,7 @@ def get_loose_objects(repo):
 # ---------------------------------------------------------------------------
 # Pack object helpers
 # ---------------------------------------------------------------------------
+
 
 def read_pack_object_type_and_size(f):
     """
@@ -139,12 +151,16 @@ def _parse_idx(idx_path):
             # Large offset table (for offsets >= 2^31)
             large_offset_entries = []
             # Collect entries that need large offsets
-            needs_large = [(i, o) for i, o in enumerate(small_offsets) if o & 0x80000000]
+            needs_large = [
+                (i, o) for i, o in enumerate(small_offsets) if o & 0x80000000
+            ]
             # Read remaining data for large offsets
             large_data = f.read()
             large_offsets_table = []
             for i in range(0, len(large_data) - 40, 8):  # -40 for two SHA1s at end
-                large_offsets_table.append(struct.unpack(">Q", large_data[i:i+8])[0])
+                large_offsets_table.append(
+                    struct.unpack(">Q", large_data[i : i + 8])[0]
+                )
 
             offsets = {}
             for i, h in enumerate(hashes):
@@ -198,7 +214,9 @@ def _parse_pack(pack_path, offsets, result):
                 next_offset = data_end
 
             f.seek(offset)
-            obj_type, _uncompressed_size, header_bytes_read = read_pack_object_type_and_size(f)
+            obj_type, _uncompressed_size, header_bytes_read = (
+                read_pack_object_type_and_size(f)
+            )
 
             # For delta objects, skip the base reference bytes
             extra = 0
@@ -233,6 +251,7 @@ def _parse_pack(pack_path, offsets, result):
 # Blob -> commit/path mapping
 # ---------------------------------------------------------------------------
 
+
 def build_blob_to_commit_path(repo):
     """
     Walk all commits and map each blob hash to (commit_hash, file_path).
@@ -240,18 +259,14 @@ def build_blob_to_commit_path(repo):
     Returns dict {blob_hash: (commit_hash, file_path)}.
     """
     # Get commits in reverse chronological order (newest first)
-    commit_list = run(
-        ["git", "log", "--all", "--format=%H"], cwd=repo
-    ).splitlines()
+    commit_list = run(["git", "log", "--all", "--format=%H"], cwd=repo).splitlines()
 
     blob_map = {}  # blob_hash -> (commit_hash, file_path)
 
     for commit_hash in commit_list:
         # List all blobs in this commit's tree
         try:
-            tree_out = run(
-                ["git", "ls-tree", "-r", "--long", commit_hash], cwd=repo
-            )
+            tree_out = run(["git", "ls-tree", "-r", "--long", commit_hash], cwd=repo)
         except RuntimeError:
             continue
         for line in tree_out.splitlines():
@@ -273,6 +288,7 @@ def build_blob_to_commit_path(repo):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     if len(sys.argv) < 2:
@@ -311,8 +327,11 @@ def main():
 
     with open(output_csv, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["hash", "storage_type", "compressed_size", "commit_hash", "file_path"])
+        writer.writerow(
+            ["hash", "storage_type", "compressed_size", "commit_hash", "file_path"]
+        )
 
+        rows = []
         for blob_hash in sorted(all_blobs):
             if blob_hash in loose:
                 storage_type = "loose"
@@ -325,9 +344,14 @@ def main():
                 compressed_size = -1
 
             commit_hash, file_path = blob_to_commit_path.get(blob_hash, ("", ""))
+            rows.append(
+                (blob_hash, storage_type, compressed_size, commit_hash, file_path)
+            )
 
-            writer.writerow([blob_hash, storage_type, compressed_size, commit_hash, file_path])
-            rows_written += 1
+        rows.sort(key=lambda x: x[4])
+
+        writer.writerows(rows)
+        rows_written += len(rows)
 
     print(f"Done. {rows_written} rows written to {output_csv}")
 
