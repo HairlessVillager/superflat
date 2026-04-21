@@ -143,6 +143,7 @@ pub fn git_repack_ad(git_dir: impl AsRef<OsStr>, depth: usize, window: usize) ->
             &window.to_string(),
             "-a",
             "-d",
+            "--path-walk",
         ],
     );
     let _ = exec(cmd, None)?;
