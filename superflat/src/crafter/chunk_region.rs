@@ -44,7 +44,7 @@ impl Crafter for ChunkRegionCrafter {
                             load_nbt(Cursor::new(&nbt)).context("failed to load chunk nbt")?;
                         if nbt
                             .string("Status")
-                            .context("missing Status field in chunk nbt")?
+                            .context("missing 'Status' field in chunk nbt")?
                             .to_string_lossy()
                             != "minecraft:full"
                         {

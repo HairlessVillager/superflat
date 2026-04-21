@@ -6,20 +6,17 @@ use crate::odb::{OdbReader, OdbWriter};
 use crate::utils::nbt::{dump_nbt, load_nbt, sort_nbt};
 use crate::utils::region::{parse_xz, read_region, write_region};
 
-const FLATTEN_PATTERNS: &[&str] = &["**/entities/r.*.*.mca", "**/poi/r.*.*.mca"];
+const FLATTEN_PATTERNS: &[&str] = &["**/poi/r.*.*.mca"];
 
-const UNFLATTEN_PATTERNS: &[&str] = &[
-    "**/entities/r.*.*.mca/timestamp-header",
-    "**/poi/r.*.*.mca/timestamp-header",
-];
+const UNFLATTEN_PATTERNS: &[&str] = &["**/poi/r.*.*.mca/timestamp-header"];
 
-pub struct OtherRegionCrafter;
+pub struct PoiRegionCrafter;
 
-impl Crafter for OtherRegionCrafter {
+impl Crafter for PoiRegionCrafter {
     fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) -> Result<()> {
         for pattern in FLATTEN_PATTERNS {
             for key in save.glob(pattern)? {
-                log::info!("Process other region file {key}");
+                log::info!("Process poi region file {key}");
                 let data = save.get(&key)?;
                 let filename = key.split('/').next_back().unwrap_or("");
                 let (region_x, region_z) = parse_xz(filename)
@@ -58,7 +55,7 @@ impl Crafter for OtherRegionCrafter {
     fn unflatten(self, save: &mut impl OdbWriter, storage: &impl OdbReader) -> Result<()> {
         for pattern in UNFLATTEN_PATTERNS {
             for ts_key in storage.glob(pattern)? {
-                log::info!("Process other region file (timestamp header) {ts_key}");
+                log::info!("Process poi region file (timestamp header) {ts_key}");
                 let Some(region_key) = ts_key.strip_suffix("/timestamp-header") else {
                     continue;
                 };

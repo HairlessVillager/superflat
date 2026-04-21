@@ -1,12 +1,14 @@
 mod chunk_region;
+mod entities_region;
 mod gzip_nbt;
-mod other_region;
+mod poi_region;
 mod raw;
 
 use anyhow::Result;
 pub use chunk_region::ChunkRegionCrafter;
+pub use entities_region::EntitiesRegionCrafter;
 pub use gzip_nbt::GzipNbtCrafter;
-pub use other_region::OtherRegionCrafter;
+pub use poi_region::PoiRegionCrafter;
 pub use raw::RawCrafter;
 
 use crate::odb::{OdbReader, OdbWriter};
@@ -20,16 +22,18 @@ pub enum CrafterImpl {
     Raw(RawCrafter),
     GzipNbt(GzipNbtCrafter),
     ChunkRegion(ChunkRegionCrafter),
-    OtherRegion(OtherRegionCrafter),
+    EntitiesRegion(EntitiesRegionCrafter),
+    PoiRegion(PoiRegionCrafter),
 }
 
 impl CrafterImpl {
-    pub fn get_crafters() -> [Self; 4] {
-        [
+    pub fn get_crafters() -> Vec<Self> {
+        vec![
+            Self::ChunkRegion(ChunkRegionCrafter {}),
+            Self::EntitiesRegion(EntitiesRegionCrafter {}),
+            Self::PoiRegion(PoiRegionCrafter {}),
             Self::Raw(RawCrafter {}),
             Self::GzipNbt(GzipNbtCrafter {}),
-            Self::ChunkRegion(ChunkRegionCrafter {}),
-            Self::OtherRegion(OtherRegionCrafter {}),
         ]
     }
 }
@@ -40,7 +44,8 @@ impl Crafter for CrafterImpl {
             Self::Raw(c) => c.flatten(save_dir, storage),
             Self::GzipNbt(c) => c.flatten(save_dir, storage),
             Self::ChunkRegion(c) => c.flatten(save_dir, storage),
-            Self::OtherRegion(c) => c.flatten(save_dir, storage),
+            Self::EntitiesRegion(c) => c.flatten(save_dir, storage),
+            Self::PoiRegion(c) => c.flatten(save_dir, storage),
         }
     }
     fn unflatten(self, save_dir: &mut impl OdbWriter, storage: &impl OdbReader) -> Result<()> {
@@ -48,7 +53,8 @@ impl Crafter for CrafterImpl {
             Self::Raw(c) => c.unflatten(save_dir, storage),
             Self::GzipNbt(c) => c.unflatten(save_dir, storage),
             Self::ChunkRegion(c) => c.unflatten(save_dir, storage),
-            Self::OtherRegion(c) => c.unflatten(save_dir, storage),
+            Self::EntitiesRegion(c) => c.unflatten(save_dir, storage),
+            Self::PoiRegion(c) => c.unflatten(save_dir, storage),
         }
     }
 }
