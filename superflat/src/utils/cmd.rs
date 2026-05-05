@@ -141,6 +141,7 @@ pub fn git_repack(git_dir: impl AsRef<OsStr>) -> Result<()> {
             "--window=2",
             "-a",
             "-d",
+            "-f",
             "--path-walk",
         ],
     );
