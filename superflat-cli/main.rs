@@ -7,6 +7,7 @@ use superflat::{
     checkout, commit, flatten, unflatten,
     utils::cmd::{git_cmd, git_count_objects, git_repack, git_repo_exists},
 };
+use versions::Versioning;
 
 /// Superflat - A bridge between Git and Minecraft save
 #[derive(Parser)]
@@ -28,7 +29,7 @@ enum CliSubcommand {
         repo_dir: PathBuf,
         /// Minecraft version (e.g. 1.21.11)
         #[arg(long)]
-        mc_version: String,
+        mc_version: Versioning,
     },
     /// Restore save from repo dir
     Unflatten {
@@ -38,7 +39,7 @@ enum CliSubcommand {
         repo_dir: PathBuf,
         /// Minecraft version (e.g. 1.21.11)
         #[arg(long)]
-        mc_version: String,
+        mc_version: Versioning,
     },
     /// Flatten save and commit to Git
     Commit {
@@ -61,7 +62,7 @@ enum CliSubcommand {
         use_repack: bool,
         /// Minecraft version (e.g. 1.21.11)
         #[arg(long)]
-        mc_version: String,
+        mc_version: Versioning,
     },
     /// Restore save from commit
     Checkout {
@@ -74,7 +75,7 @@ enum CliSubcommand {
         commit: String,
         /// Minecraft version (e.g. 1.21.11)
         #[arg(long)]
-        mc_version: String,
+        mc_version: Versioning,
     },
     /// Utility tools for debug
     Utils {
@@ -125,12 +126,12 @@ fn main() -> Result<(), anyhow::Error> {
             save_dir,
             repo_dir,
             mc_version,
-        } => flatten(save_dir, repo_dir, &mc_version),
+        } => flatten(save_dir, repo_dir, mc_version),
         CliSubcommand::Unflatten {
             save_dir,
             repo_dir,
             mc_version,
-        } => unflatten(save_dir, repo_dir, &mc_version),
+        } => unflatten(save_dir, repo_dir, mc_version),
         CliSubcommand::Commit {
             save_dir,
             git_dir,
@@ -172,7 +173,7 @@ fn main() -> Result<(), anyhow::Error> {
                 parents,
                 &message,
                 Some(r#ref),
-                &mc_version,
+                mc_version,
             )?;
 
             if use_repack {
@@ -202,7 +203,7 @@ fn main() -> Result<(), anyhow::Error> {
                 log::warn!("save_dir {save_dir:?} already exists, renaming to {bak:?}");
                 std::fs::rename(&save_dir, &bak).context("failed to rename save directory")?;
             }
-            checkout(save_dir, git_dir, commit, &mc_version)?;
+            checkout(save_dir, git_dir, commit, mc_version)?;
             log::info!("Done");
             Ok(())
         }

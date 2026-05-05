@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 log.workspace = true
+versions.workspace = true
 
 flate2 = "1.1.9"
 glob = "0.3.3"

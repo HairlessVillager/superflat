@@ -1,17 +1,19 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use std::path::PathBuf;
 use superflat::{flatten, unflatten};
+use versions::Versioning;
 
 fn bench_unflatten(c: &mut Criterion) {
     let fixture = std::env::var("SF_BENCH_FIXTURE")
         .expect("set SF_BENCH_FIXTURE to a save dir with a single region/r.0.0.mca");
     let version = std::env::var("SF_BENCH_VERSION")
         .expect("set SF_BENCH_VERSION to a Minecraft version (eg. 1.21.11)");
+    let version = Versioning::new(version).unwrap();
     let flattened = tempfile::tempdir().expect("failed to create temp dir");
     flatten(
         PathBuf::from(&fixture),
         flattened.path().to_path_buf(),
-        &version,
+        version.to_owned(),
     )
     .unwrap();
 
@@ -22,7 +24,7 @@ fn bench_unflatten(c: &mut Criterion) {
                 unflatten(
                     output.path().to_path_buf(),
                     flattened.path().to_path_buf(),
-                    &version,
+                    version.to_owned(),
                 )
                 .unwrap();
                 output

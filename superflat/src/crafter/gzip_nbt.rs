@@ -3,6 +3,7 @@ use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use std::io::{Cursor, Read, Write};
+use versions::Versioning;
 
 use super::Crafter;
 use crate::{
@@ -12,7 +13,9 @@ use crate::{
 
 const GZIP_NBT_GLOB_PATTERNS: &[&str] = &["**/*.dat"];
 
-pub struct GzipNbtCrafter;
+pub struct GzipNbtCrafter {
+    pub version: Versioning,
+}
 
 impl Crafter for GzipNbtCrafter {
     fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) -> Result<()> {

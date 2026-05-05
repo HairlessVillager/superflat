@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use versions::Versioning;
 
 use crate::{
     crafter::{Crafter, CrafterImpl},
@@ -15,24 +16,24 @@ mod crafter;
 pub mod odb;
 pub mod utils;
 
-pub fn flatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: &str) -> Result<()> {
-    init_mc_data(mc_version);
+pub fn flatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: Versioning) -> Result<()> {
+    init_mc_data(&mc_version);
     let save = LocalFsOdb::from_dir(save_dir);
     let mut repo = LocalFsOdb::from_dir(repo_dir);
 
-    for crafter in CrafterImpl::get_crafters() {
+    for crafter in CrafterImpl::get_crafters(mc_version) {
         crafter.flatten(&save, &mut repo)?;
     }
 
     Ok(())
 }
 
-pub fn unflatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: &str) -> Result<()> {
-    init_mc_data(mc_version);
+pub fn unflatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: Versioning) -> Result<()> {
+    init_mc_data(&mc_version);
     let mut save = LocalFsOdb::from_dir(save_dir);
     let repo = LocalFsOdb::from_dir(repo_dir);
 
-    for crafter in CrafterImpl::get_crafters() {
+    for crafter in CrafterImpl::get_crafters(mc_version) {
         crafter.unflatten(&mut save, &repo)?;
     }
 
@@ -45,9 +46,9 @@ pub fn commit(
     parents: Vec<String>,
     message: &str,
     r#ref: Option<String>,
-    mc_version: &str,
+    mc_version: Versioning,
 ) -> Result<()> {
-    init_mc_data(mc_version);
+    init_mc_data(&mc_version);
     let save = LocalFsOdb::from_dir(save_dir);
     let mut git = if let Some(from) = parents.first() {
         LocalGitOdb::from_commit(git_dir.to_owned(), from.clone())
@@ -55,7 +56,7 @@ pub fn commit(
         LocalGitOdb::new(git_dir.to_owned())
     }?;
 
-    for crafter in CrafterImpl::get_crafters() {
+    for crafter in CrafterImpl::get_crafters(mc_version) {
         crafter.flatten(&save, &mut git)?;
     }
 
@@ -75,13 +76,13 @@ pub fn checkout(
     save_dir: PathBuf,
     git_dir: PathBuf,
     commit: String,
-    mc_version: &str,
+    mc_version: Versioning,
 ) -> Result<()> {
-    init_mc_data(mc_version);
+    init_mc_data(&mc_version);
     let mut save = LocalFsOdb::from_dir(save_dir);
     let git = LocalGitOdb::from_commit(git_dir, commit)?;
 
-    for crafter in CrafterImpl::get_crafters() {
+    for crafter in CrafterImpl::get_crafters(mc_version) {
         crafter.unflatten(&mut save, &git)?;
     }
 

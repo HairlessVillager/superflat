@@ -30,3 +30,4 @@ strip = false
 [workspace.dependencies]
 anyhow = "1.0.102"
 log = "0.4.29"
+versions = "7.0.0"

@@ -7,6 +7,7 @@ use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
 use superflat::utils::cmd as sf_cmd;
+use versions::Versioning;
 
 use crate::EVENT_DONE;
 use crate::git_ops::{
@@ -241,7 +242,7 @@ async fn do_commit_and_repack(
             parents,
             &message,
             Some(r#ref),
-            &mc_version,
+            Versioning::new(mc_version).expect("failed to parse mc version"),
         )
     })
     .await;
@@ -294,6 +295,11 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
         }
     };
 
+    let Some(mc_version) = Versioning::new(&mc_version) else {
+        log::error!("Failed to parse mc version: {mc_version}");
+        return;
+    };
+
     if save_path.exists() {
         let bak = save_path.with_extension("bak");
         if bak.exists() {
@@ -310,7 +316,7 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
     }
 
     let result = tokio::task::spawn_blocking(move || {
-        superflat::checkout(save_path, git_dir, commit, &mc_version)
+        superflat::checkout(save_path, git_dir, commit, mc_version)
     })
     .await;
 

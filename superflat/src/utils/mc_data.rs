@@ -9,6 +9,7 @@ use minecraft_data_rs::{
     api::versions_by_minecraft_version,
     models::{biome::Biome, block::Block, block::StateType},
 };
+use versions::Versioning;
 
 struct McData {
     blocks_by_name: HashMap<String, Block>,
@@ -21,13 +22,14 @@ static MC_DATA: OnceLock<McData> = OnceLock::new();
 static BOOL_VALUES: LazyLock<Vec<String>> =
     LazyLock::new(|| vec!["true".to_string(), "false".to_string()]);
 
-pub fn init_mc_data(version: &str) {
+pub fn init_mc_data(version: &Versioning) {
+    let version = version.to_string();
     MC_DATA.get_or_init(|| {
         log::info!("Fetching Minecraft version list");
         let versions =
             versions_by_minecraft_version().expect("failed to load minecraft version list");
         let version = versions
-            .get(version)
+            .get(&version)
             .expect(&format!(
                 "invalid Minecraft version: {version}, expect one of: {:?}",
                 versions.keys()
