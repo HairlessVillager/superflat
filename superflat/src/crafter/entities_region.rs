@@ -62,6 +62,7 @@ impl Crafter for EntitiesRegionCrafter {
                         log::warn!("Missing field 'Entities'");
                     }
                 }
+                sort_entities_by_uuid(&mut all_entities);
 
                 let Some(data_version) = data_version else {
                     log::warn!("No DataVersion found in {key}, skipping");
@@ -157,4 +158,14 @@ impl Crafter for EntitiesRegionCrafter {
         }
         Ok(())
     }
+}
+
+fn sort_entities_by_uuid(entities: &mut [NbtCompound]) {
+    use std::cmp::Ordering;
+    entities.sort_unstable_by(|a, b| match (a.list("UUID"), b.list("UUID")) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(a), Some(b)) => a.int_arrays().cmp(&b.int_arrays()),
+    });
 }
