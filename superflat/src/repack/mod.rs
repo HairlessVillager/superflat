@@ -1,149 +1,100 @@
-use std::{collections::HashMap, io, path::Path, time::Instant};
+use std::{collections::HashMap, path::Path};
 
 use anyhow::anyhow;
 use gix::{
-    Progress,
+    bstr::ByteSlice,
     hash::{self, ObjectId},
     interrupt,
     odb::pack,
     parallel::InOrderIter,
     prelude::Finalize,
-    progress::{self, Count, NestedProgress, ThroughputOnDrop},
 };
 
-pub struct Context<W> {
-    pub nondeterministic_thread_count: Option<usize>,
-    pub thread_limit: Option<usize>,
-    pub pack_cache_size_in_bytes: usize,
-    pub object_cache_size_in_bytes: usize,
-    pub out: W,
-}
+pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
+    let repo = gix::open(git_dir.as_ref().to_path_buf())?.into_sync();
+    let objects_dir = repo.objects_dir().to_path_buf();
+    let object_hash = repo.objects.object_hash();
+    let git_dir = repo.git_dir().to_path_buf();
+    let loose = gix::odb::loose::Store::at(&objects_dir, object_hash);
 
-pub fn delta_create<W, P>(
-    repository_path: impl AsRef<Path>,
-    input: impl io::BufRead + Send + 'static,
-    output_directory: Option<impl AsRef<Path>>,
-    mut progress: P,
-    Context {
-        nondeterministic_thread_count,
-        thread_limit,
-        pack_cache_size_in_bytes,
-        object_cache_size_in_bytes,
-        mut out,
-    }: Context<W>,
-) -> anyhow::Result<()>
-where
-    W: std::io::Write,
-    P: NestedProgress,
-    P::SubProgress: 'static,
-{
-    let repo = gix::discover(repository_path)?.into_sync();
-    progress.init(Some(2), progress::steps());
-    let make_cancellation_err = || anyhow!("Cancelled by user");
-    let mut topo = HashMap::new();
-    let parsed_input: Vec<
-        Result<(ObjectId, Option<ObjectId>), Box<dyn std::error::Error + Send + Sync>>,
-    > = {
-        let mut progress = progress.add_child("iterating");
-        progress.init(None, progress::count("objects"));
-        input
-            .lines()
-            .map(|line| {
-                line.map_err(|err| Box::new(err) as Box<_>)
-                    .and_then(|line| {
-                        let hex2oid = |hex: &str| {
-                            ObjectId::from_hex(hex.as_bytes())
-                                .map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-                        };
-                        if let Some((target, source)) = line.split_once(' ') {
-                            Ok((hex2oid(target)?, Some(hex2oid(source)?)))
-                        } else {
-                            Ok((hex2oid(&line)?, None))
-                        }
-                    })
-            })
-            .inspect(move |_| progress.inc())
-            .collect()
-    };
-    for res in &parsed_input {
-        if let Ok((target, Some(source))) = res {
-            topo.insert(target.clone(), source.clone());
+    let mut oids = Vec::new();
+    for result in loose.iter() {
+        oids.push(result?);
+    }
+    if oids.is_empty() {
+        return Ok(());
+    }
+
+    let analysis_repo = repo.to_thread_local();
+    let mut commits = Vec::new();
+    let mut trees = HashMap::new();
+    let mut loose_set = std::collections::HashSet::new();
+    for oid in &oids {
+        loose_set.insert(oid.to_owned());
+    }
+    for oid in &oids {
+        let obj = analysis_repo.find_object(*oid)?;
+        match obj.kind {
+            gix::object::Kind::Commit => commits.push(oid.to_owned()),
+            gix::object::Kind::Tree => {
+                let tree: gix::Tree = obj.try_into_tree().map_err(|e| anyhow!("{e}"))?;
+                let mut path_map = HashMap::new();
+                walk_tree(&tree, "", &loose_set, &trees, &mut path_map)?;
+                trees.insert(oid.to_owned(), path_map);
+            }
+            _ => {}
         }
     }
-    let mut handle = repo.objects.into_shared_arc().to_cache_arc();
-    let mut input: Box<
-        dyn Iterator<Item = Result<ObjectId, Box<dyn std::error::Error + Send + Sync>>> + Send,
-    > = Box::new(
-        parsed_input
-            .into_iter()
-            .map(|res| res.map(|(target, _)| target)),
-    );
 
-    let chunk_size = 1000;
-    let counts = {
-        let mut progress = progress.add_child("counting");
-        progress.init(None, progress::count("objects"));
-        let may_use_multiple_threads = nondeterministic_thread_count.is_some();
-        let thread_limit = if may_use_multiple_threads {
-            nondeterministic_thread_count.or(thread_limit)
-        } else {
-            Some(1)
-        };
-        if nondeterministic_thread_count.is_some() && !may_use_multiple_threads {
-            progress.fail("Cannot use multi-threaded counting in tree-diff object expansion mode as it may yield way too many objects.".into());
+    let mut blob_commit_path: Vec<(ObjectId, ObjectId, String)> = Vec::new();
+    for commit_oid in &commits {
+        let commit = analysis_repo.find_commit(*commit_oid)?;
+        let tree_id = commit.tree_id()?.detach();
+        if let Some(path_map) = trees.get(&tree_id) {
+            for (path, blob_oid) in path_map {
+                blob_commit_path.push((*blob_oid, *commit_oid, path.clone()));
+            }
         }
-        let (_, _, thread_count) =
-            gix::parallel::optimize_chunk_size_and_thread_limit(50, None, thread_limit, None);
-        let progress = ThroughputOnDrop::new(progress);
+    }
 
-        {
-            handle.set_pack_cache(move || {
-                Box::new(pack::cache::lru::MemoryCappedHashmap::new(
-                    pack_cache_size_in_bytes / thread_count,
-                ))
-            });
-            handle.set_object_cache(move || {
-                Box::new(pack::cache::object::MemoryCappedHashmap::new(
-                    object_cache_size_in_bytes / thread_count,
-                ))
-            });
+    let mut topo = HashMap::new();
+    for (blob_oid, commit_oid, path) in &blob_commit_path {
+        let commit = analysis_repo.find_commit(*commit_oid)?;
+        let parent_ids: Vec<ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
+        if let Some(parent_oid) = parent_ids.first() {
+            let parent = analysis_repo.find_commit(*parent_oid)?;
+            let parent_tree = parent.tree_id()?.detach();
+            if let Some(parent_path_map) = trees.get(&parent_tree) {
+                if let Some(parent_blob) = parent_path_map.get(path.as_str()) {
+                    if loose_set.contains(parent_blob) {
+                        topo.insert(*blob_oid, *parent_blob);
+                    }
+                }
+            }
         }
-        handle.prevent_pack_unload();
-        handle.ignore_replacements = true;
-        let input_object_expansion = pack::data::output::count::objects::ObjectExpansion::AsIs;
-        let (mut counts, _count_stats) = if may_use_multiple_threads {
-            pack::data::output::count::objects(
-                handle.clone(),
-                input,
-                &progress,
-                &interrupt::IS_INTERRUPTED,
-                pack::data::output::count::objects::Options {
-                    thread_limit,
-                    chunk_size,
-                    input_object_expansion,
-                },
-            )?
-        } else {
-            pack::data::output::count::objects_unthreaded(
-                &handle,
-                &mut input,
-                &progress,
-                &interrupt::IS_INTERRUPTED,
-                input_object_expansion,
-            )?
-        };
-        counts.shrink_to_fit();
-        counts
-    };
+    }
 
-    progress.inc();
+    let counts: Vec<pack::data::output::Count> = oids
+        .iter()
+        .map(|oid| pack::data::output::Count {
+            id: oid.to_owned(),
+            entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
+        })
+        .collect();
+
     let num_objects = counts.len();
+    let thread_limit = None;
+    let chunk_size = 1000;
+    drop(analysis_repo);
+    let mut handle = repo.objects.into_shared_arc().to_cache_arc();
+    handle.prevent_pack_unload();
+    handle.ignore_replacements = true;
     let mut in_order_entries = {
-        let progress = progress.add_child("creating entries");
+        let progress = gix::progress::Discard;
         InOrderIter::from(iter_from_counts::iter_from_counts(
             counts,
             topo,
-            handle,
+            handle.clone(),
             Box::new(progress),
             iter_from_counts::Options {
                 thread_limit,
@@ -153,36 +104,13 @@ where
         ))
     };
 
-    let mut entries_progress = progress.add_child("consuming");
-    entries_progress.init(Some(num_objects), progress::count("entries"));
-    let mut write_progress = progress.add_child("writing");
-    write_progress.init(None, progress::bytes());
-    let start = Instant::now();
-
-    let mut named_tempfile_store: Option<tempfile::NamedTempFile> = None;
-    let mut sink_store: std::io::Sink;
-    let (mut pack_file, output_directory): (&mut dyn std::io::Write, Option<_>) =
-        match output_directory {
-            Some(dir) => {
-                named_tempfile_store = Some(tempfile::NamedTempFile::new_in(dir.as_ref())?);
-                (
-                    named_tempfile_store.as_mut().expect("packfile just set"),
-                    Some(dir),
-                )
-            }
-            None => {
-                sink_store = std::io::sink();
-                (&mut sink_store, None)
-            }
-        };
+    let pack_dir = git_dir.join("objects").join("pack");
+    let mut named_tempfile = tempfile::NamedTempFile::new_in(&pack_dir)?;
+    let make_cancellation_err = || anyhow!("Cancelled by user");
     let mut interruptible_output_iter = interrupt::Iter::new(
         pack::data::output::bytes::FromEntriesIter::new(
-            in_order_entries.by_ref().inspect(|e| {
-                if let Ok(entries) = e {
-                    entries_progress.inc_by(entries.len());
-                }
-            }),
-            &mut pack_file,
+            in_order_entries.by_ref(),
+            &mut named_tempfile,
             num_objects as u32,
             pack::data::Version::default(),
             hash::Kind::default(),
@@ -190,8 +118,7 @@ where
         make_cancellation_err,
     );
     for io_res in interruptible_output_iter.by_ref() {
-        let written = io_res??;
-        write_progress.inc_by(written as usize);
+        io_res??;
     }
 
     let hash = interruptible_output_iter
@@ -199,17 +126,60 @@ where
         .digest()
         .expect("iteration is done");
     let pack_name = format!("{hash}.pack");
-    if let (Some(pack_file), Some(dir)) = (named_tempfile_store.take(), output_directory) {
-        pack_file.persist(dir.as_ref().join(pack_name))?;
-    } else {
-        writeln!(out, "{pack_name}")?;
+    let pack_path = pack_dir.join(&pack_name);
+    named_tempfile.persist(&pack_path)?;
+    let _ = in_order_entries.inner.finalize()?;
+
+    std::process::Command::new("git")
+        .args(["index-pack", pack_path.to_str().unwrap()])
+        .output()
+        .map_err(|e| anyhow!("failed to run git index-pack: {e}"))?;
+
+    for oid in &oids {
+        let hex = oid.to_hex();
+        let hex_str = hex.to_string();
+        let obj_path = git_dir
+            .join("objects")
+            .join(&hex_str[..2])
+            .join(&hex_str[2..]);
+        let _ = std::fs::remove_file(obj_path);
     }
-    let _entries_stats = in_order_entries.inner.finalize()?;
 
-    write_progress.show_throughput(start);
-    entries_progress.show_throughput(start);
+    Ok(())
+}
 
-    progress.inc();
+fn walk_tree(
+    tree: &gix::Tree<'_>,
+    prefix: &str,
+    loose: &std::collections::HashSet<ObjectId>,
+    trees: &HashMap<ObjectId, HashMap<String, ObjectId>>,
+    out: &mut HashMap<String, ObjectId>,
+) -> anyhow::Result<()> {
+    for entry in tree.iter() {
+        let entry = entry?;
+        let name = entry.filename().to_str_lossy().to_string();
+        let path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        if entry.mode().is_tree() {
+            let sub_oid = entry.oid().to_owned();
+            if let Some(sub_map) = trees.get(&sub_oid) {
+                for (p, b) in sub_map {
+                    out.insert(p.clone(), *b);
+                }
+            } else {
+                let sub_tree = tree.repo.find_tree(sub_oid)?;
+                walk_tree(&sub_tree, &path, loose, trees, out)?;
+            }
+        } else if entry.mode().is_blob() {
+            let blob_oid = entry.oid().to_owned();
+            if loose.contains(&blob_oid) {
+                out.insert(path, blob_oid);
+            }
+        }
+    }
     Ok(())
 }
 
