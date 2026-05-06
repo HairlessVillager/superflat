@@ -14,6 +14,7 @@ use crate::{
 
 mod crafter;
 pub mod odb;
+pub mod repack;
 pub mod utils;
 
 pub fn flatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: Versioning) -> Result<()> {
