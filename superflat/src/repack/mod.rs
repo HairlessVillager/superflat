@@ -36,7 +36,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         match obj.kind {
             gix::object::Kind::Commit => commits.push(oid.to_owned()),
             gix::object::Kind::Tree => {
-                let tree = obj.try_into_tree()?;
+                let tree = obj.into_tree();
                 let mut path_map = HashMap::new();
                 walk_tree(&tree, "", &loose_set, &trees, &mut path_map)?;
                 trees.insert(oid.to_owned(), path_map);
