@@ -45,7 +45,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         sb
     };
 
-    let mut skip = HashSet::new();
+    let mut skip = HashSet::new(); // If source and target are both loose, `skip` will mark duplicated blob objects
     let mut topo = HashMap::new();
     for (path, &target_blob) in &target_blobs {
         match source_blobs.get(path) {
