@@ -83,13 +83,13 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         topo
     };
 
-    let counts: Vec<pack::data::output::Count> = loose_objects
+    let counts = loose_objects
         .iter()
         .map(|oid| pack::data::output::Count {
             id: oid.to_owned(),
             entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let num_objects = counts.len();
     let thread_limit = None;
