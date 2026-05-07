@@ -63,7 +63,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         .iter()
         .filter(|oid| !skip.contains(*oid))
         .map(|oid| pack::data::output::Count {
-            id: oid.to_owned(),
+            id: oid.to_owned(), // TODO: try to use borrow
             entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
         })
         .collect::<Vec<_>>();
@@ -157,7 +157,7 @@ fn walk_tree(
             format!("{prefix}/{name}")
         };
         if entry.mode().is_tree() {
-            let sub_oid = entry.oid().to_owned();
+            let sub_oid = entry.oid().to_owned(); // TODO: try to use borrow
             if let Some(sub_map) = trees.get(&sub_oid) {
                 for (p, b) in sub_map {
                     out.insert(p.clone(), *b);
@@ -167,7 +167,7 @@ fn walk_tree(
                 walk_tree(&sub_tree, &path, loose, trees, out)?;
             }
         } else if entry.mode().is_blob() {
-            let blob_oid = entry.oid().to_owned();
+            let blob_oid = entry.oid().to_owned(); // TODO: try to use borrow
             if loose.contains(&blob_oid) {
                 out.insert(path, blob_oid);
             }
