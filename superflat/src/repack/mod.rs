@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use gix::{
     bstr::ByteSlice,
     hash::{self, ObjectId},
@@ -33,7 +33,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         let target_commit = analysis_repo.find_commit(target)?;
         let target_tree = analysis_repo.find_tree(target_commit.tree_id()?)?;
         let mut tb = HashMap::new();
-        walk_tree(&target_tree, "", &loose_objects, &HashMap::new(), &mut tb)?;
+        walk_tree(&target_tree, "", Some(&loose_objects), &HashMap::new(), &mut tb)?;
         tb
     };
 
@@ -41,7 +41,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         let source_commit = analysis_repo.find_commit(source)?;
         let source_tree = analysis_repo.find_tree(source_commit.tree_id()?)?;
         let mut sb = HashMap::new();
-        walk_tree(&source_tree, "", &loose_objects, &HashMap::new(), &mut sb)?;
+        walk_tree(&source_tree, "", None, &HashMap::new(), &mut sb)?;
         sb
     };
 
@@ -59,14 +59,27 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         }
     }
 
-    let counts = loose_objects
+    let mut counts: Vec<pack::data::output::Count> = loose_objects
         .iter()
         .filter(|oid| !skip.contains(*oid))
         .map(|oid| pack::data::output::Count {
             id: oid.to_owned(), // TODO: try to use borrow
             entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
         })
-        .collect::<Vec<_>>();
+        .collect();
+
+    // Source blobs may be in-pack or loose. Add them so iter_from_counts can
+    // resolve their location and create delta entries pointing to them.
+    for &source_blob in topo.values() {
+        if !loose_objects.contains(&source_blob)
+            && !counts.iter().any(|c| c.id == source_blob)
+        {
+            counts.push(pack::data::output::Count {
+                id: source_blob,
+                entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
+            });
+        }
+    }
 
     if counts.is_empty() {
         return Ok(());
@@ -115,15 +128,33 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         .into_inner()
         .digest()
         .expect("iteration is done");
-    let pack_name = format!("{hash}.pack");
-    let pack_path = pack_dir.join(&pack_name);
+    let pack_path = pack_dir.join(format!("pack-{hash}.pack"));
     named_tempfile.persist(&pack_path)?;
     let _ = in_order_entries.inner.finalize()?;
 
-    std::process::Command::new("git") // TODO: use gitoxide to index pack
-        .args(["index-pack", pack_path.to_str().unwrap()])
-        .output()
-        .context("failed to run git index-pack")?;
+    let should_interrupt = Box::leak(Box::new(std::sync::atomic::AtomicBool::new(false)));
+    let pack_file = std::fs::File::open(&pack_path)?;
+    let options = pack::bundle::write::Options {
+        thread_limit,
+        iteration_mode: pack::data::input::Mode::Verify,
+        index_version: pack::index::Version::default(),
+        object_hash: hash::Kind::default(),
+    };
+    let progress = gix::progress::Discard;
+    let outcome = pack::Bundle::write_to_directory(
+        &mut std::io::BufReader::new(pack_file),
+        Some(&pack_dir),
+        &mut { progress },
+        should_interrupt,
+        None::<gix::objs::find::Never>,
+        options,
+    )?;
+
+    // write_to_directory persists the pack as pack-<hash>.pack (already in place)
+    // and the index as pack-<hash>.idx. Remove the .keep file if created.
+    if let Some(keep_path) = outcome.keep_path {
+        let _ = std::fs::remove_file(keep_path);
+    }
 
     for oid in &loose_objects {
         if skip.contains(oid) {
@@ -144,7 +175,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
 fn walk_tree(
     tree: &gix::Tree<'_>,
     prefix: &str,
-    loose: &std::collections::HashSet<ObjectId>,
+    loose: Option<&std::collections::HashSet<ObjectId>>,
     trees: &HashMap<ObjectId, HashMap<String, ObjectId>>,
     out: &mut HashMap<String, ObjectId>,
 ) -> anyhow::Result<()> {
@@ -168,7 +199,7 @@ fn walk_tree(
             }
         } else if entry.mode().is_blob() {
             let blob_oid = entry.oid().to_owned(); // TODO: try to use borrow
-            if loose.contains(&blob_oid) {
+            if loose.map_or(true, |l| l.contains(&blob_oid)) {
                 out.insert(path, blob_oid);
             }
         }
