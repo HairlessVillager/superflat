@@ -13,25 +13,25 @@ use gix::{
 pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     let git_dir = git_dir.as_ref();
     let repo = gix::open(git_dir.to_path_buf())?.into_sync();
-    let loose = {
+    let loose_objects = {
         let objects_dir = repo.objects_dir().to_path_buf();
         let object_hash = repo.objects.object_hash();
-        gix::odb::loose::Store::at(&objects_dir, object_hash)
+        let loose = gix::odb::loose::Store::at(&objects_dir, object_hash);
+        let oids = loose.iter().collect::<Result<Vec<_>, _>>()?;
+        if oids.is_empty() {
+            return Ok(());
+        }
+        oids
     };
-
-    let oids = loose.iter().collect::<Result<Vec<_>, _>>()?;
-    if oids.is_empty() {
-        return Ok(());
-    }
 
     let analysis_repo = repo.to_thread_local();
     let mut commits = Vec::new();
     let mut trees = HashMap::new();
     let mut loose_set = std::collections::HashSet::new();
-    for oid in &oids {
-        loose_set.insert(oid.to_owned());
+    for oid in &loose_objects {
+        loose_set.insert(oid.to_owned()); // TODO: try to use borrow
     }
-    for oid in &oids {
+    for oid in &loose_objects {
         let obj = analysis_repo.find_object(*oid)?;
         match obj.kind {
             gix::object::Kind::Commit => commits.push(oid.to_owned()),
@@ -39,7 +39,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
                 let tree = obj.into_tree();
                 let mut path_map = HashMap::new();
                 walk_tree(&tree, "", &loose_set, &trees, &mut path_map)?;
-                trees.insert(oid.to_owned(), path_map);
+                trees.insert(oid.to_owned(), path_map); // TODO: try to use borrow
             }
             _ => {}
         }
@@ -76,7 +76,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         }
     }
 
-    let counts: Vec<pack::data::output::Count> = oids
+    let counts: Vec<pack::data::output::Count> = loose_objects
         .iter()
         .map(|oid| pack::data::output::Count {
             id: oid.to_owned(),
@@ -137,7 +137,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         .output()
         .context("failed to run git index-pack")?;
 
-    for oid in &oids {
+    for oid in &loose_objects {
         let hex = oid.to_hex();
         let hex_str = hex.to_string();
         let obj_path = git_dir
