@@ -28,21 +28,24 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     };
 
     let analysis_repo = repo.to_thread_local();
-    let mut commits = Vec::new();
-    let mut trees = HashMap::new();
-    for oid in &loose_objects {
-        let obj = analysis_repo.find_object(*oid)?;
-        match obj.kind {
-            gix::object::Kind::Commit => commits.push(oid.to_owned()),
-            gix::object::Kind::Tree => {
-                let tree = obj.into_tree();
-                let mut path_map = HashMap::new();
-                walk_tree(&tree, "", &loose_objects, &trees, &mut path_map)?;
-                trees.insert(oid.to_owned(), path_map); // TODO: try to use borrow
+    let (commits, trees) = {
+        let mut commits = Vec::new();
+        let mut trees = HashMap::new();
+        for oid in &loose_objects {
+            let obj = analysis_repo.find_object(*oid)?;
+            match obj.kind {
+                gix::object::Kind::Commit => commits.push(oid.to_owned()), // TODO: try to use borrow
+                gix::object::Kind::Tree => {
+                    let tree = obj.into_tree();
+                    let mut path_map = HashMap::new();
+                    walk_tree(&tree, "", &loose_objects, &trees, &mut path_map)?;
+                    trees.insert(oid.to_owned(), path_map); // TODO: try to use borrow
+                }
+                _ => {}
             }
-            _ => {}
         }
-    }
+        (commits, trees)
+    };
 
     let mut blob_commit_path = Vec::new();
     for commit_oid in &commits {
