@@ -36,7 +36,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         match obj.kind {
             gix::object::Kind::Commit => commits.push(oid.to_owned()),
             gix::object::Kind::Tree => {
-                let tree: gix::Tree = obj.try_into_tree().map_err(|e| anyhow!("{e}"))?;
+                let tree = obj.try_into_tree().map_err(|e| anyhow!("{e}"))?;
                 let mut path_map = HashMap::new();
                 walk_tree(&tree, "", &loose_set, &trees, &mut path_map)?;
                 trees.insert(oid.to_owned(), path_map);
@@ -45,7 +45,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         }
     }
 
-    let mut blob_commit_path: Vec<(ObjectId, ObjectId, String)> = Vec::new();
+    let mut blob_commit_path = Vec::new();
     for commit_oid in &commits {
         let commit = analysis_repo.find_commit(*commit_oid)?;
         let tree_id = commit.tree_id()?.detach();
@@ -59,7 +59,10 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     let mut topo = HashMap::new();
     for (blob_oid, commit_oid, path) in &blob_commit_path {
         let commit = analysis_repo.find_commit(*commit_oid)?;
-        let parent_ids: Vec<ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
+        let parent_ids = commit
+            .parent_ids()
+            .map(|id| id.detach())
+            .collect::<Vec<_>>();
         if let Some(parent_oid) = parent_ids.first() {
             let parent = analysis_repo.find_commit(*parent_oid)?;
             let parent_tree = parent.tree_id()?.detach();
