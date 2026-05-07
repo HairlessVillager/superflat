@@ -19,10 +19,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         gix::odb::loose::Store::at(&objects_dir, object_hash)
     };
 
-    let mut oids = Vec::new();
-    for result in loose.iter() {
-        oids.push(result?);
-    }
+    let oids = loose.iter().collect::<Result<Vec<_>, _>>()?;
     if oids.is_empty() {
         return Ok(());
     }
