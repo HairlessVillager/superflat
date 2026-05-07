@@ -120,7 +120,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
     named_tempfile.persist(&pack_path)?;
     let _ = in_order_entries.inner.finalize()?;
 
-    std::process::Command::new("git")
+    std::process::Command::new("git") // TODO: use gitoxide to index pack
         .args(["index-pack", pack_path.to_str().unwrap()])
         .output()
         .context("failed to run git index-pack")?;
@@ -152,7 +152,7 @@ fn walk_tree(
         let entry = entry?;
         let name = entry.filename().to_str_lossy().to_string();
         let path = if prefix.is_empty() {
-            name.clone()
+            name
         } else {
             format!("{prefix}/{name}")
         };
