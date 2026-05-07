@@ -47,16 +47,19 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         (commits, trees)
     };
 
-    let mut blob_commit_path = Vec::new();
-    for commit_oid in &commits {
-        let commit = analysis_repo.find_commit(*commit_oid)?;
-        let tree_id = commit.tree_id()?.detach();
-        if let Some(path_map) = trees.get(&tree_id) {
-            for (path, blob_oid) in path_map {
-                blob_commit_path.push((*blob_oid, *commit_oid, path.clone()));
+    let blob_commit_path = {
+        let mut blob_commit_path = Vec::new();
+        for commit_oid in &commits {
+            let commit = analysis_repo.find_commit(*commit_oid)?;
+            let tree_id = commit.tree_id()?.detach();
+            if let Some(path_map) = trees.get(&tree_id) {
+                for (path, blob_oid) in path_map {
+                    blob_commit_path.push((*blob_oid, *commit_oid, path.clone()));
+                }
             }
         }
-    }
+        blob_commit_path
+    };
 
     let mut topo = HashMap::new();
     for (blob_oid, commit_oid, path) in &blob_commit_path {
