@@ -54,32 +54,34 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
             let tree_id = commit.tree_id()?.detach();
             if let Some(path_map) = trees.get(&tree_id) {
                 for (path, blob_oid) in path_map {
-                    blob_commit_path.push((*blob_oid, *commit_oid, path.clone()));
+                    blob_commit_path.push((*blob_oid, *commit_oid, path.clone())); // TODO: try to use borrow
                 }
             }
         }
         blob_commit_path
     };
 
-    let mut topo = HashMap::new();
-    for (blob_oid, commit_oid, path) in &blob_commit_path {
-        let commit = analysis_repo.find_commit(*commit_oid)?;
-        let parent_ids = commit
-            .parent_ids()
-            .map(|id| id.detach())
-            .collect::<Vec<_>>();
-        if let Some(parent_oid) = parent_ids.first() {
-            let parent = analysis_repo.find_commit(*parent_oid)?;
-            let parent_tree = parent.tree_id()?.detach();
-            if let Some(parent_path_map) = trees.get(&parent_tree) {
-                if let Some(parent_blob) = parent_path_map.get(path.as_str()) {
-                    if loose_objects.contains(parent_blob) {
-                        topo.insert(*blob_oid, *parent_blob);
-                    }
+    let topo = {
+        let mut topo = HashMap::new();
+        for (blob_oid, commit_oid, path) in &blob_commit_path {
+            let commit = analysis_repo.find_commit(*commit_oid)?;
+            let parent_ids = commit
+                .parent_ids()
+                .map(|id| id.detach())
+                .collect::<Vec<_>>();
+            if let Some(parent_oid) = parent_ids.first() {
+                let parent = analysis_repo.find_commit(*parent_oid)?;
+                let parent_tree = parent.tree_id()?.detach();
+                if let Some(parent_path_map) = trees.get(&parent_tree)
+                    && let Some(parent_blob) = parent_path_map.get(path.as_str())
+                    && loose_objects.contains(parent_blob)
+                {
+                    topo.insert(*blob_oid, *parent_blob);
                 }
             }
         }
-    }
+        topo
+    };
 
     let counts: Vec<pack::data::output::Count> = loose_objects
         .iter()
