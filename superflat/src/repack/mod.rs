@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use anyhow::{Context, anyhow};
 use gix::{
@@ -17,7 +20,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         let objects_dir = repo.objects_dir().to_path_buf();
         let object_hash = repo.objects.object_hash();
         let loose = gix::odb::loose::Store::at(&objects_dir, object_hash);
-        let oids = loose.iter().collect::<Result<Vec<_>, _>>()?;
+        let oids = loose.iter().collect::<Result<HashSet<_>, _>>()?;
         if oids.is_empty() {
             return Ok(());
         }
@@ -27,10 +30,6 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     let analysis_repo = repo.to_thread_local();
     let mut commits = Vec::new();
     let mut trees = HashMap::new();
-    let mut loose_set = std::collections::HashSet::new();
-    for oid in &loose_objects {
-        loose_set.insert(oid.to_owned()); // TODO: try to use borrow
-    }
     for oid in &loose_objects {
         let obj = analysis_repo.find_object(*oid)?;
         match obj.kind {
@@ -38,7 +37,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
             gix::object::Kind::Tree => {
                 let tree = obj.into_tree();
                 let mut path_map = HashMap::new();
-                walk_tree(&tree, "", &loose_set, &trees, &mut path_map)?;
+                walk_tree(&tree, "", &loose_objects, &trees, &mut path_map)?;
                 trees.insert(oid.to_owned(), path_map); // TODO: try to use borrow
             }
             _ => {}
@@ -68,7 +67,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
             let parent_tree = parent.tree_id()?.detach();
             if let Some(parent_path_map) = trees.get(&parent_tree) {
                 if let Some(parent_blob) = parent_path_map.get(path.as_str()) {
-                    if loose_set.contains(parent_blob) {
+                    if loose_objects.contains(parent_blob) {
                         topo.insert(*blob_oid, *parent_blob);
                     }
                 }
