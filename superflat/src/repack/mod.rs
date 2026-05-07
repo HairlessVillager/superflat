@@ -13,9 +13,11 @@ use gix::{
 pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     let git_dir = git_dir.as_ref();
     let repo = gix::open(git_dir.to_path_buf())?.into_sync();
-    let objects_dir = repo.objects_dir().to_path_buf();
-    let object_hash = repo.objects.object_hash();
-    let loose = gix::odb::loose::Store::at(&objects_dir, object_hash);
+    let loose = {
+        let objects_dir = repo.objects_dir().to_path_buf();
+        let object_hash = repo.objects.object_hash();
+        gix::odb::loose::Store::at(&objects_dir, object_hash)
+    };
 
     let mut oids = Vec::new();
     for result in loose.iter() {
