@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use gix::{
     bstr::ByteSlice,
     hash::{self, ObjectId},
@@ -36,7 +36,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         match obj.kind {
             gix::object::Kind::Commit => commits.push(oid.to_owned()),
             gix::object::Kind::Tree => {
-                let tree = obj.try_into_tree().map_err(|e| anyhow!("{e}"))?;
+                let tree = obj.try_into_tree()?;
                 let mut path_map = HashMap::new();
                 walk_tree(&tree, "", &loose_set, &trees, &mut path_map)?;
                 trees.insert(oid.to_owned(), path_map);
@@ -135,7 +135,7 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     std::process::Command::new("git")
         .args(["index-pack", pack_path.to_str().unwrap()])
         .output()
-        .map_err(|e| anyhow!("failed to run git index-pack: {e}"))?;
+        .context("failed to run git index-pack")?;
 
     for oid in &oids {
         let hex = oid.to_hex();
