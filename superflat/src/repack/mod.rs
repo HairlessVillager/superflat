@@ -13,7 +13,7 @@ use gix::{
     prelude::Finalize,
 };
 
-pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
+pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> anyhow::Result<()> {
     let git_dir = git_dir.as_ref();
     let repo = gix::open(git_dir.to_path_buf())?.into_sync();
     let loose_objects = {
@@ -28,68 +28,49 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
     };
 
     let analysis_repo = repo.to_thread_local();
-    let (commits, trees) = {
-        let mut commits = Vec::new();
-        let mut trees = HashMap::new();
-        for oid in &loose_objects {
-            let obj = analysis_repo.find_object(*oid)?;
-            match obj.kind {
-                gix::object::Kind::Commit => commits.push(oid.to_owned()), // TODO: try to use borrow
-                gix::object::Kind::Tree => {
-                    let tree = obj.into_tree();
-                    let mut path_map = HashMap::new();
-                    walk_tree(&tree, "", &loose_objects, &trees, &mut path_map)?;
-                    trees.insert(oid.to_owned(), path_map); // TODO: try to use borrow
-                }
-                _ => {}
-            }
-        }
-        (commits, trees)
+
+    let target_blobs = {
+        let target_commit = analysis_repo.find_commit(target)?;
+        let target_tree = analysis_repo.find_tree(target_commit.tree_id()?)?;
+        let mut tb = HashMap::new();
+        walk_tree(&target_tree, "", &loose_objects, &HashMap::new(), &mut tb)?;
+        tb
     };
 
-    let blob_commit_path = {
-        let mut blob_commit_path = Vec::new();
-        for commit_oid in &commits {
-            let commit = analysis_repo.find_commit(*commit_oid)?;
-            let tree_id = commit.tree_id()?.detach();
-            if let Some(path_map) = trees.get(&tree_id) {
-                for (path, blob_oid) in path_map {
-                    blob_commit_path.push((*blob_oid, *commit_oid, path.clone())); // TODO: try to use borrow
-                }
-            }
-        }
-        blob_commit_path
+    let source_blobs = {
+        let source_commit = analysis_repo.find_commit(source)?;
+        let source_tree = analysis_repo.find_tree(source_commit.tree_id()?)?;
+        let mut sb = HashMap::new();
+        walk_tree(&source_tree, "", &loose_objects, &HashMap::new(), &mut sb)?;
+        sb
     };
 
-    let topo = {
-        let mut topo = HashMap::new();
-        for (blob_oid, commit_oid, path) in &blob_commit_path {
-            let commit = analysis_repo.find_commit(*commit_oid)?;
-            let parent_ids = commit
-                .parent_ids()
-                .map(|id| id.detach())
-                .collect::<Vec<_>>();
-            if let Some(parent_oid) = parent_ids.first() {
-                let parent = analysis_repo.find_commit(*parent_oid)?;
-                let parent_tree = parent.tree_id()?.detach();
-                if let Some(parent_path_map) = trees.get(&parent_tree)
-                    && let Some(parent_blob) = parent_path_map.get(path.as_str())
-                    && loose_objects.contains(parent_blob)
-                {
-                    topo.insert(*blob_oid, *parent_blob);
-                }
+    let mut skip = HashSet::new();
+    let mut topo = HashMap::new();
+    for (path, &target_blob) in &target_blobs {
+        match source_blobs.get(path) {
+            Some(&source_blob) if source_blob == target_blob => {
+                skip.insert(target_blob);
             }
+            Some(&source_blob) => {
+                topo.insert(target_blob, source_blob);
+            }
+            None => {}
         }
-        topo
-    };
+    }
 
     let counts = loose_objects
         .iter()
+        .filter(|oid| !skip.contains(*oid))
         .map(|oid| pack::data::output::Count {
             id: oid.to_owned(),
             entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
         })
         .collect::<Vec<_>>();
+
+    if counts.is_empty() {
+        return Ok(());
+    }
 
     let num_objects = counts.len();
     let thread_limit = None;
@@ -145,6 +126,9 @@ pub fn repack(git_dir: impl AsRef<Path>) -> anyhow::Result<()> {
         .context("failed to run git index-pack")?;
 
     for oid in &loose_objects {
+        if skip.contains(oid) {
+            continue;
+        }
         let hex = oid.to_hex();
         let hex_str = hex.to_string();
         let obj_path = git_dir
