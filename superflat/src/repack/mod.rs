@@ -33,7 +33,13 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         let target_commit = analysis_repo.find_commit(target)?;
         let target_tree = analysis_repo.find_tree(target_commit.tree_id()?)?;
         let mut tb = HashMap::new();
-        walk_tree(&target_tree, "", Some(&loose_objects), &HashMap::new(), &mut tb)?;
+        walk_tree(
+            &target_tree,
+            "",
+            Some(&loose_objects),
+            &HashMap::new(),
+            &mut tb,
+        )?;
         tb
     };
 
@@ -59,7 +65,7 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
         }
     }
 
-    let mut counts: Vec<pack::data::output::Count> = loose_objects
+    let counts: Vec<pack::data::output::Count> = loose_objects
         .iter()
         .filter(|oid| !skip.contains(*oid))
         .map(|oid| pack::data::output::Count {
@@ -67,19 +73,6 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
             entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
         })
         .collect();
-
-    // Source blobs may be in-pack or loose. Add them so iter_from_counts can
-    // resolve their location and create delta entries pointing to them.
-    for &source_blob in topo.values() {
-        if !loose_objects.contains(&source_blob)
-            && !counts.iter().any(|c| c.id == source_blob)
-        {
-            counts.push(pack::data::output::Count {
-                id: source_blob,
-                entry_pack_location: pack::data::output::count::PackLocation::NotLookedUp,
-            });
-        }
-    }
 
     if counts.is_empty() {
         return Ok(());
@@ -108,12 +101,12 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
     };
 
     let pack_dir = git_dir.join("objects").join("pack");
-    let mut named_tempfile = tempfile::NamedTempFile::new_in(&pack_dir)?;
     let make_cancellation_err = || anyhow!("Cancelled by user");
+    let mut thin_pack_bytes = Vec::new();
     let mut interruptible_output_iter = interrupt::Iter::new(
         pack::data::output::bytes::FromEntriesIter::new(
             in_order_entries.by_ref(),
-            &mut named_tempfile,
+            &mut thin_pack_bytes,
             num_objects as u32,
             pack::data::Version::default(),
             hash::Kind::default(),
@@ -123,37 +116,27 @@ pub fn repack(git_dir: impl AsRef<Path>, target: ObjectId, source: ObjectId) -> 
     for io_res in interruptible_output_iter.by_ref() {
         io_res??;
     }
-
-    let hash = interruptible_output_iter
-        .into_inner()
-        .digest()
-        .expect("iteration is done");
-    let pack_path = pack_dir.join(format!("pack-{hash}.pack"));
-    named_tempfile.persist(&pack_path)?;
     let _ = in_order_entries.inner.finalize()?;
 
-    let should_interrupt = Box::leak(Box::new(std::sync::atomic::AtomicBool::new(false)));
-    let pack_file = std::fs::File::open(&pack_path)?;
-    let options = pack::bundle::write::Options {
-        thread_limit,
-        iteration_mode: pack::data::input::Mode::Verify,
-        index_version: pack::index::Version::default(),
-        object_hash: hash::Kind::default(),
-    };
-    let progress = gix::progress::Discard;
-    let outcome = pack::Bundle::write_to_directory(
-        &mut std::io::BufReader::new(pack_file),
-        Some(&pack_dir),
-        &mut { progress },
-        should_interrupt,
-        None::<gix::objs::find::Never>,
-        options,
-    )?;
-
-    // write_to_directory persists the pack as pack-<hash>.pack (already in place)
-    // and the index as pack-<hash>.idx. Remove the .keep file if created.
-    if let Some(keep_path) = outcome.keep_path {
-        let _ = std::fs::remove_file(keep_path);
+    // Write the thin pack and resolve RefDeltas via git index-pack --fix-thin.
+    // This inserts missing base objects from the ODB and generates a full pack + idx.
+    let child = std::process::Command::new("git")
+        .arg("--git-dir")
+        .arg(git_dir)
+        .arg("index-pack")
+        .arg("--fix-thin")
+        .arg("--stdin")
+        .current_dir(&pack_dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    use std::io::Write;
+    child.stdin.as_ref().unwrap().write_all(&thin_pack_bytes)?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("git index-pack failed: {stderr}"));
     }
 
     for oid in &loose_objects {
@@ -361,16 +344,23 @@ mod iter_from_counts {
                                     },
                                     version,
                                 )?;
-                                Some(Ok(output::Entry {
-                                    id: oid.to_owned(),
-                                    kind: output::entry::Kind::DeltaRef {
-                                        object_index: *oid_index_mapping.get(source_oid).expect(
-                                            "all target and source objects should in ONE pack",
-                                        ),
-                                    },
-                                    decompressed_size,
-                                    compressed_data,
-                                }))
+                                if let Some(object_index) =
+                                    oid_index_mapping.get(source_oid).cloned()
+                                {
+                                    Some(Ok(output::Entry {
+                                        id: oid.to_owned(),
+                                        kind: output::entry::Kind::DeltaRef { object_index },
+                                        decompressed_size,
+                                        compressed_data,
+                                    }))
+                                } else {
+                                    Some(Ok(output::Entry {
+                                        id: oid.to_owned(),
+                                        kind: output::entry::Kind::DeltaOid { id: *source_oid },
+                                        decompressed_size,
+                                        compressed_data,
+                                    }))
+                                }
                             };
                             if let Some(entry) = find_existing_delta() {
                                 stats.objects_copied_from_pack += 1;
@@ -385,16 +375,23 @@ mod iter_from_counts {
                                         .map_err(|e| Error::NewEntry(e.into()))?;
                                     deflate.flush().map_err(|e| Error::NewEntry(e.into()))?;
                                     let compressed_delta = deflate.into_inner();
-                                    Ok(output::Entry {
-                                        id: oid.to_owned(),
-                                        kind: output::entry::Kind::DeltaRef {
-                                            object_index: *oid_index_mapping
-                                                .get(source_oid)
-                                                .expect("all target and source objects should in ONE pack"),
-                                        },
-                                        decompressed_size: delta_data.len(),
-                                        compressed_data: compressed_delta,
-                                    })
+                                    if let Some(object_index) =
+                                        oid_index_mapping.get(source_oid).cloned()
+                                    {
+                                        Ok(output::Entry {
+                                            id: oid.to_owned(),
+                                            kind: output::entry::Kind::DeltaRef { object_index },
+                                            decompressed_size: delta_data.len(),
+                                            compressed_data: compressed_delta,
+                                        })
+                                    } else {
+                                        Ok(output::Entry {
+                                            id: oid.to_owned(),
+                                            kind: output::entry::Kind::DeltaOid { id: *source_oid },
+                                            decompressed_size: delta_data.len(),
+                                            compressed_data: compressed_delta,
+                                        })
+                                    }
                                 } else {
                                     Ok(output::Entry::invalid())
                                 }
@@ -439,11 +436,12 @@ mod iter_from_counts {
             let child = oid_to_idx
                 .get(child)
                 .expect("child ObjectId in to_parent should exist in counts");
-            let parent = oid_to_idx
-                .get(parent)
-                .expect("parent ObjectId in to_parent should exist in counts");
+            let parent = match oid_to_idx.get(parent) {
+                Some(&idx) => idx,
+                None => continue, // parent is already packed (not in counts)
+            };
             if idx_to_child_count.contains_key(child) {
-                if let Some(count) = idx_to_child_count.get_mut(parent) {
+                if let Some(count) = idx_to_child_count.get_mut(&parent) {
                     *count += 1;
                 }
             }
@@ -456,11 +454,12 @@ mod iter_from_counts {
         let mut sorted = Vec::with_capacity(n);
         while let Some(curr) = stack.pop() {
             if let Some(parent) = to_parent.get(&counts[curr].id) {
-                let parent = oid_to_idx.get(parent).unwrap();
-                if let Some(count) = idx_to_child_count.get_mut(parent) {
-                    *count -= 1;
-                    if *count == 0 {
-                        stack.push(*parent);
+                if let Some(&parent) = oid_to_idx.get(parent) {
+                    if let Some(count) = idx_to_child_count.get_mut(&parent) {
+                        *count -= 1;
+                        if *count == 0 {
+                            stack.push(parent);
+                        }
                     }
                 }
             }
