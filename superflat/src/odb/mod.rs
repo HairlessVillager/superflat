@@ -1,5 +1,5 @@
 mod fs;
-pub mod git;
+mod git;
 
 pub use fs::LocalFsOdb;
 pub use git::LocalGitOdb;
@@ -14,5 +14,8 @@ pub trait OdbReader {
 }
 pub trait OdbWriter: OdbReader {
     fn put(&mut self, key: &str, value: impl AsRef<[u8]>) -> Result<()>;
-    fn put_par(&mut self, entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>) -> Result<()>;
+    fn put_par(
+        &mut self,
+        entries: impl IntoParallelIterator<Item = (String, impl AsRef<[u8]>)>,
+    ) -> Result<()>;
 }

@@ -10,7 +10,7 @@ const FLATTEN_PATTERNS: &[&str] = &["**/entities/r.*.*.mca"];
 
 const UNFLATTEN_PATTERNS: &[&str] = &["**/entities/r.*.*.mca/timestamp-header"];
 
-pub struct EntitiesRegionCrafter;
+pub(crate) struct EntitiesRegionCrafter;
 
 impl Crafter for EntitiesRegionCrafter {
     fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) -> Result<()> {

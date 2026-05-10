@@ -10,7 +10,7 @@ const FLATTEN_PATTERNS: &[&str] = &["**/poi/r.*.*.mca"];
 
 const UNFLATTEN_PATTERNS: &[&str] = &["**/poi/r.*.*.mca/timestamp-header"];
 
-pub struct PoiRegionCrafter;
+pub(crate) struct PoiRegionCrafter;
 
 impl Crafter for PoiRegionCrafter {
     fn flatten(self, save: &impl OdbReader, storage: &mut impl OdbWriter) -> Result<()> {

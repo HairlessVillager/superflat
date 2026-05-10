@@ -14,8 +14,8 @@ use crate::{
 
 const GZIP_NBT_GLOB_PATTERNS: &[&str] = &["**/*.dat"];
 
-pub struct GzipNbtCrafter {
-    pub version: Versioning,
+pub(crate) struct GzipNbtCrafter {
+    pub(crate) version: Versioning,
 }
 
 impl Crafter for GzipNbtCrafter {

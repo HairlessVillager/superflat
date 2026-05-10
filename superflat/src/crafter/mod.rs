@@ -5,21 +5,21 @@ mod poi_region;
 mod raw;
 
 use anyhow::Result;
-pub use chunk_region::ChunkRegionCrafter;
-pub use entities_region::EntitiesRegionCrafter;
-pub use gzip_nbt::GzipNbtCrafter;
-pub use poi_region::PoiRegionCrafter;
-pub use raw::RawCrafter;
+pub(crate) use chunk_region::ChunkRegionCrafter;
+pub(crate) use entities_region::EntitiesRegionCrafter;
+pub(crate) use gzip_nbt::GzipNbtCrafter;
+pub(crate) use poi_region::PoiRegionCrafter;
+pub(crate) use raw::RawCrafter;
 use versions::Versioning;
 
 use crate::odb::{OdbReader, OdbWriter};
 
-pub trait Crafter {
+pub(crate) trait Crafter {
     fn flatten(self, save_dir: &impl OdbReader, storage: &mut impl OdbWriter) -> Result<()>;
     fn unflatten(self, save_dir: &mut impl OdbWriter, storage: &impl OdbReader) -> Result<()>;
 }
 
-pub enum CrafterImpl {
+pub(crate) enum CrafterImpl {
     Raw(RawCrafter),
     GzipNbt(GzipNbtCrafter),
     ChunkRegion(ChunkRegionCrafter),
@@ -28,7 +28,7 @@ pub enum CrafterImpl {
 }
 
 impl CrafterImpl {
-    pub fn get_crafters(version: Versioning) -> Vec<Self> {
+    pub(crate) fn get_crafters(version: Versioning) -> Vec<Self> {
         vec![
             Self::ChunkRegion(ChunkRegionCrafter {}),
             Self::EntitiesRegion(EntitiesRegionCrafter {}),
