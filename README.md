@@ -142,13 +142,15 @@ sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
     - [ ] `superflat diff`: Quickly view differences between two commits
     - [ ] `superflat blame`: Block-level history tracking
 - [ ] Mod development
+    - [ ] Add in-game commands
+    - [ ] Add game client submenu
 - [ ] Support more chunk compression types
 - [ ] Support `.mcc` files
 - [x] Reduce dependency on Pumpkin for the Sections Dump feature
 - [x] Write auto compile GitHub Workflows
-- [ ] Expand version support
+- [x] Expand version support
     - [x] Block and biome data version support
-    - [ ] Save directory format support (26.1 and later)
+    - [x] Save directory format support (26.1 and later)
 - [ ] Chunk de-duplication based on Minecraft original terrain generation algorithms (storing only modifications)
 - [x] Change the project license to the Rust community standard MIT/Apache 2.0 dual-license
     - [x] Replace the `pumpkin-nbt` dependency

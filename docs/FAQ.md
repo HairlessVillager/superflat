@@ -71,7 +71,9 @@ Most lightweight optimization Mods meet the conditions above, so we are also com
 
 ## Is it suitable for servers?
 
-**Yes**, for Paper, Fabric, and other server cores that haven't modified the vanilla storage mechanism. For server plugins, please refer to the previous FAQ.
+**Yes**, for Paper, Fabric, and other server cores that haven't modified the vanilla storage mechanism. For other server cores and server plugins, please refer to the previous FAQ.
+
+If you can log in to the server's backend terminal (note: this is not the game server core's console), you can directly download and run the CLI program. If you cannot log in to the server's backend terminal but can access the in-game console, you can install [ConsoleMC](https://modrinth.com/mod/consolemc) or a similar plugin/Mod to run host programs from the console. We will add more server-side support in the future.
 
 ## Is there a limit on save size?
 

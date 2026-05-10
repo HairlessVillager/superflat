@@ -144,13 +144,15 @@ sf checkout $SAVE_DIR $GIT_DIR -c "main@{10 minutes ago}"
     - [ ] `superflat diff`：快速浏览两个 Commit 之间的区别
     - [ ] `superflat blame`：精确到方块的历史跟踪
 - [ ] Mod 开发
+    - [ ] 新增游戏内命令
+    - [ ] 新增游戏客户端子菜单
 - [ ] 支持更多的区块压缩类型
 - [ ] 支持 `.mcc` 文件
 - [x] 精简 Sections Dump 功能对 Pumpkin 的依赖
 - [x] 构建自动编译 GitHub 工作流
-- [ ] 扩展版本支持
+- [x] 扩展版本支持
     - [x] 方块与群系数据版本支持
-    - [ ] 存档目录格式支持（26.1 及之后）
+    - [x] 存档目录格式支持（26.1 及之后）
 - [ ] 基于 Minecraft 原版地形生成算法的区块去冗余（仅存储修改量）
 - [x] 将项目许可变更为 Rust 社区标准的 MIT/Apache 2.0 双授权
     - [x] 替换 `pumpkin-nbt` 依赖
