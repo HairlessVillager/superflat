@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use superflat::{
-    checkout, commit, flatten, unflatten,
+    Superflat,
     utils::cmd::{git_cmd, git_count_objects, git_repack, git_repo_exists},
 };
 use versions::Versioning;
@@ -126,12 +126,12 @@ fn main() -> Result<(), anyhow::Error> {
             save_dir,
             repo_dir,
             mc_version,
-        } => flatten(save_dir, repo_dir, mc_version),
+        } => Superflat::new(save_dir, repo_dir, mc_version).flatten(),
         CliSubcommand::Unflatten {
             save_dir,
             repo_dir,
             mc_version,
-        } => unflatten(save_dir, repo_dir, mc_version),
+        } => Superflat::new(save_dir, repo_dir, mc_version).unflatten(),
         CliSubcommand::Commit {
             save_dir,
             git_dir,
@@ -167,13 +167,10 @@ fn main() -> Result<(), anyhow::Error> {
             let size_before = git_count_objects(git_dir.to_owned())
                 .context("failed to count git objects")?
                 .total_size_mib();
-            commit(
-                save_dir,
-                git_dir.to_owned(),
+            Superflat::new(save_dir, git_dir.to_owned(), mc_version).commit(
                 parents,
                 &message,
                 Some(r#ref),
-                mc_version,
             )?;
 
             if use_repack {
@@ -203,7 +200,7 @@ fn main() -> Result<(), anyhow::Error> {
                 log::warn!("save_dir {save_dir:?} already exists, renaming to {bak:?}");
                 std::fs::rename(&save_dir, &bak).context("failed to rename save directory")?;
             }
-            checkout(save_dir, git_dir, commit, mc_version)?;
+            Superflat::new(save_dir, git_dir, mc_version).checkout(commit)?;
             log::info!("Done");
             Ok(())
         }

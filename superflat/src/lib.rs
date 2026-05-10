@@ -16,75 +16,79 @@ mod crafter;
 pub mod odb;
 pub mod utils;
 
-pub fn flatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: Versioning) -> Result<()> {
-    init_mc_data(&mc_version);
-    let save = LocalFsOdb::from_dir(save_dir);
-    let mut repo = LocalFsOdb::from_dir(repo_dir);
-
-    for crafter in CrafterImpl::get_crafters(mc_version) {
-        crafter.flatten(&save, &mut repo)?;
-    }
-
-    Ok(())
-}
-
-pub fn unflatten(save_dir: PathBuf, repo_dir: PathBuf, mc_version: Versioning) -> Result<()> {
-    init_mc_data(&mc_version);
-    let mut save = LocalFsOdb::from_dir(save_dir);
-    let repo = LocalFsOdb::from_dir(repo_dir);
-
-    for crafter in CrafterImpl::get_crafters(mc_version) {
-        crafter.unflatten(&mut save, &repo)?;
-    }
-
-    Ok(())
-}
-
-pub fn commit(
+#[derive(Debug, Clone)]
+pub struct Superflat {
     save_dir: PathBuf,
-    git_dir: PathBuf,
-    parents: Vec<String>,
-    message: &str,
-    r#ref: Option<String>,
+    storage_dir: PathBuf,
     mc_version: Versioning,
-) -> Result<()> {
-    init_mc_data(&mc_version);
-    let save = LocalFsOdb::from_dir(save_dir);
-    let mut git = if let Some(from) = parents.first() {
-        LocalGitOdb::from_commit(git_dir.to_owned(), from.clone())
-    } else {
-        LocalGitOdb::new(git_dir.to_owned())
-    }?;
-
-    for crafter in CrafterImpl::get_crafters(mc_version) {
-        crafter.flatten(&save, &mut git)?;
-    }
-
-    let commit = git.commit(parents.as_slice(), message)?;
-
-    if let Some(r#ref) = r#ref {
-        let cmd = git_cmd(git_dir, ["update-ref", &r#ref, &commit]);
-        exec(cmd, None).context("failed to run update-ref")?;
-        log::info!("{:?} -> {commit}", r#ref);
-    } else {
-        log::warn!("Dangling commit {commit}");
-    }
-    Ok(())
 }
 
-pub fn checkout(
-    save_dir: PathBuf,
-    git_dir: PathBuf,
-    commit: String,
-    mc_version: Versioning,
-) -> Result<()> {
-    init_mc_data(&mc_version);
-    let mut save = LocalFsOdb::from_dir(save_dir);
-    let git = LocalGitOdb::from_commit(git_dir, commit)?;
+impl Superflat {
+    pub fn new(save_dir: PathBuf, storage_dir: PathBuf, mc_version: Versioning) -> Self {
+        Self {
+            save_dir,
+            storage_dir,
+            mc_version,
+        }
+    }
+    pub fn flatten(&self) -> Result<()> {
+        init_mc_data(&self.mc_version);
+        let save = LocalFsOdb::from_dir(self.save_dir.to_owned());
+        let mut repo = LocalFsOdb::from_dir(self.storage_dir.to_owned());
 
-    for crafter in CrafterImpl::get_crafters(mc_version) {
-        crafter.unflatten(&mut save, &git)?;
+        for crafter in CrafterImpl::get_crafters(self.mc_version.to_owned()) {
+            crafter.flatten(&save, &mut repo)?;
+        }
+
+        Ok(())
     }
 
-    Ok(())
+    pub fn unflatten(self) -> Result<()> {
+        init_mc_data(&self.mc_version);
+        let mut save = LocalFsOdb::from_dir(self.save_dir.to_owned());
+        let repo = LocalFsOdb::from_dir(self.storage_dir.to_owned());
+
+        for crafter in CrafterImpl::get_crafters(self.mc_version.to_owned()) {
+            crafter.unflatten(&mut save, &repo)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn commit(self, parents: Vec<String>, message: &str, r#ref: Option<String>) -> Result<()> {
+        init_mc_data(&self.mc_version);
+        let save = LocalFsOdb::from_dir(self.save_dir.to_owned());
+        let mut git = if let Some(from) = parents.first() {
+            LocalGitOdb::from_commit(self.storage_dir.to_owned(), from.clone())
+        } else {
+            LocalGitOdb::new(self.storage_dir.to_owned())
+        }?;
+
+        for crafter in CrafterImpl::get_crafters(self.mc_version.to_owned()) {
+            crafter.flatten(&save, &mut git)?;
+        }
+
+        let commit = git.commit(parents.as_slice(), message)?;
+
+        if let Some(r#ref) = r#ref {
+            let cmd = git_cmd(self.storage_dir.to_owned(), ["update-ref", &r#ref, &commit]);
+            exec(cmd, None).context("failed to run update-ref")?;
+            log::info!("{:?} -> {commit}", r#ref);
+        } else {
+            log::warn!("Dangling commit {commit}");
+        }
+        Ok(())
+    }
+
+    pub fn checkout(self, commit: String) -> Result<()> {
+        init_mc_data(&self.mc_version);
+        let mut save = LocalFsOdb::from_dir(self.save_dir.to_owned());
+        let git = LocalGitOdb::from_commit(self.storage_dir.to_owned(), commit)?;
+
+        for crafter in CrafterImpl::get_crafters(self.mc_version.to_owned()) {
+            crafter.unflatten(&mut save, &git)?;
+        }
+
+        Ok(())
+    }
 }

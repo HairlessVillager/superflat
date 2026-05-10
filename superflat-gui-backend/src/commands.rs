@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
-use superflat::utils::cmd as sf_cmd;
+use superflat::{Superflat, utils::cmd as sf_cmd};
 use versions::Versioning;
 
 use crate::EVENT_DONE;
@@ -236,14 +236,12 @@ async fn do_commit_and_repack(
         .expect("failed to count git objects")
         .total_size_mib();
     let result = tokio::task::spawn_blocking(move || {
-        superflat::commit(
+        Superflat::new(
             save_path,
             git_dir_for_commit,
-            parents,
-            &message,
-            Some(r#ref),
             Versioning::new(mc_version).expect("failed to parse mc version"),
         )
+        .commit(parents, &message, Some(r#ref))
     })
     .await;
 
@@ -316,7 +314,7 @@ pub async fn run_checkout(save_dir: String, commit: String, mc_version: String, 
     }
 
     let result = tokio::task::spawn_blocking(move || {
-        superflat::checkout(save_path, git_dir, commit, mc_version)
+        Superflat::new(save_path, git_dir, mc_version).checkout(commit)
     })
     .await;
 
