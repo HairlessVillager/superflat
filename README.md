@@ -1,3 +1,6 @@
+> ![NOTE]
+> This repository is archived for some reason. If you want similar project, consider [MineCommit](https://github.com/HairlessVillager/minecommit).
+
 [中文](README_ZH.md) | English
 
 <div align="center">
